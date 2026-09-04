@@ -15,6 +15,7 @@ from alphaquest.research.edge_backlog import (
     canonical_json_bytes,
     record_sha256,
 )
+from alphaquest.research.edge_backlog_taxonomy import bundled_taxonomy_ref
 from alphaquest.research.edge_backlog_bootstrap import (
     HistoricalEdgeIndexRecordV1,
     build_historical_edge_index,
@@ -134,11 +135,12 @@ def _fixture(root: Path) -> dict[str, bytes]:
     }
 
 
-def _canonical_entry(store: EdgeBacklogStore) -> None:
+def _canonical_entry(store: EdgeBacklogStore):
     observation = store.capture_observation(
         {
             "observation_id": "obs.bootstrap",
             "statement": "Opening-auction pressure was observed to persist after the interval.",
+            "statement_kind": "RESEARCHER_SUMMARY",
             "evidence_refs": [
                 {
                     "source_id": "source.bootstrap",
@@ -154,19 +156,26 @@ def _canonical_entry(store: EdgeBacklogStore) -> None:
         },
         actor_id="codex",
     )
-    store.create_entry(
+    return store.create_entry(
         {
-            "entry_id": "edge.bootstrap",
-            "title": "Another name for auction continuation",
-            "instruments": ["ES"],
-            "market_behavior": "Opening auction pressure persists",
-            "causal_mechanism": "Liquidity providers complete delayed hedging",
-            "counterparty_transfer_rationale": "Late hedgers transfer returns to patient liquidity",
-            "information_inputs": ["opening pressure"],
-            "information_availability": "Available after the opening interval completes",
-            "expected_effect": "Continuation",
-            "holding_horizon": "Intraday minutes",
-            "market_context": "Regular trading hours",
+            "classification_status": "CLASSIFIED",
+            "taxonomy_ref": bundled_taxonomy_ref().model_dump(mode="json"),
+            "governance_scope": "PRE_HYPOTHESIS_BACKLOG_ONLY",
+            "p1_evidence_eligibility": "NOT_CURRENT_P1_EVIDENCE",
+            "economic_concepts": {
+                "instrument_ids": ["ES"],
+                "market_behavior_code": "INVENTORY_IMBALANCE",
+                "causal_mechanism_code": "DELAYED_INVENTORY_ADJUSTMENT",
+                "beneficiary_counterparty_codes": ["LIQUIDITY_PROVIDERS"],
+                "cost_bearer_counterparty_codes": ["HEDGERS"],
+                "transfer_rationale_code": "INVENTORY_RISK_COMPENSATION",
+                "information_input_codes": ["POSITIONING_AND_INVENTORY_PROXY", "PRICE"],
+                "information_availability_code": "AVAILABLE_AFTER_INTERVAL",
+                "expected_effect_code": "PRICE_CONTINUATION",
+                "holding_horizon_code": "INTRASESSION",
+                "market_context_codes": ["OPENING_AUCTION"],
+            },
+            "unclassified_reason": None,
             "observation_refs": [
                 {
                     "observation_id": observation.observation_id,
@@ -174,7 +183,6 @@ def _canonical_entry(store: EdgeBacklogStore) -> None:
                     "role": "MOTIVATING",
                 }
             ],
-            "open_questions": [],
         },
         actor_id="codex",
     )
@@ -265,10 +273,10 @@ def test_bootstrap_is_byte_stable_read_only_and_preserves_generation(tmp_path: P
 def test_failed_and_abandoned_history_participates_in_duplicate_recall(tmp_path: Path) -> None:
     _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
-    _canonical_entry(store)
+    entry = _canonical_entry(store)
     build_historical_edge_index(tmp_path)
 
-    candidates = store.duplicate_candidates("edge.bootstrap")
+    candidates = store.duplicate_candidates(entry.entry_id)
     historical = [item for item in candidates if item["candidate_kind"] == "DERIVED_HISTORICAL_RECORD"]
 
     assert any(item["state"] == "FAIL" for item in historical)
@@ -279,9 +287,9 @@ def test_failed_and_abandoned_history_participates_in_duplicate_recall(tmp_path:
     assert all(len(item["candidate_record_sha256"]) == 64 for item in historical)
     assert all(item["p1_evidence_eligibility"] == "NOT_CURRENT_P1_EVIDENCE" for item in historical)
     assert all(item["derived_index_use"] == "DUPLICATE_RECALL_ONLY" for item in historical)
-    assert all(
-        item["exact_fingerprint"] is False for item in historical if item["archive_generation"] == "clean_slate_fixture"
-    )
+    assert all(item["exact_fingerprint"] is False for item in historical)
+    assert all(item["taxonomy_score"] == 0.0 for item in historical)
+    assert all(item["dimension_scores"] == {} for item in historical)
 
 
 @pytest.mark.parametrize(
@@ -346,9 +354,9 @@ def test_shared_historical_index_contract_rejects_every_malformed_row(
 def test_configured_history_is_strictly_validated_before_every_store_consumer(tmp_path: Path) -> None:
     _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
-    _canonical_entry(store)
+    entry = _canonical_entry(store)
     build_historical_edge_index(tmp_path)
-    snapshot = store.duplicate_snapshot("edge.bootstrap")
+    snapshot = store.duplicate_snapshot(entry.entry_id)
     index = tmp_path / "catalogs/edge_backlog_history.jsonl"
     rows = _index_rows(index)
     rows[0]["forged_semantic_promotion"] = "PASS"
@@ -358,12 +366,12 @@ def test_configured_history_is_strictly_validated_before_every_store_consumer(tm
     with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
         store.search("auction")
     with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
-        store.duplicate_snapshot("edge.bootstrap")
+        store.duplicate_snapshot(entry.entry_id)
     with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
         store.validate()
     with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
         store.record_human_decision(
-            "edge.bootstrap",
+            entry.entry_id,
             disposition="REVIEWED_CONTINUE",
             duplicate_resolution="DISTINCT_EDGE",
             candidate_snapshot_sha256=snapshot["snapshot_sha256"],
@@ -371,17 +379,17 @@ def test_configured_history_is_strictly_validated_before_every_store_consumer(tm
             rationale="A malformed configured history index must block decision persistence.",
             reviewer_id="owner",
         )
-    assert not (store.root / "entries/edge.bootstrap/decisions/000001.json").exists()
+    assert not (store.root / f"entries/{entry.entry_id}/decisions/000001.json").exists()
 
 
 def test_historical_duplicate_candidate_contract_is_literal_and_cross_field_bound(tmp_path: Path) -> None:
     _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
-    _canonical_entry(store)
+    entry = _canonical_entry(store)
     build_historical_edge_index(tmp_path)
     historical = next(
         item
-        for item in store.duplicate_candidates("edge.bootstrap")
+        for item in store.duplicate_candidates(entry.entry_id)
         if item["candidate_kind"] == "DERIVED_HISTORICAL_RECORD"
     )
 
@@ -405,16 +413,16 @@ def test_historical_duplicate_candidate_contract_is_literal_and_cross_field_boun
 def test_persisted_historical_candidate_is_self_contained_after_index_rebuild(tmp_path: Path) -> None:
     _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
-    _canonical_entry(store)
+    entry = _canonical_entry(store)
     build_historical_edge_index(tmp_path)
-    snapshot = store.duplicate_snapshot("edge.bootstrap")
+    snapshot = store.duplicate_snapshot(entry.entry_id)
     historical = [
         item for item in snapshot["candidates"] if item["candidate_kind"] == "DERIVED_HISTORICAL_RECORD"
     ]
     assert historical
     assert all(item["historical_record"]["record_sha256"] == item["candidate_record_sha256"] for item in historical)
     store.record_human_decision(
-        "edge.bootstrap",
+        entry.entry_id,
         disposition="REVIEWED_CONTINUE",
         duplicate_resolution="DISTINCT_EDGE",
         candidate_snapshot_sha256=snapshot["snapshot_sha256"],

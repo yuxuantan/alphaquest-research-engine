@@ -21,19 +21,23 @@ source or market event
   -> RUN
 ```
 
-A backlog entry records a possible economic transfer: market behavior, causal
-mechanism, counterparties, information inputs and availability, expected
-effect, horizon, context, and source-bound observations. It does not contain
-entry/stop/target rules, indicators, thresholds, parameter grids, modules,
-PnL, scientific verdicts, candidate status, or deployment status. Mechanical
-expressions remain downstream strategy variants. Observation and entry
-economic text uses the closed, versioned
-`alphaquest.edge-backlog-economic-vocabulary/v1` vocabulary. Every token and
-character must be positively admitted by that vocabulary; unregistered prose
-fails closed before write. This deliberately narrow representation prevents
-arbitrary free text from encoding indicators, parameter values, thresholds,
-or trade instructions through paraphrase. Extending the vocabulary is a
-reviewed contract change, and unknown structured fields remain forbidden.
+A backlog entry records a possible economic transfer through closed concept
+codes: instruments, market behavior, causal mechanism, beneficiaries and cost
+bearers, transfer rationale, information categories and availability,
+expected effect, broad economic horizon, market context, and source-bound
+observations. It does not contain entry/stop/target rules, indicators,
+thresholds, parameter grids, exact or cosmetic timeframes, modules, PnL,
+scientific verdicts, candidate status, or deployment status. Those mechanics
+are structurally absent from the entry contract and remain downstream strategy
+variant concerns.
+
+Observation prose is deliberately different: it is faithful source memory,
+so its statement and known conflicts accept ordinary economic terminology,
+numeric source facts, and even source text that describes mechanics. That
+prose is not canonical edge identity, P1 evidence, strategy authorization, or
+automatic semantic acceptance. A free-text statement can become entry memory
+only through an exact observation-revision reference; it never becomes a
+classified concept merely because of its wording.
 
 The canonical files live under `research/edge_backlog/`. SQLite, CSV, Markdown,
 the bootstrap index, and future registry views are derived and rebuildable.
@@ -69,7 +73,11 @@ exclusive file creation.
 ### Observation revisions
 
 An observation is a source-bound lead, not an edge claim. Each evidence
-reference declares `HASH_BOUND` or `LOCATOR_ONLY` integrity:
+reference declares `HASH_BOUND` or `LOCATOR_ONLY` integrity, and every
+observation has at least one evidence reference. `statement_kind` is exactly
+`SOURCE_QUOTE`, `FAITHFUL_PARAPHRASE`, or `RESEARCHER_SUMMARY`; it records how
+the statement was written and grants no evidence integrity or P1 authority.
+A source quote may remain locator-only.
 
 - `HASH_BOUND` requires a valid content or artifact SHA-256.
 - `LOCATOR_ONLY` requires a durable locator, claim locator, and evidence time,
@@ -85,11 +93,56 @@ ambiguous across objects and fail closed.
 
 ### Edge-entry revisions
 
-An entry may refer to any number of observations using the closed roles
+Entry IDs are engine-generated opaque values of the form `edge.<32 lowercase
+hex characters>`. They are not content-derived and cannot be supplied by the
+caller, so separately captured discoveries do not collide merely because their
+initial concepts match. Revision record IDs retain the
+`<object_id>.r000001` convention.
+
+Each entry is either `CLASSIFIED` or `NEEDS_CLASSIFICATION`:
+
+- `CLASSIFIED` resolves every required dimension to codes published by its
+  exact `taxonomy_ref` and carries the final v1 fingerprint.
+- `NEEDS_CLASSIFICATION` carries an explicit closed reason, no economic
+  concept payload, and no fingerprint. It remains searchable backlog memory
+  and duplicate-recall material without human backlog approval.
+
+There are no `UNKNOWN`, `OTHER`, placeholder, or free-form code fallbacks.
+Unsupported instruments or genuinely novel economics remain observations and
+`NEEDS_CLASSIFICATION` entries until an owner-reviewed taxonomy extension.
+Codex may append classification, reclassification, or declassification
+revisions; these are neither human approval nor P1 admission, and the new
+revision stales decisions bound to an earlier revision normally.
+
+An entry refers to one or more observations using the closed roles
 `MOTIVATING`, `SUPPORTING`, and `CONTRADICTING`. A revision may add evidence,
-but it cannot silently remove an earlier contradicting reference. Title wording
-is excluded from the versioned economic fingerprint. Strategy and parameter
-fields are not part of the closed schema.
+but cannot silently remove an earlier contradicting reference. Every revision
+also fixes `PRE_HYPOTHESIS_BACKLOG_ONLY` and
+`NOT_CURRENT_P1_EVIDENCE`.
+
+The complete taxonomy is
+`research/edge_backlog/contracts/economic-edge-taxonomy-v1.json`. Each
+published version is immutable and hash-bound. Evolution is additive: an
+existing code, definition, label, invariant, or prohibited category cannot be
+changed or removed; recall aliases may be added; and new codes may be added.
+A semantic change requires a new code or owner-reviewed namespace. Old files
+remain available. The taxonomy declares each dimension's cardinality,
+cross-field invariants, unclassified reasons, prohibited categories, and hash
+rules. The initial taxonomy-local instrument set is exactly `ES` and `NQ`;
+there is no runtime-inferred or free-form instrument fallback.
+
+Human-readable labels are derived from the bound taxonomy's display labels and
+are non-authoritative. Labels and recall aliases participate only in duplicate
+matching and search; they cannot create a fingerprint, classification,
+evidence, acceptance, or admission.
+
+The economic fingerprint is SHA-256 over canonical JSON containing only
+`alphaquest.edge-backlog-fingerprint/v1`, the stable `taxonomy_id`, sorted
+instrument codes, and all selected economic concept codes. Taxonomy version,
+taxonomy SHA, display labels, and recall aliases are excluded, so additive
+taxonomy versions preserve fingerprints for unchanged concepts. The entry
+record itself contains the exact taxonomy ID/version/SHA reference, so the
+entry revision SHA and every snapshot remain bound to the taxonomy used.
 
 ### Human decisions
 
@@ -166,8 +219,9 @@ authentication.
 ## CLI
 
 Prepare a JSON payload containing only user-controlled observation or entry
-fields; record IDs, revision numbers, actors, timestamps, fingerprints, and
-hashes are managed by AlphaQuest.
+fields; entry IDs, record IDs, revision numbers, actors, timestamps,
+fingerprints, and record hashes are managed by AlphaQuest. Capture the created
+entry ID from the `create` response before subsequent commands.
 
 ```bash
 alphaquest edge-backlog capture-observation \
@@ -212,13 +266,15 @@ deployment command.
 ## Deterministic duplicate recall
 
 Campaign and backlog adapters use one deterministic scoring, recall-threshold,
-match-band, and ranking core without changing legacy campaign behavior. The
-richer backlog adapter exposes each economic dimension, exact fingerprint
-equality, source overlap, downstream target overlap, revisit lineage, and
-lexical score.
-Small deterministic economic-phrase aliases improve recall. No LLM or embedding
-is an authority. Candidate output remains advisory until human resolution, and
-uncertainty stays unresolved.
+match-band, and ranking core without changing legacy campaign behavior. For
+two classified entries the backlog adapter matches taxonomy codes and the
+frozen display labels/recall aliases from each bound taxonomy. Observation
+prose participates in lexical matching only for `NEEDS_CLASSIFICATION`
+entries. Source overlap and revisit/link lineage remain universal. Historical
+bootstrap rows remain unclassified lexical duplicate-recall material: they
+cannot receive structured equality, fingerprint equality, classification, or
+P1 authority. No LLM or embedding is an authority. Candidate output remains
+advisory until human resolution, and uncertainty stays unresolved.
 
 ## Historical bootstrap
 

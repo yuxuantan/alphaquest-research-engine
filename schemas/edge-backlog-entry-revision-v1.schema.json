@@ -39,6 +39,101 @@
       "title": "ActorProvenanceV1",
       "type": "object"
     },
+    "EconomicConceptsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "beneficiary_counterparty_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Beneficiary Counterparty Codes",
+          "type": "array"
+        },
+        "causal_mechanism_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Causal Mechanism Code",
+          "type": "string"
+        },
+        "cost_bearer_counterparty_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Cost Bearer Counterparty Codes",
+          "type": "array"
+        },
+        "expected_effect_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Expected Effect Code",
+          "type": "string"
+        },
+        "holding_horizon_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Holding Horizon Code",
+          "type": "string"
+        },
+        "information_availability_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Information Availability Code",
+          "type": "string"
+        },
+        "information_input_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Information Input Codes",
+          "type": "array"
+        },
+        "instrument_ids": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Instrument Ids",
+          "type": "array"
+        },
+        "market_behavior_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Market Behavior Code",
+          "type": "string"
+        },
+        "market_context_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Market Context Codes",
+          "type": "array"
+        },
+        "transfer_rationale_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Transfer Rationale Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "instrument_ids",
+        "market_behavior_code",
+        "causal_mechanism_code",
+        "beneficiary_counterparty_codes",
+        "cost_bearer_counterparty_codes",
+        "transfer_rationale_code",
+        "information_input_codes",
+        "information_availability_code",
+        "expected_effect_code",
+        "holding_horizon_code",
+        "market_context_codes"
+      ],
+      "title": "EconomicConceptsV1",
+      "type": "object"
+    },
     "ObservationReferenceV1": {
       "additionalProperties": false,
       "properties": {
@@ -69,6 +164,36 @@
       ],
       "title": "ObservationReferenceV1",
       "type": "object"
+    },
+    "TaxonomyRefV1": {
+      "additionalProperties": false,
+      "properties": {
+        "taxonomy_id": {
+          "const": "alphaquest-economic-edge",
+          "enum": [
+            "alphaquest-economic-edge"
+          ],
+          "title": "Taxonomy Id",
+          "type": "string"
+        },
+        "taxonomy_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Taxonomy Sha256",
+          "type": "string"
+        },
+        "taxonomy_version": {
+          "minimum": 1,
+          "title": "Taxonomy Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "taxonomy_id",
+        "taxonomy_version",
+        "taxonomy_sha256"
+      ],
+      "title": "TaxonomyRefV1",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -76,84 +201,62 @@
     "actor": {
       "$ref": "#/$defs/ActorProvenanceV1"
     },
-    "causal_mechanism": {
-      "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-      "minLength": 1,
-      "title": "Causal Mechanism",
+    "classification_status": {
+      "enum": [
+        "CLASSIFIED",
+        "NEEDS_CLASSIFICATION"
+      ],
+      "title": "Classification Status",
       "type": "string"
     },
-    "counterparty_transfer_rationale": {
-      "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-      "minLength": 1,
-      "title": "Counterparty Transfer Rationale",
-      "type": "string"
+    "economic_concepts": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EconomicConceptsV1"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "entry_id": {
       "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
       "title": "Entry Id",
       "type": "string"
     },
-    "expected_effect": {
-      "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-      "minLength": 1,
-      "title": "Expected Effect",
-      "type": "string"
+    "fingerprint_schema": {
+      "anyOf": [
+        {
+          "const": "alphaquest.edge-backlog-fingerprint/v1",
+          "enum": [
+            "alphaquest.edge-backlog-fingerprint/v1"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Fingerprint Schema"
     },
     "fingerprint_sha256": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Fingerprint Sha256",
-      "type": "string"
-    },
-    "fingerprint_version": {
-      "const": "alphaquest.edge-backlog-fingerprint/v1",
-      "default": "alphaquest.edge-backlog-fingerprint/v1",
-      "enum": [
-        "alphaquest.edge-backlog-fingerprint/v1"
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
       ],
-      "title": "Fingerprint Version",
-      "type": "string"
+      "title": "Fingerprint Sha256"
     },
-    "holding_horizon": {
-      "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-      "minLength": 1,
-      "title": "Holding Horizon",
-      "type": "string"
-    },
-    "information_availability": {
-      "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-      "minLength": 1,
-      "title": "Information Availability",
-      "type": "string"
-    },
-    "information_inputs": {
-      "items": {
-        "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-        "minLength": 1,
-        "type": "string"
-      },
-      "minItems": 1,
-      "title": "Information Inputs",
-      "type": "array"
-    },
-    "instruments": {
-      "items": {
-        "minLength": 1,
-        "type": "string"
-      },
-      "minItems": 1,
-      "title": "Instruments",
-      "type": "array"
-    },
-    "market_behavior": {
-      "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-      "minLength": 1,
-      "title": "Market Behavior",
-      "type": "string"
-    },
-    "market_context": {
-      "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-      "minLength": 1,
-      "title": "Market Context",
+    "governance_scope": {
+      "const": "PRE_HYPOTHESIS_BACKLOG_ONLY",
+      "enum": [
+        "PRE_HYPOTHESIS_BACKLOG_ONLY"
+      ],
+      "title": "Governance Scope",
       "type": "string"
     },
     "observation_refs": {
@@ -164,14 +267,13 @@
       "title": "Observation Refs",
       "type": "array"
     },
-    "open_questions": {
-      "items": {
-        "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-        "minLength": 1,
-        "type": "string"
-      },
-      "title": "Open Questions",
-      "type": "array"
+    "p1_evidence_eligibility": {
+      "const": "NOT_CURRENT_P1_EVIDENCE",
+      "enum": [
+        "NOT_CURRENT_P1_EVIDENCE"
+      ],
+      "title": "P1 Evidence Eligibility",
+      "type": "string"
     },
     "previous_revision_sha256": {
       "anyOf": [
@@ -215,11 +317,26 @@
       "title": "Schema",
       "type": "string"
     },
-    "title": {
-      "description": "Economic-edge description constrained by the positive alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; strategy mechanics and unregistered terms fail closed.",
-      "minLength": 1,
-      "title": "Title",
-      "type": "string"
+    "taxonomy_ref": {
+      "$ref": "#/$defs/TaxonomyRefV1"
+    },
+    "unclassified_reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "AMBIGUOUS_CAUSAL_MECHANISM",
+            "CONFLICTING_OBSERVATIONS",
+            "INSUFFICIENT_SOURCE_CONTEXT",
+            "MIXED_ECONOMIC_PHENOMENA",
+            "NOVEL_CONCEPT_NOT_IN_TAXONOMY"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Unclassified Reason"
     }
   },
   "required": [
@@ -229,17 +346,14 @@
     "record_sha256",
     "entry_id",
     "revision",
-    "title",
-    "instruments",
-    "market_behavior",
-    "causal_mechanism",
-    "counterparty_transfer_rationale",
-    "information_inputs",
-    "information_availability",
-    "expected_effect",
-    "holding_horizon",
-    "market_context",
+    "classification_status",
+    "taxonomy_ref",
+    "governance_scope",
+    "p1_evidence_eligibility",
+    "economic_concepts",
+    "unclassified_reason",
     "observation_refs",
+    "fingerprint_schema",
     "fingerprint_sha256"
   ],
   "title": "EdgeBacklogEntryRevisionV1",

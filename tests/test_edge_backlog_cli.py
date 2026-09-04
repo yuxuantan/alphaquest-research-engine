@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from alphaquest.cli import main
+from alphaquest.research.edge_backlog_taxonomy import bundled_taxonomy_ref
 
 
 def _write(path: Path, payload: dict) -> Path:
@@ -17,6 +18,7 @@ def _observation() -> dict:
     return {
         "observation_id": "obs.cli",
         "statement": "Completed auction pressure persisted beyond the observed opening interval.",
+        "statement_kind": "RESEARCHER_SUMMARY",
         "evidence_refs": [
             {
                 "source_id": "source.cli",
@@ -34,17 +36,24 @@ def _observation() -> dict:
 
 def _entry(observation_sha256: str) -> dict:
     return {
-        "entry_id": "edge.cli",
-        "title": "Auction pressure continuation",
-        "instruments": ["ES"],
-        "market_behavior": "Opening auction pressure persists after the observed interval",
-        "causal_mechanism": "Delayed inventory hedging",
-        "counterparty_transfer_rationale": "Late hedgers transfer returns to patient liquidity providers",
-        "information_inputs": ["completed auction pressure"],
-        "information_availability": "Available only after the observed opening interval completes",
-        "expected_effect": "Short-horizon continuation",
-        "holding_horizon": "Intraday minutes",
-        "market_context": "Regular trading hours",
+        "classification_status": "CLASSIFIED",
+        "taxonomy_ref": bundled_taxonomy_ref().model_dump(mode="json"),
+        "governance_scope": "PRE_HYPOTHESIS_BACKLOG_ONLY",
+        "p1_evidence_eligibility": "NOT_CURRENT_P1_EVIDENCE",
+        "economic_concepts": {
+            "instrument_ids": ["ES"],
+            "market_behavior_code": "INVENTORY_IMBALANCE",
+            "causal_mechanism_code": "DELAYED_INVENTORY_ADJUSTMENT",
+            "beneficiary_counterparty_codes": ["LIQUIDITY_PROVIDERS"],
+            "cost_bearer_counterparty_codes": ["HEDGERS"],
+            "transfer_rationale_code": "INVENTORY_RISK_COMPENSATION",
+            "information_input_codes": ["POSITIONING_AND_INVENTORY_PROXY", "PRICE"],
+            "information_availability_code": "AVAILABLE_AFTER_INTERVAL",
+            "expected_effect_code": "PRICE_CONTINUATION",
+            "holding_horizon_code": "INTRASESSION",
+            "market_context_codes": ["OPENING_AUCTION"],
+        },
+        "unclassified_reason": None,
         "observation_refs": [
             {
                 "observation_id": "obs.cli",
@@ -52,7 +61,6 @@ def _entry(observation_sha256: str) -> dict:
                 "role": "MOTIVATING",
             }
         ],
-        "open_questions": [],
     }
 
 
@@ -96,6 +104,7 @@ def test_cli_end_to_end_capture_search_review_and_validate(tmp_path: Path, capsy
     )
     entry = json.loads(capsys.readouterr().out)
     assert entry["actor"]["actor_class"] == "CODEX"
+    entry_id = entry["entry_id"]
 
     assert (
         main(
@@ -111,9 +120,9 @@ def test_cli_end_to_end_capture_search_review_and_validate(tmp_path: Path, capsy
         )
         == 0
     )
-    assert json.loads(capsys.readouterr().out)[0]["entry_id"] == "edge.cli"
+    assert json.loads(capsys.readouterr().out)[0]["entry_id"] == entry_id
 
-    assert main(["edge-backlog", "duplicate-candidates", "edge.cli", "--project-root", str(tmp_path)]) == 0
+    assert main(["edge-backlog", "duplicate-candidates", entry_id, "--project-root", str(tmp_path)]) == 0
     snapshot = json.loads(capsys.readouterr().out)
     assert snapshot["candidates"] == []
 
@@ -122,7 +131,7 @@ def test_cli_end_to_end_capture_search_review_and_validate(tmp_path: Path, capsy
             [
                 "edge-backlog",
                 "review",
-                "edge.cli",
+                entry_id,
                 "--project-root",
                 str(tmp_path),
                 "--disposition",
@@ -146,7 +155,7 @@ def test_cli_end_to_end_capture_search_review_and_validate(tmp_path: Path, capsy
     decision = json.loads(capsys.readouterr().out)
     assert decision["actor"]["actor_class"] == "HUMAN_OWNER_RESEARCHER"
 
-    assert main(["edge-backlog", "show", "edge.cli", "--project-root", str(tmp_path), "--json"]) == 0
+    assert main(["edge-backlog", "show", entry_id, "--project-root", str(tmp_path), "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown["state"] == "REVIEWED_CONTINUE"
     assert shown["entry"]["record_sha256"] == entry["record_sha256"]
@@ -183,8 +192,8 @@ def test_cli_suspension_requires_explicit_human_resume(tmp_path: Path, capsys) -
             "codex-cli",
         ]
     )
-    capsys.readouterr()
-    main(["edge-backlog", "duplicate-candidates", "edge.cli", "--project-root", str(tmp_path)])
+    entry_id = json.loads(capsys.readouterr().out)["entry_id"]
+    main(["edge-backlog", "duplicate-candidates", entry_id, "--project-root", str(tmp_path)])
     snapshot = json.loads(capsys.readouterr().out)
 
     assert (
@@ -192,7 +201,7 @@ def test_cli_suspension_requires_explicit_human_resume(tmp_path: Path, capsys) -
             [
                 "edge-backlog",
                 "review",
-                "edge.cli",
+                entry_id,
                 "--project-root",
                 str(tmp_path),
                 "--disposition",
@@ -222,7 +231,7 @@ def test_cli_suspension_requires_explicit_human_resume(tmp_path: Path, capsys) -
             [
                 "edge-backlog",
                 "revise",
-                "edge.cli",
+                entry_id,
                 "--project-root",
                 str(tmp_path),
                 "--input",
@@ -240,7 +249,7 @@ def test_cli_suspension_requires_explicit_human_resume(tmp_path: Path, capsys) -
             [
                 "edge-backlog",
                 "resume",
-                "edge.cli",
+                entry_id,
                 "--project-root",
                 str(tmp_path),
                 "--reason-code",
@@ -263,7 +272,7 @@ def test_cli_suspension_requires_explicit_human_resume(tmp_path: Path, capsys) -
             [
                 "edge-backlog",
                 "revise",
-                "edge.cli",
+                entry_id,
                 "--project-root",
                 str(tmp_path),
                 "--input",

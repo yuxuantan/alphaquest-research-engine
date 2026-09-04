@@ -6,6 +6,7 @@ import inspect
 import json
 import multiprocessing
 from pathlib import Path
+import re
 
 import pytest
 from pydantic import ValidationError
@@ -24,10 +25,76 @@ from alphaquest.research.edge_backlog import (
     canonical_json_bytes,
     record_sha256,
 )
+from alphaquest.research.edge_backlog_taxonomy import (
+    EconomicEdgeTaxonomyV1,
+    bundled_taxonomy_ref,
+    bundled_taxonomy_root,
+    fingerprint_document,
+    taxonomy_ref,
+    taxonomy_sha256,
+)
 from alphaquest.studio.duplicates import duplicate_matches, edge_fingerprint
 
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
+TAXONOMY_REF = bundled_taxonomy_ref().model_dump(mode="json")
+
+
+def _additive_taxonomy_catalog(tmp_path: Path, *, add_alias: bool = True) -> tuple[Path, dict, dict]:
+    root = tmp_path / "taxonomy-contracts"
+    root.mkdir(parents=True)
+    first_payload = json.loads(
+        (bundled_taxonomy_root() / "economic-edge-taxonomy-v1.json").read_text(encoding="utf-8")
+    )
+    first = EconomicEdgeTaxonomyV1.model_validate(first_payload)
+    second_payload = json.loads(json.dumps(first_payload))
+    second_payload["taxonomy_version"] = 2
+    second_payload["previous_taxonomy_sha256"] = taxonomy_sha256(first)
+    second_payload["code_sets"]["market_behavior"].append(
+        {
+            "code": "VOLATILITY_CLUSTERING",
+            "definition": "Periods of elevated or subdued variability tend to persist as an economic state.",
+            "display_label": "Volatility clustering",
+            "recall_aliases": ["persistent volatility state"],
+        }
+    )
+    if add_alias:
+        aliases = second_payload["code_sets"]["causal_mechanism"][2]["recall_aliases"]
+        aliases.append("lagged inventory transfer")
+        aliases.sort(key=str.casefold)
+    second_payload["code_sets"]["market_behavior"].sort(key=lambda item: item["code"])
+    second = EconomicEdgeTaxonomyV1.model_validate(second_payload)
+    (root / "economic-edge-taxonomy-v1.json").write_text(
+        json.dumps(first_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (root / "economic-edge-taxonomy-v2.json").write_text(
+        json.dumps(second_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return root, taxonomy_ref(first).model_dump(mode="json"), taxonomy_ref(second).model_dump(mode="json")
+
+
+def _concepts(**overrides: object) -> dict:
+    concepts = {
+        "instrument_ids": ["ES"],
+        "market_behavior_code": "INVENTORY_IMBALANCE",
+        "causal_mechanism_code": "DELAYED_INVENTORY_ADJUSTMENT",
+        "beneficiary_counterparty_codes": ["LIQUIDITY_PROVIDERS"],
+        "cost_bearer_counterparty_codes": ["HEDGERS"],
+        "transfer_rationale_code": "INVENTORY_RISK_COMPENSATION",
+        "information_input_codes": [
+            "POSITIONING_AND_INVENTORY_PROXY",
+            "PRICE",
+            "TRANSACTION_FLOW",
+        ],
+        "information_availability_code": "AVAILABLE_AFTER_INTERVAL",
+        "expected_effect_code": "PRICE_CONTINUATION",
+        "holding_horizon_code": "INTRASESSION",
+        "market_context_codes": ["OPENING_AUCTION"],
+    }
+    concepts.update(overrides)
+    return concepts
 
 
 def _observation_payload(
@@ -45,6 +112,7 @@ def _observation_payload(
     return {
         "observation_id": observation_id,
         "statement": statement,
+        "statement_kind": "RESEARCHER_SUMMARY",
         "evidence_refs": [
             {
                 "source_id": source,
@@ -66,17 +134,12 @@ def _entry_payload(
     **overrides: object,
 ) -> dict:
     payload = {
-        "entry_id": entry_id,
-        "title": "Opening imbalance continuation",
-        "instruments": ["ES"],
-        "market_behavior": "Opening auction imbalance persists into early regular trading",
-        "causal_mechanism": "Delayed hedging after price discovery",
-        "counterparty_transfer_rationale": "Late hedgers cross liquidity supplied by patient participants",
-        "information_inputs": ["completed opening imbalance", "completed price response"],
-        "information_availability": "Both inputs are available after the opening interval completes",
-        "expected_effect": "Continuation in the direction of the completed imbalance",
-        "holding_horizon": "Short intraday horizon",
-        "market_context": "Liquid equity index futures during regular trading hours",
+        "classification_status": "CLASSIFIED",
+        "taxonomy_ref": TAXONOMY_REF,
+        "governance_scope": "PRE_HYPOTHESIS_BACKLOG_ONLY",
+        "p1_evidence_eligibility": "NOT_CURRENT_P1_EVIDENCE",
+        "economic_concepts": _concepts(),
+        "unclassified_reason": None,
         "observation_refs": [
             {
                 "observation_id": observation.observation_id,
@@ -84,8 +147,13 @@ def _entry_payload(
                 "role": "MOTIVATING",
             }
         ],
-        "open_questions": ["Does the transfer survive costs?"],
     }
+    if "title" in overrides:
+        overrides.pop("title")
+        payload["economic_concepts"] = {
+            **payload["economic_concepts"],
+            "market_context_codes": ["CONTINUOUS_SESSION", "OPENING_AUCTION"],
+        }
     payload.update(overrides)
     return payload
 
@@ -306,6 +374,28 @@ def test_closed_models_timezone_and_explicit_source_integrity() -> None:
         )
 
 
+def test_observation_requires_evidence_and_source_quote_does_not_upgrade_integrity(
+    tmp_path: Path,
+) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    missing = _observation_payload("obs.no-evidence")
+    missing["evidence_refs"] = []
+    with pytest.raises(ValidationError, match="at least 1 item"):
+        store.capture_observation(missing, actor_id="codex", recorded_at=NOW)
+    assert not (store.root / "observations/obs.no-evidence/revisions/000001.json").exists()
+
+    quoted = _observation_payload(
+        "obs.locator-quote",
+        statement='"Use short entry after price cross mean."',
+    )
+    quoted["statement_kind"] = "SOURCE_QUOTE"
+    record = store.capture_observation(quoted, actor_id="codex", recorded_at=NOW)
+    assert record.statement_kind == "SOURCE_QUOTE"
+    assert record.evidence_refs[0].integrity == "LOCATOR_ONLY"
+    assert record.evidence_refs[0].content_sha256 is None
+    assert store.validate()["status"] == "PASS"
+
+
 def test_canonical_serialization_and_hash_are_stable(tmp_path: Path) -> None:
     roots = [tmp_path / "one", tmp_path / "two"]
     records = []
@@ -314,13 +404,296 @@ def test_canonical_serialization_and_hash_are_stable(tmp_path: Path) -> None:
         observation = _capture(store, "obs.stable")
         records.append(_create(store, "edge.stable", observation))
 
-    assert records[0].record_sha256 == records[1].record_sha256
+    assert records[0].entry_id != records[1].entry_id
+    assert records[0].record_sha256 != records[1].record_sha256
     assert records[0].fingerprint_sha256 == records[1].fingerprint_sha256
-    assert records[0].fingerprint_sha256 == ("248e3d4401679a6296c64e8517dee981eb640342d5598231970433e1f8930e9d")
-    assert records[0].record_sha256 == ("d05f95a04081986b950425859dc26b67225c89d5918704a23a168e1f12949859")
-    assert (roots[0] / "research/edge_backlog/entries/edge.stable/revisions/000001.json").read_bytes() == (
-        roots[1] / "research/edge_backlog/entries/edge.stable/revisions/000001.json"
-    ).read_bytes()
+    assert records[0].fingerprint_sha256 == ("e55cb551a6ba60aec114fc2d78b16ca3f999d964a59b00eb1d890f818dfe7650")
+    for root, record in zip(roots, records, strict=True):
+        path = root / f"research/edge_backlog/entries/{record.entry_id}/revisions/000001.json"
+        assert path.read_bytes() == canonical_json_bytes(record) + b"\n"
+
+
+def test_additive_taxonomy_versions_preserve_fingerprint_but_change_entry_revision_hash(
+    tmp_path: Path,
+) -> None:
+    taxonomy_root, v1_ref, v2_ref = _additive_taxonomy_catalog(tmp_path)
+    store = EdgeBacklogStore(tmp_path, taxonomy_root=taxonomy_root)
+    observation = _capture(store, "obs.taxonomy-evolution")
+    first = store.create_entry(
+        _entry_payload("ignored", observation, taxonomy_ref=v1_ref),
+        actor_id="codex",
+        recorded_at=NOW,
+    )
+    second = store.revise_entry(
+        first.entry_id,
+        _entry_payload("ignored", observation, taxonomy_ref=v2_ref),
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=1),
+    )
+
+    assert first.fingerprint_sha256 == second.fingerprint_sha256
+    assert first.record_sha256 != second.record_sha256
+    assert first.taxonomy_ref != second.taxonomy_ref
+    fingerprint_payload = fingerprint_document(
+        first.taxonomy_ref.taxonomy_id,
+        first.economic_concepts,
+    ).model_dump(mode="json", by_alias=True)
+    assert "taxonomy_version" not in fingerprint_payload
+    assert "taxonomy_sha256" not in fingerprint_payload
+    assert first.record_id == f"{first.entry_id}.r000001"
+    assert second.record_id == f"{first.entry_id}.r000002"
+    assert store.validate()["status"] == "PASS"
+
+
+@pytest.mark.parametrize("mutation", ["redefine", "remove"])
+def test_taxonomy_redefinition_or_removal_fails_closed(tmp_path: Path, mutation: str) -> None:
+    taxonomy_root, _v1_ref, _v2_ref = _additive_taxonomy_catalog(tmp_path)
+    path = taxonomy_root / "economic-edge-taxonomy-v2.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    codes = payload["code_sets"]["market_behavior"]
+    inventory = next(item for item in codes if item["code"] == "INVENTORY_IMBALANCE")
+    if mutation == "redefine":
+        inventory["definition"] = "A silently changed semantic definition."
+    else:
+        codes.remove(inventory)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    store = EdgeBacklogStore(tmp_path, taxonomy_root=taxonomy_root)
+    with pytest.raises(EdgeBacklogIntegrityError, match="redefines|removes"):
+        store.validate()
+
+
+@pytest.mark.parametrize("instrument_ids", [["MES"], ["E-mini S&P 500 futures"], ["UNKNOWN"]])
+def test_unknown_or_free_form_instrument_ids_fail_atomically(
+    tmp_path: Path,
+    instrument_ids: list[str],
+) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(store, "obs.instrument-closed")
+    payload = _entry_payload(
+        "ignored",
+        observation,
+        economic_concepts=_concepts(instrument_ids=instrument_ids),
+    )
+
+    with pytest.raises(
+        (EdgeBacklogIntegrityError, ValidationError),
+        match="instrument_ids contains codes absent|String should match pattern",
+    ):
+        store.create_entry(payload, actor_id="codex", recorded_at=NOW)
+    assert not list((store.root / "entries").glob("*/revisions/*.json"))
+    assert store.validate()["status"] == "PASS"
+
+
+def test_engine_generated_entry_and_revision_record_ids_retain_v1_convention(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(store, "obs.opaque-id")
+    entry = store.create_entry(
+        _entry_payload("ignored", observation),
+        actor_id="codex",
+        recorded_at=NOW,
+    )
+
+    assert re.fullmatch(r"edge\.[a-f0-9]{32}", entry.entry_id)
+    assert observation.record_id == "obs.opaque-id.r000001"
+    assert entry.record_id == f"{entry.entry_id}.r000001"
+    rejected = _entry_payload("ignored", observation)
+    rejected["entry_id"] = "edge.caller-chosen"
+    before = list((store.root / "entries").glob("*/revisions/*.json"))
+    with pytest.raises(EdgeBacklogConflictError, match="engine-generated"):
+        store.create_entry(rejected, actor_id="codex", recorded_at=NOW)
+    assert list((store.root / "entries").glob("*/revisions/*.json")) == before
+
+
+def test_classification_reclassification_and_declassification_are_append_only(
+    tmp_path: Path,
+) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(
+        store,
+        "obs.classification-transitions",
+        statement="A novel interaction is faithfully recorded but its causal mechanism is unresolved.",
+    )
+    unclassified_payload = _entry_payload("ignored", observation)
+    unclassified_payload.update(
+        {
+            "classification_status": "NEEDS_CLASSIFICATION",
+            "economic_concepts": None,
+            "unclassified_reason": "NOVEL_CONCEPT_NOT_IN_TAXONOMY",
+        }
+    )
+    first = store.create_entry(unclassified_payload, actor_id="codex", recorded_at=NOW)
+    assert first.economic_concepts is None
+    assert first.fingerprint_schema is None
+    assert first.fingerprint_sha256 is None
+
+    classified = store.revise_entry(
+        first.entry_id,
+        _entry_payload("ignored", observation),
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=1),
+    )
+    reclassified = store.revise_entry(
+        first.entry_id,
+        _entry_payload(
+            "ignored",
+            observation,
+            economic_concepts=_concepts(expected_effect_code="EXPECTED_RETURN_PREMIUM"),
+        ),
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    declassified_payload = _entry_payload("ignored", observation)
+    declassified_payload.update(
+        {
+            "classification_status": "NEEDS_CLASSIFICATION",
+            "economic_concepts": None,
+            "unclassified_reason": "CONFLICTING_OBSERVATIONS",
+        }
+    )
+    declassified = store.revise_entry(
+        first.entry_id,
+        declassified_payload,
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=3),
+    )
+
+    assert classified.fingerprint_sha256 != reclassified.fingerprint_sha256
+    assert declassified.fingerprint_sha256 is None
+    assert [item.revision for item in store._all_entry_revisions(first.entry_id)] == [1, 2, 3, 4]
+    assert store.validate()["status"] == "PASS"
+
+
+def test_needs_classification_rejects_concepts_or_fingerprint_claims_atomically(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(store, "obs.unclassified-closed")
+    invalid = _entry_payload("ignored", observation)
+    invalid.update(
+        {
+            "classification_status": "NEEDS_CLASSIFICATION",
+            "unclassified_reason": "INSUFFICIENT_SOURCE_CONTEXT",
+        }
+    )
+    with pytest.raises(ValidationError, match="cannot carry economic concepts"):
+        store.create_entry(invalid, actor_id="codex", recorded_at=NOW)
+    assert not list((store.root / "entries").glob("*/revisions/*.json"))
+
+
+@pytest.mark.parametrize(
+    ("phenomenon", "concepts"),
+    [
+        ("delayed-inventory-hedging", _concepts()),
+        (
+            "forced-liquidation-reversion",
+            _concepts(
+                market_behavior_code="NON_DISCRETIONARY_FLOW",
+                causal_mechanism_code="FLOW_EXHAUSTION",
+                beneficiary_counterparty_codes=["UNCONSTRAINED_CAPITAL"],
+                cost_bearer_counterparty_codes=["FORCED_LIQUIDATORS"],
+                transfer_rationale_code="URGENCY_PREMIUM",
+                expected_effect_code="PRICE_REVERSION",
+                holding_horizon_code="MICROSTRUCTURE_EPISODE",
+                market_context_codes=["DELEVERAGING_STRESS", "IMPAIRED_LIQUIDITY"],
+            ),
+        ),
+        (
+            "dealer-gamma-expiration",
+            _concepts(
+                market_behavior_code="HEDGING_FEEDBACK_FLOW",
+                causal_mechanism_code="ENDOGENOUS_HEDGING_FEEDBACK",
+                beneficiary_counterparty_codes=["EARLY_INFORMATION_PROCESSORS"],
+                cost_bearer_counterparty_codes=["DEALERS"],
+                transfer_rationale_code="HEDGING_DEMAND_EXTERNALITY",
+                information_input_codes=[
+                    "PRICE",
+                    "SCHEDULED_EVENT_CALENDAR",
+                    "VOLATILITY_AND_OPTION_RISK",
+                ],
+                information_availability_code="MIXED_KNOWN_SCHEDULE_AND_LIVE_PUBLIC",
+                expected_effect_code="MOMENTUM_AMPLIFICATION",
+                market_context_codes=["OPTION_EXPIRATION"],
+            ),
+        ),
+        (
+            "announcement-liquidity-withdrawal",
+            _concepts(
+                market_behavior_code="LIQUIDITY_DISLOCATION",
+                causal_mechanism_code="LIQUIDITY_SUPPLY_WITHDRAWAL",
+                beneficiary_counterparty_codes=["LIQUIDITY_PROVIDERS"],
+                cost_bearer_counterparty_codes=["LIQUIDITY_DEMANDERS"],
+                transfer_rationale_code="LIQUIDITY_PROVISION_COMPENSATION",
+                information_input_codes=[
+                    "PUBLIC_ANNOUNCEMENT",
+                    "QUOTE_AND_DEPTH",
+                    "SCHEDULED_EVENT_CALENDAR",
+                ],
+                information_availability_code="MIXED_KNOWN_SCHEDULE_AND_LIVE_PUBLIC",
+                expected_effect_code="VOLATILITY_EXPANSION",
+                holding_horizon_code="MICROSTRUCTURE_EPISODE",
+                market_context_codes=["SCHEDULED_ANNOUNCEMENT"],
+            ),
+        ),
+        (
+            "cross-asset-information-diffusion",
+            _concepts(
+                market_behavior_code="INFORMATION_DIFFUSION_LAG",
+                causal_mechanism_code="CROSS_MARKET_INFORMATION_TRANSMISSION",
+                beneficiary_counterparty_codes=["EARLY_INFORMATION_PROCESSORS"],
+                cost_bearer_counterparty_codes=["LATE_INFORMATION_PROCESSORS"],
+                transfer_rationale_code="INFORMATION_TIMING_ADVANTAGE",
+                information_input_codes=["RELATED_MARKET_PRICE_AND_FLOW"],
+                information_availability_code="AVAILABLE_DURING_EVENT",
+                expected_effect_code="CROSS_MARKET_REPRICING",
+                market_context_codes=["CROSS_ASSET"],
+            ),
+        ),
+        (
+            "seasonal-risk-transfer",
+            _concepts(
+                market_behavior_code="SEASONAL_POSITIONING_PRESSURE",
+                causal_mechanism_code="CALENDAR_DRIVEN_RISK_REALLOCATION",
+                beneficiary_counterparty_codes=["PASSIVE_RISK_HOLDERS"],
+                cost_bearer_counterparty_codes=["SYSTEMATIC_ALLOCATORS"],
+                transfer_rationale_code="CALENDAR_RISK_COMPENSATION",
+                information_input_codes=["CALENDAR_SEASONALITY"],
+                information_availability_code="KNOWN_BEFORE_EVENT",
+                expected_effect_code="EXPECTED_RETURN_PREMIUM",
+                holding_horizon_code="SEASONAL_WINDOW",
+                market_context_codes=["SEASONAL_CALENDAR_WINDOW"],
+            ),
+        ),
+        (
+            "funding-constraint-deleveraging",
+            _concepts(
+                market_behavior_code="BALANCE_SHEET_CONTRACTION",
+                causal_mechanism_code="FUNDING_CONSTRAINT_FORCED_DELEVERAGING",
+                beneficiary_counterparty_codes=["UNCONSTRAINED_CAPITAL"],
+                cost_bearer_counterparty_codes=["CONSTRAINED_BALANCE_SHEETS"],
+                transfer_rationale_code="BALANCE_SHEET_CAPACITY_PREMIUM",
+                information_input_codes=["FUNDING_AND_BALANCE_SHEET"],
+                information_availability_code="DELAYED_PUBLIC_RELEASE",
+                expected_effect_code="LIQUIDITY_DISCOUNT",
+                holding_horizon_code="SLOW_MOVING",
+                market_context_codes=["DELEVERAGING_STRESS", "FUNDING_STRESS"],
+            ),
+        ),
+    ],
+)
+def test_taxonomy_represents_approved_general_economic_examples(
+    tmp_path: Path,
+    phenomenon: str,
+    concepts: dict,
+) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(store, f"obs.{phenomenon}")
+    entry = store.create_entry(
+        _entry_payload("ignored", observation, economic_concepts=concepts),
+        actor_id="codex",
+        recorded_at=NOW,
+    )
+    assert entry.classification_status == "CLASSIFIED"
+    assert entry.fingerprint_sha256
+    assert store.validate()["status"] == "PASS"
 
 
 def test_append_is_exclusive_and_no_delete_api_exists(tmp_path: Path) -> None:
@@ -1102,7 +1475,7 @@ def test_suspend_resume_is_append_only_and_allows_later_revision(tmp_path: Path)
         decision_id="decision.suspend",
         recorded_at=NOW,
     )
-    suspension_path = tmp_path / "research/edge_backlog/entries/edge.suspend/decisions/000001.json"
+    suspension_path = store.root / f"entries/{entry.entry_id}/decisions/000001.json"
     suspension_bytes = suspension_path.read_bytes()
     with pytest.raises(EdgeBacklogConflictError, match="is suspended"):
         store.revise_entry(
@@ -1694,7 +2067,16 @@ def test_revisit_lineage_preserves_prior_identity_and_rejects_cycles(tmp_path: P
         store,
         "edge.revisit.new",
         new_obs,
-        causal_mechanism="New participant-classification data identifies a different causal transfer",
+        economic_concepts=_concepts(
+            market_behavior_code="NON_DISCRETIONARY_FLOW",
+            causal_mechanism_code="FLOW_EXHAUSTION",
+            beneficiary_counterparty_codes=["UNCONSTRAINED_CAPITAL"],
+            cost_bearer_counterparty_codes=["FORCED_LIQUIDATORS"],
+            transfer_rationale_code="URGENCY_PREMIUM",
+            expected_effect_code="PRICE_REVERSION",
+            holding_horizon_code="MICROSTRUCTURE_EPISODE",
+            market_context_codes=["DELEVERAGING_STRESS"],
+        ),
     )
     link = store.record_revisit_link(
         new.entry_id,
@@ -1767,92 +2149,97 @@ def test_full_validation_rejects_forged_revisit_before_target_revision(tmp_path:
         store.validate()
 
 
-def test_fingerprint_excludes_title_and_rejects_mechanical_fields(tmp_path: Path) -> None:
+def test_fingerprint_is_structured_and_rejects_mechanical_fields(tmp_path: Path) -> None:
     store = EdgeBacklogStore(tmp_path)
     first_obs = _capture(store, "obs.title.first")
     second_obs = _capture(store, "obs.title.second")
-    first = _create(store, "edge.title.first", first_obs, title="First campaign-style name")
-    second = _create(store, "edge.title.second", second_obs, title="Entirely different title wording")
+    first = _create(store, "edge.title.first", first_obs)
+    second = _create(store, "edge.title.second", second_obs)
 
     assert first.fingerprint_sha256 == second.fingerprint_sha256
     match = next(item for item in store.duplicate_candidates(second.entry_id) if item["candidate_id"] == first.entry_id)
     assert match["exact_fingerprint"] is True
 
     mechanical = _entry_payload("edge.mechanic", first_obs)
-    mechanical["entry_threshold"] = 2.5
+    mechanical["entry_rule"] = "Use short entry after price cross mean"
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         store.create_entry(mechanical, actor_id="codex-task-runner", recorded_at=NOW)
 
 
 @pytest.mark.parametrize(
-    "prohibited_content",
+    ("field", "value"),
     [
-        "Use RSI to define the opportunity.",
-        "Apply a parameter grid over the observation.",
-        "Require a threshold of 2.5 before acting.",
-        "Enter when the completed interval closes.",
-        "Attach a protective stop to the expression.",
-        "Set a profit target at 10 points.",
+        ("indicator", "relative strength index"),
+        ("parameter_values", {"fast": 8, "slow": 21}),
+        ("activation_level", 2.5),
+        ("instruction", "Purchase positions once the fast exponential mean overtakes the slow exponential mean."),
+        ("risk_floor", "one volatility unit"),
+        ("profit_objective", "ten points"),
     ],
 )
-def test_economic_edge_boundary_rejects_mechanics_hidden_in_accepted_free_text(
+def test_classified_entry_contract_has_no_mechanics_channel(
     tmp_path: Path,
-    prohibited_content: str,
+    field: str,
+    value: object,
 ) -> None:
     store = EdgeBacklogStore(tmp_path)
     observation = _capture(store, "obs.semantic-boundary")
-    payload = _entry_payload("edge.semantic-boundary", observation, market_behavior=prohibited_content)
+    payload = _entry_payload("edge.semantic-boundary", observation)
+    payload[field] = value
+    before = list((store.root / "entries").glob("*/revisions/*.json"))
 
-    with pytest.raises(ValidationError, match="must remain economic-edge-only"):
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         store.create_entry(payload, actor_id="codex", recorded_at=NOW)
-    assert not (store.root / "entries/edge.semantic-boundary/revisions/000001.json").exists()
-
-
-def test_economic_edge_boundary_rejects_forged_mechanics_and_observation_instructions(tmp_path: Path) -> None:
-    store = EdgeBacklogStore(tmp_path)
-    with pytest.raises(ValidationError, match="must remain economic-edge-only"):
-        store.capture_observation(
-            _observation_payload(
-                "obs.semantic-instruction",
-                statement="The researcher should exit when price reaches the profit target.",
-            ),
-            actor_id="codex",
-            recorded_at=NOW,
-        )
-
-    observation = _capture(store, "obs.semantic-forgery")
-    entry = _create(store, "edge.semantic-forgery", observation)
-    path = store.root / f"entries/{entry.entry_id}/revisions/000001.json"
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    payload["open_questions"] = ["Should the entry use MACD with a trailing stop?"]
-    _rewrite_record(path, payload)
-    with pytest.raises(EdgeBacklogIntegrityError, match="must remain economic-edge-only"):
-        store.validate()
+    assert list((store.root / "entries").glob("*/revisions/*.json")) == before
+    assert store.validate()["status"] == "PASS"
 
 
 @pytest.mark.parametrize(
-    "mechanical_paraphrase",
+    "mechanics_code",
     [
-        "Purchase positions once the fast exponential mean overtakes the slow exponential mean.",
-        "Acquire exposure after the shorter average rises past the longer average.",
-        "Initiate risk as near term price smoothing passes distant term price smoothing.",
+        "MOVING_AVERAGE_CROSS",
+        "ENTRY_AFTER_PRICE_CROSS",
+        "THRESHOLD_2_5",
+        "PROTECTIVE_STOP",
+        "TEN_POINT_TARGET",
     ],
 )
-def test_positive_economic_vocabulary_rejects_paraphrased_strategy_instructions(
+def test_mechanics_cannot_masquerade_as_economic_concept_codes(
     tmp_path: Path,
-    mechanical_paraphrase: str,
+    mechanics_code: str,
 ) -> None:
     store = EdgeBacklogStore(tmp_path)
-    observation = _capture(store, "obs.positive-vocabulary")
+    observation = _capture(store, "obs.mechanics-code")
     payload = _entry_payload(
-        "edge.positive-vocabulary",
+        "ignored",
         observation,
-        market_behavior=mechanical_paraphrase,
+        economic_concepts=_concepts(market_behavior_code=mechanics_code),
     )
-
-    with pytest.raises(ValidationError, match="economic-vocabulary/v1; unregistered terms"):
+    with pytest.raises(EdgeBacklogIntegrityError, match="absent from the bound taxonomy"):
         store.create_entry(payload, actor_id="codex", recorded_at=NOW)
-    assert not (store.root / "entries/edge.positive-vocabulary/revisions/000001.json").exists()
+    assert not list((store.root / "entries").glob("*/revisions/*.json"))
+
+
+def test_observation_prose_is_unrestricted_source_memory(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    economics = store.capture_observation(
+        _observation_payload(
+            "obs.economic-prose",
+            statement="Dealer gamma hedging amplifies intraday momentum during option expiration by 17.5%.",
+        ),
+        actor_id="codex",
+        recorded_at=NOW,
+    )
+    mechanics_payload = _observation_payload(
+        "obs.strategy-prose",
+        statement="Use short entry after price cross mean; stop at 2.5 points and target 10 points.",
+    )
+    mechanics_payload["statement_kind"] = "SOURCE_QUOTE"
+    mechanics = store.capture_observation(mechanics_payload, actor_id="codex", recorded_at=NOW)
+
+    assert economics.statement_kind == "RESEARCHER_SUMMARY"
+    assert mechanics.statement_kind == "SOURCE_QUOTE"
+    assert mechanics.evidence_refs[0].integrity == "LOCATOR_ONLY"
     assert store.validate()["status"] == "PASS"
 
 
@@ -1877,31 +2264,34 @@ def test_dedup_surfaces_synonyms_source_relationships_and_instrument_transfers(t
         store,
         "edge.synonym.maker",
         shared_source,
-        causal_mechanism="Market makers use slow hedging after the auction",
-        counterparty_transfer_rationale="Market makers transfer returns to patient liquidity",
     )
     dealer = _create(
         store,
         "edge.synonym.dealer",
         same_source,
-        causal_mechanism="Dealers use delayed hedging after the auction",
-        counterparty_transfer_rationale="Dealers transfer returns to patient liquidity",
     )
     unrelated = _create(
         store,
         "edge.same.source.distinct",
         same_source,
-        market_behavior="Late-session forced flow mean reverts",
-        causal_mechanism="Constrained liquidation temporarily exhausts the order book",
-        counterparty_transfer_rationale="Forced sellers transfer returns to unconstrained buyers",
-        information_inputs=["late-session signed flow"],
-        information_availability="After completed liquidation bursts",
-        expected_effect="Reversion after forced flow ends",
-        holding_horizon="Minutes",
-        market_context="Late-session stress",
+        economic_concepts=_concepts(
+            market_behavior_code="NON_DISCRETIONARY_FLOW",
+            causal_mechanism_code="FLOW_EXHAUSTION",
+            beneficiary_counterparty_codes=["UNCONSTRAINED_CAPITAL"],
+            cost_bearer_counterparty_codes=["FORCED_LIQUIDATORS"],
+            transfer_rationale_code="URGENCY_PREMIUM",
+            expected_effect_code="PRICE_REVERSION",
+            holding_horizon_code="MICROSTRUCTURE_EPISODE",
+            market_context_codes=["DELEVERAGING_STRESS"],
+        ),
     )
     transferred_obs = _capture(store, "obs.transfer")
-    transferred = _create(store, "edge.transfer", transferred_obs, instruments=["NQ"])
+    transferred = _create(
+        store,
+        "edge.transfer",
+        transferred_obs,
+        economic_concepts=_concepts(instrument_ids=["NQ"]),
+    )
 
     dealer_match = next(
         item for item in store.duplicate_candidates(dealer.entry_id) if item["candidate_id"] == maker.entry_id
@@ -1918,6 +2308,57 @@ def test_dedup_surfaces_synonyms_source_relationships_and_instrument_transfers(t
     assert unrelated_match["exact_fingerprint"] is False
     assert transfer_match["exact_fingerprint"] is False
     assert transfer_match["taxonomy_score"] >= 0.7
+
+
+def test_matcher_uses_taxonomy_for_classified_and_observations_only_when_unclassified(
+    tmp_path: Path,
+) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    classified_a_observation = _capture(
+        store,
+        "obs.matcher.classified-a",
+        statement="Use short entry after price cross mean.",
+    )
+    classified_b_observation = _capture(
+        store,
+        "obs.matcher.classified-b",
+        statement="Dealer gamma hedging amplifies momentum during option expiration.",
+    )
+    classified_a = _create(store, "ignored", classified_a_observation)
+    classified_b = _create(store, "ignored", classified_b_observation)
+    classified_match = next(
+        item
+        for item in store.duplicate_candidates(classified_b.entry_id)
+        if item["candidate_id"] == classified_a.entry_id
+    )
+    assert classified_match["exact_fingerprint"] is True
+    assert classified_match["taxonomy_score"] == 1.0
+
+    unclassified_entries = []
+    for suffix, statement in (
+        ("a", "A novel public flow phenomenon persists after an auction."),
+        ("b", "The novel public flow phenomenon persists after the auction."),
+    ):
+        observation = _capture(store, f"obs.matcher.unclassified-{suffix}", statement=statement)
+        payload = _entry_payload("ignored", observation)
+        payload.update(
+            {
+                "classification_status": "NEEDS_CLASSIFICATION",
+                "economic_concepts": None,
+                "unclassified_reason": "NOVEL_CONCEPT_NOT_IN_TAXONOMY",
+            }
+        )
+        unclassified_entries.append(
+            store.create_entry(payload, actor_id="codex", recorded_at=NOW)
+        )
+    unclassified_match = next(
+        item
+        for item in store.duplicate_candidates(unclassified_entries[1].entry_id)
+        if item["candidate_id"] == unclassified_entries[0].entry_id
+    )
+    assert unclassified_match["exact_fingerprint"] is False
+    assert unclassified_match["taxonomy_score"] == 0.0
+    assert unclassified_match["lexical_similarity"] > 0.5
 
 
 def test_legacy_campaign_duplicate_behavior_has_golden_output(tmp_path: Path) -> None:
@@ -2009,9 +2450,9 @@ def test_manual_record_tampering_and_unknown_entry_fields_fail_validation(tmp_pa
     store = EdgeBacklogStore(tmp_path)
     observation = _capture(store, "obs.tamper")
     entry = _create(store, "edge.tamper", observation)
-    path = tmp_path / "research/edge_backlog/entries/edge.tamper/revisions/000001.json"
+    path = store.root / f"entries/{entry.entry_id}/revisions/000001.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    payload["title"] = "Hand-edited title"
+    payload["economic_concepts"]["expected_effect_code"] = "PRICE_REVERSION"
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(EdgeBacklogIntegrityError, match="record_sha256"):
         store.validate()

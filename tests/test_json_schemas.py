@@ -19,6 +19,17 @@ def test_all_repository_schemas_are_valid_draft_202012():
         Draft202012Validator.check_schema(json.loads(path.read_text(encoding="utf-8")))
 
 
+def test_published_economic_edge_taxonomy_satisfies_final_v1_schema():
+    schema = _schema("edge-backlog-economic-taxonomy-v1.schema.json")
+    taxonomy = json.loads(
+        Path("research/edge_backlog/contracts/economic-edge-taxonomy-v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert list(Draft202012Validator(schema).iter_errors(taxonomy)) == []
+
+
 def test_campaign_schema_accepts_representative_authored_campaign():
     schema = _schema("campaign.schema.json")
     campaign = yaml.safe_load(

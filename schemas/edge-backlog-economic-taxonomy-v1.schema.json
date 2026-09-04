@@ -1,0 +1,423 @@
+{
+  "$defs": {
+    "CrossFieldInvariantV1": {
+      "additionalProperties": false,
+      "properties": {
+        "definition": {
+          "minLength": 1,
+          "title": "Definition",
+          "type": "string"
+        },
+        "if_any": {
+          "items": {
+            "$ref": "#/$defs/TaxonomySelectionV1"
+          },
+          "minItems": 1,
+          "title": "If Any",
+          "type": "array"
+        },
+        "invariant_id": {
+          "pattern": "^[a-z][a-z0-9_]{2,127}$",
+          "title": "Invariant Id",
+          "type": "string"
+        },
+        "require_all": {
+          "items": {
+            "$ref": "#/$defs/TaxonomySelectionV1"
+          },
+          "title": "Require All",
+          "type": "array"
+        },
+        "require_any": {
+          "items": {
+            "$ref": "#/$defs/TaxonomySelectionV1"
+          },
+          "title": "Require Any",
+          "type": "array"
+        }
+      },
+      "required": [
+        "invariant_id",
+        "definition",
+        "if_any"
+      ],
+      "title": "CrossFieldInvariantV1",
+      "type": "object"
+    },
+    "EconomicCodeSetsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "causal_mechanism": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Causal Mechanism",
+          "type": "array"
+        },
+        "counterparty": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Counterparty",
+          "type": "array"
+        },
+        "expected_effect": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Expected Effect",
+          "type": "array"
+        },
+        "holding_horizon": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Holding Horizon",
+          "type": "array"
+        },
+        "information_availability": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Information Availability",
+          "type": "array"
+        },
+        "information_input": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Information Input",
+          "type": "array"
+        },
+        "instrument": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Instrument",
+          "type": "array"
+        },
+        "market_behavior": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Market Behavior",
+          "type": "array"
+        },
+        "market_context": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Market Context",
+          "type": "array"
+        },
+        "transfer_rationale": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyCodeV1"
+          },
+          "title": "Transfer Rationale",
+          "type": "array"
+        }
+      },
+      "required": [
+        "instrument",
+        "market_behavior",
+        "causal_mechanism",
+        "counterparty",
+        "transfer_rationale",
+        "information_input",
+        "information_availability",
+        "expected_effect",
+        "holding_horizon",
+        "market_context"
+      ],
+      "title": "EconomicCodeSetsV1",
+      "type": "object"
+    },
+    "TaxonomyCodeV1": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "definition": {
+          "minLength": 1,
+          "title": "Definition",
+          "type": "string"
+        },
+        "display_label": {
+          "minLength": 1,
+          "title": "Display Label",
+          "type": "string"
+        },
+        "recall_aliases": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Recall Aliases",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "definition",
+        "display_label"
+      ],
+      "title": "TaxonomyCodeV1",
+      "type": "object"
+    },
+    "TaxonomyDimensionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "cardinality": {
+          "enum": [
+            "SINGLE",
+            "SORTED_SET"
+          ],
+          "title": "Cardinality",
+          "type": "string"
+        },
+        "code_set": {
+          "enum": [
+            "instrument",
+            "market_behavior",
+            "causal_mechanism",
+            "counterparty",
+            "transfer_rationale",
+            "information_input",
+            "information_availability",
+            "expected_effect",
+            "holding_horizon",
+            "market_context"
+          ],
+          "title": "Code Set",
+          "type": "string"
+        },
+        "field": {
+          "enum": [
+            "instrument_ids",
+            "market_behavior_code",
+            "causal_mechanism_code",
+            "beneficiary_counterparty_codes",
+            "cost_bearer_counterparty_codes",
+            "transfer_rationale_code",
+            "information_input_codes",
+            "information_availability_code",
+            "expected_effect_code",
+            "holding_horizon_code",
+            "market_context_codes"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "required_for_classification": {
+          "const": true,
+          "enum": [
+            true
+          ],
+          "title": "Required For Classification",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "field",
+        "code_set",
+        "cardinality",
+        "required_for_classification"
+      ],
+      "title": "TaxonomyDimensionV1",
+      "type": "object"
+    },
+    "TaxonomyHashGenerationV1": {
+      "additionalProperties": false,
+      "properties": {
+        "canonicalization": {
+          "const": "UTF8_SORTED_KEYS_COMPACT_JSON_NO_NAN",
+          "enum": [
+            "UTF8_SORTED_KEYS_COMPACT_JSON_NO_NAN"
+          ],
+          "title": "Canonicalization",
+          "type": "string"
+        },
+        "digest": {
+          "const": "SHA256_LOWERCASE_HEX",
+          "enum": [
+            "SHA256_LOWERCASE_HEX"
+          ],
+          "title": "Digest",
+          "type": "string"
+        },
+        "hash_scope": {
+          "const": "COMPLETE_VALIDATED_TAXONOMY_DOCUMENT",
+          "enum": [
+            "COMPLETE_VALIDATED_TAXONOMY_DOCUMENT"
+          ],
+          "title": "Hash Scope",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonicalization",
+        "digest",
+        "hash_scope"
+      ],
+      "title": "TaxonomyHashGenerationV1",
+      "type": "object"
+    },
+    "TaxonomySelectionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Codes",
+          "type": "array"
+        },
+        "field": {
+          "enum": [
+            "instrument_ids",
+            "market_behavior_code",
+            "causal_mechanism_code",
+            "beneficiary_counterparty_codes",
+            "cost_bearer_counterparty_codes",
+            "transfer_rationale_code",
+            "information_input_codes",
+            "information_availability_code",
+            "expected_effect_code",
+            "holding_horizon_code",
+            "market_context_codes"
+          ],
+          "title": "Field",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "codes"
+      ],
+      "title": "TaxonomySelectionV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "code_sets": {
+      "$ref": "#/$defs/EconomicCodeSetsV1"
+    },
+    "cross_field_invariants": {
+      "items": {
+        "$ref": "#/$defs/CrossFieldInvariantV1"
+      },
+      "title": "Cross Field Invariants",
+      "type": "array"
+    },
+    "description": {
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "dimensions": {
+      "items": {
+        "$ref": "#/$defs/TaxonomyDimensionV1"
+      },
+      "title": "Dimensions",
+      "type": "array"
+    },
+    "fingerprint_schema": {
+      "const": "alphaquest.edge-backlog-fingerprint/v1",
+      "enum": [
+        "alphaquest.edge-backlog-fingerprint/v1"
+      ],
+      "title": "Fingerprint Schema",
+      "type": "string"
+    },
+    "previous_taxonomy_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Previous Taxonomy Sha256"
+    },
+    "prohibited_concept_categories": {
+      "items": {
+        "enum": [
+          "COSMETIC_TIMEFRAMES",
+          "ENTRY_OR_EXIT_RULES",
+          "INDICATORS",
+          "PARAMETER_VALUES",
+          "STOPS",
+          "STRATEGY_MODULES",
+          "TARGETS",
+          "THRESHOLDS"
+        ],
+        "type": "string"
+      },
+      "title": "Prohibited Concept Categories",
+      "type": "array"
+    },
+    "schema": {
+      "const": "alphaquest.economic-edge-taxonomy/v1",
+      "default": "alphaquest.economic-edge-taxonomy/v1",
+      "enum": [
+        "alphaquest.economic-edge-taxonomy/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "taxonomy_hash_generation": {
+      "$ref": "#/$defs/TaxonomyHashGenerationV1"
+    },
+    "taxonomy_id": {
+      "const": "alphaquest-economic-edge",
+      "enum": [
+        "alphaquest-economic-edge"
+      ],
+      "title": "Taxonomy Id",
+      "type": "string"
+    },
+    "taxonomy_version": {
+      "minimum": 1,
+      "title": "Taxonomy Version",
+      "type": "integer"
+    },
+    "unclassified_reason_codes": {
+      "items": {
+        "enum": [
+          "AMBIGUOUS_CAUSAL_MECHANISM",
+          "CONFLICTING_OBSERVATIONS",
+          "INSUFFICIENT_SOURCE_CONTEXT",
+          "MIXED_ECONOMIC_PHENOMENA",
+          "NOVEL_CONCEPT_NOT_IN_TAXONOMY"
+        ],
+        "type": "string"
+      },
+      "title": "Unclassified Reason Codes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "taxonomy_id",
+    "taxonomy_version",
+    "previous_taxonomy_sha256",
+    "description",
+    "fingerprint_schema",
+    "dimensions",
+    "code_sets",
+    "unclassified_reason_codes",
+    "cross_field_invariants",
+    "prohibited_concept_categories",
+    "taxonomy_hash_generation"
+  ],
+  "title": "EconomicEdgeTaxonomyV1",
+  "type": "object"
+}

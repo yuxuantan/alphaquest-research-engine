@@ -17,12 +17,30 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import threading
 from typing import Annotated, Any, Iterator, Literal, Mapping, Sequence, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from alphaquest.research import duplicate_matching as duplicate_core
+from alphaquest.research.edge_backlog_taxonomy import (
+    ClassificationStatus,
+    DIMENSION_FIELDS,
+    EconomicConceptsV1,
+    EconomicEdgeTaxonomyV1,
+    FINGERPRINT_SCHEMA,
+    TaxonomyRefV1,
+    UnclassifiedReason,
+    bundled_taxonomy_root,
+    derived_display_label,
+    fingerprint_sha256 as economic_fingerprint_sha256,
+    load_taxonomy_catalog,
+    matcher_dimensions,
+    resolve_taxonomy,
+    taxonomy_ref as build_taxonomy_ref,
+    validate_concepts,
+)
 from alphaquest.research.storage import StorageLayout, display_path, load_storage_layout
 
 
@@ -30,7 +48,6 @@ OBSERVATION_SCHEMA = "alphaquest.edge-backlog-observation-revision/v1"
 ENTRY_SCHEMA = "alphaquest.edge-backlog-entry-revision/v1"
 DECISION_SCHEMA = "alphaquest.edge-backlog-decision/v1"
 LINK_SCHEMA = "alphaquest.edge-backlog-link/v1"
-FINGERPRINT_SCHEMA = "alphaquest.edge-backlog-fingerprint/v1"
 DUPLICATE_SNAPSHOT_SCHEMA = "alphaquest.edge-backlog-duplicate-snapshot/v1"
 HISTORY_INDEX_SCHEMA = "alphaquest.edge-backlog-history-index-record/v1"
 
@@ -40,17 +57,6 @@ Identifier = Annotated[str, Field(pattern=IDENTIFIER_PATTERN)]
 RecordIdentifier = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_.-]{0,255}$")]
 Sha256 = Annotated[str, Field(pattern=SHA256_PATTERN)]
 NonBlank = Annotated[str, Field(min_length=1)]
-EconomicText = Annotated[
-    str,
-    Field(
-        min_length=1,
-        description=(
-            "Economic-edge description constrained by the positive "
-            "alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; "
-            "strategy mechanics and unregistered terms fail closed."
-        ),
-    ),
-]
 
 ActorClass = Literal[
     "CODEX",
@@ -59,6 +65,7 @@ ActorClass = Literal[
     "EXTERNAL_SYSTEM",
 ]
 IntegrityLevel = Literal["HASH_BOUND", "LOCATOR_ONLY"]
+StatementKind = Literal["SOURCE_QUOTE", "FAITHFUL_PARAPHRASE", "RESEARCHER_SUMMARY"]
 ObservationRole = Literal["MOTIVATING", "SUPPORTING", "CONTRADICTING"]
 Disposition = Literal["REVIEWED_CONTINUE", "REJECTED", "DUPLICATE", "SUSPENDED", "RESUMED"]
 DuplicateResolution = Literal["SAME_EDGE", "RELATED_EDGE_FAMILY", "DISTINCT_EDGE", "UNRESOLVED"]
@@ -86,17 +93,7 @@ LinkRelationship = Literal[
 TargetKind = Literal["HYPOTHESIS", "EDGE_FAMILY", "CAMPAIGN", "EDGE_BACKLOG_ENTRY"]
 
 _TERMINAL_DISPOSITIONS = frozenset({"REJECTED", "DUPLICATE"})
-_IDENTITY_FIELDS = (
-    "instruments",
-    "market_behavior",
-    "causal_mechanism",
-    "counterparty_transfer_rationale",
-    "information_inputs",
-    "information_availability",
-    "expected_effect",
-    "holding_horizon",
-    "market_context",
-)
+_IDENTITY_FIELDS = DIMENSION_FIELDS
 _LINK_TARGETS: dict[str, str] = {
     "HYPOTHESIS_PROPOSAL": "HYPOTHESIS",
     "ADMITTED_HYPOTHESIS": "HYPOTHESIS",
@@ -106,28 +103,6 @@ _LINK_TARGETS: dict[str, str] = {
 }
 _IDENTIFIER = re.compile(IDENTIFIER_PATTERN)
 _EMPTY_RECORD_CHAIN_SHA256 = hashlib.sha256(b"[]").hexdigest()
-_ECONOMIC_CONTENT_VOCABULARY_SCHEMA = "alphaquest.edge-backlog-economic-vocabulary/v1"
-_ECONOMIC_CONTENT_CHARACTERS = re.compile(r"^[A-Za-z][A-Za-z\s,.'?\-]*$")
-# This is deliberately a positive, versioned ontology rather than a list of
-# forbidden strategy words.  An unregistered term is unrepresentable until a
-# reviewed contract version explicitly admits it.
-_ECONOMIC_CONTENT_VOCABULARY = frozenset(
-    """
-    a after against an and another append are as at auction available backdated before beyond book both bound
-    bursts buyers by campaign cannot causal changes child claim clarified classification complete completed completes
-    concurrent constrained continuation costs cross data dealers delayed description different direction
-    discovery does contradicts during early edge edited ends entry entirely equity exhausts effect first flow
-    for forced from futures
-    hand hedgers hedging horizon hours identifies imbalance in index information inputs interval into
-    intraday invalid inventory is late later legitimate liquid liquidation liquidity makers market
-    materially mean mechanism minutes name new observation observed of only opening order parent participant
-    participants patient paper persist persistence persisted persists post preserves pressure price prior
-    providers question regular relation remains renamed reports response resume returns reversion reverts review
-    revision same sample second sellers separate separately session short signed slow source sourced stress style supplied
-    survive temporarily the this through time timestamp title to trading transfer unconstrained use valid
-    wording was while
-    """.split()
-)
 
 
 class EdgeBacklogError(RuntimeError):
@@ -232,19 +207,10 @@ class ObservationRevisionV1(HashedRecord):
     observation_id: Identifier
     revision: Annotated[int, Field(ge=1)]
     previous_revision_sha256: Sha256 | None = None
-    statement: EconomicText
+    statement: NonBlank
+    statement_kind: StatementKind
     evidence_refs: Annotated[list[EvidenceReferenceV1], Field(min_length=1)]
-    known_conflicts: list[EconomicText] = Field(default_factory=list)
-
-    @model_validator(mode="before")
-    @classmethod
-    def reject_strategy_mechanics(cls, value: Any) -> Any:
-        if isinstance(value, Mapping):
-            _validate_economic_edge_content(
-                {field: value.get(field) for field in ("statement", "known_conflicts")},
-                label="observation",
-            )
-        return value
+    known_conflicts: list[NonBlank] = Field(default_factory=list)
 
     @field_validator("statement")
     @classmethod
@@ -274,61 +240,15 @@ class EdgeBacklogEntryRevisionV1(HashedRecord):
     entry_id: Identifier
     revision: Annotated[int, Field(ge=1)]
     previous_revision_sha256: Sha256 | None = None
-    title: EconomicText
-    instruments: Annotated[list[NonBlank], Field(min_length=1)]
-    market_behavior: EconomicText
-    causal_mechanism: EconomicText
-    counterparty_transfer_rationale: EconomicText
-    information_inputs: Annotated[list[EconomicText], Field(min_length=1)]
-    information_availability: EconomicText
-    expected_effect: EconomicText
-    holding_horizon: EconomicText
-    market_context: EconomicText
+    classification_status: ClassificationStatus
+    taxonomy_ref: TaxonomyRefV1
+    governance_scope: Literal["PRE_HYPOTHESIS_BACKLOG_ONLY"]
+    p1_evidence_eligibility: Literal["NOT_CURRENT_P1_EVIDENCE"]
+    economic_concepts: EconomicConceptsV1 | None
+    unclassified_reason: UnclassifiedReason | None
     observation_refs: Annotated[list[ObservationReferenceV1], Field(min_length=1)]
-    open_questions: list[EconomicText] = Field(default_factory=list)
-    fingerprint_version: Literal[FINGERPRINT_SCHEMA] = FINGERPRINT_SCHEMA
-    fingerprint_sha256: Sha256
-
-    @model_validator(mode="before")
-    @classmethod
-    def reject_strategy_mechanics(cls, value: Any) -> Any:
-        if isinstance(value, Mapping):
-            content_fields = (
-                "title",
-                "market_behavior",
-                "causal_mechanism",
-                "counterparty_transfer_rationale",
-                "information_inputs",
-                "information_availability",
-                "expected_effect",
-                "holding_horizon",
-                "market_context",
-                "open_questions",
-            )
-            _validate_economic_edge_content(
-                {field: value.get(field) for field in content_fields},
-                label="edge backlog entry",
-            )
-        return value
-
-    @field_validator(
-        "title",
-        "market_behavior",
-        "causal_mechanism",
-        "counterparty_transfer_rationale",
-        "information_availability",
-        "expected_effect",
-        "holding_horizon",
-        "market_context",
-    )
-    @classmethod
-    def normalize_text(cls, value: str) -> str:
-        return _strip(value)
-
-    @field_validator("instruments", "information_inputs", "open_questions")
-    @classmethod
-    def normalize_lists(cls, values: list[str], info: ValidationInfo) -> list[str]:
-        return _unique_text(values, info.field_name)
+    fingerprint_schema: Literal[FINGERPRINT_SCHEMA] | None
+    fingerprint_sha256: Sha256 | None
 
     @model_validator(mode="after")
     def validate_entry_identity(self, info: ValidationInfo) -> "EdgeBacklogEntryRevisionV1":
@@ -336,8 +256,24 @@ class EdgeBacklogEntryRevisionV1(HashedRecord):
         refs = [(item.observation_id, item.observation_revision_sha256, item.role) for item in self.observation_refs]
         if len(refs) != len(set(refs)):
             raise ValueError("observation_refs must be distinct")
+        if self.classification_status == "CLASSIFIED":
+            if self.economic_concepts is None or self.unclassified_reason is not None:
+                raise ValueError("CLASSIFIED entries require complete concepts and no unclassified reason")
+            if self.fingerprint_schema != FINGERPRINT_SCHEMA or self.fingerprint_sha256 is None:
+                raise ValueError("CLASSIFIED entries require the final v1 economic fingerprint")
+        else:
+            if self.economic_concepts is not None:
+                raise ValueError("NEEDS_CLASSIFICATION entries cannot carry economic concepts")
+            if self.unclassified_reason is None:
+                raise ValueError("NEEDS_CLASSIFICATION entries require an explicit reason")
+            if self.fingerprint_schema is not None or self.fingerprint_sha256 is not None:
+                raise ValueError("NEEDS_CLASSIFICATION entries cannot carry an economic fingerprint")
         skip_fingerprint = bool(info.context and info.context.get("skip_fingerprint"))
-        if not skip_fingerprint and self.fingerprint_sha256 != backlog_fingerprint(self):
+        if (
+            not skip_fingerprint
+            and self.classification_status == "CLASSIFIED"
+            and self.fingerprint_sha256 != backlog_fingerprint(self)
+        ):
             raise ValueError("fingerprint_sha256 does not match normalized economic identity")
         return self
 
@@ -675,14 +611,11 @@ def record_sha256(value: HashedRecord | Mapping[str, Any]) -> str:
 
 def backlog_fingerprint(value: EdgeBacklogEntryRevisionV1 | Mapping[str, Any]) -> str:
     payload = value.model_dump(mode="json", by_alias=True) if isinstance(value, BaseModel) else dict(value)
-    normalized: dict[str, Any] = {"schema": FINGERPRINT_SCHEMA}
-    for field in _IDENTITY_FIELDS:
-        raw = payload.get(field)
-        if isinstance(raw, list):
-            normalized[field] = sorted({_normalize_phrase(str(item)) for item in raw})
-        else:
-            normalized[field] = _normalize_phrase(str(raw or ""))
-    return hashlib.sha256(canonical_json_bytes(normalized)).hexdigest()
+    if payload.get("classification_status") != "CLASSIFIED" or payload.get("economic_concepts") is None:
+        raise ValueError("NEEDS_CLASSIFICATION entries do not have an economic fingerprint")
+    reference = TaxonomyRefV1.model_validate(payload.get("taxonomy_ref"))
+    concepts = EconomicConceptsV1.model_validate(payload["economic_concepts"])
+    return economic_fingerprint_sha256(reference.taxonomy_id, concepts)
 
 
 def load_historical_edge_index_records(path: str | Path) -> list[HistoricalEdgeIndexRecordV1]:
@@ -739,10 +672,20 @@ def _transactional(*, exclusive: bool):
 class EdgeBacklogStore:
     """Append-only access to canonical backlog JSON records."""
 
-    def __init__(self, project_root: str | Path = ".", *, layout: StorageLayout | None = None) -> None:
+    def __init__(
+        self,
+        project_root: str | Path = ".",
+        *,
+        layout: StorageLayout | None = None,
+        taxonomy_root: str | Path | None = None,
+    ) -> None:
         self.project_root = Path(project_root).resolve()
         self.layout = layout or load_storage_layout(self.project_root)
         self.root = self.layout.edge_backlog_root
+        configured_taxonomy_root = self.root / "contracts"
+        self.taxonomy_root = Path(taxonomy_root).resolve() if taxonomy_root else (
+            configured_taxonomy_root if configured_taxonomy_root.is_dir() else bundled_taxonomy_root()
+        )
         self._lock_path = self.layout.studio_runtime_root / "edge-backlog.lock"
         self._thread_lock = threading.RLock()
         self._transaction_state = threading.local()
@@ -821,9 +764,9 @@ class EdgeBacklogStore:
         recorded_at: datetime | None = None,
     ) -> EdgeBacklogEntryRevisionV1:
         self.validate()
-        entry_id = _require_identifier(payload.get("entry_id"), "entry_id")
-        if self._entry_paths(entry_id):
-            raise EdgeBacklogConflictError(f"entry {entry_id!r} already exists; append a revision instead")
+        if "entry_id" in payload:
+            raise EdgeBacklogConflictError("entry_id is engine-generated and cannot be supplied")
+        entry_id = self._new_entry_id()
         return self._append_entry(
             payload,
             entry_id=entry_id,
@@ -831,6 +774,11 @@ class EdgeBacklogStore:
             recorded_at=recorded_at,
             previous=None,
         )
+
+    @_transactional(exclusive=False)
+    def current_taxonomy_ref(self) -> TaxonomyRefV1:
+        catalog = self._taxonomy_catalog()
+        return build_taxonomy_ref(catalog[max(catalog)])
 
     @_transactional(exclusive=True)
     def revise_entry(
@@ -1087,8 +1035,11 @@ class EdgeBacklogStore:
                     "entry_id": entry.entry_id,
                     "revision": entry.revision,
                     "record_sha256": entry.record_sha256,
-                    "title": entry.title,
-                    "instruments": entry.instruments,
+                    "title": self._entry_display_label(entry),
+                    "classification_status": entry.classification_status,
+                    "instrument_ids": (
+                        entry.economic_concepts.instrument_ids if entry.economic_concepts else []
+                    ),
                     "state": self.entry_state(entry.entry_id),
                     "fingerprint_sha256": entry.fingerprint_sha256,
                     "hypothesis_proposed": any(link.relationship == "HYPOTHESIS_PROPOSAL" for link in links),
@@ -1116,22 +1067,7 @@ class EdgeBacklogStore:
             if state and summary["state"] != state:
                 continue
             entry = self.latest_entry(summary["entry_id"])
-            haystack = " ".join(
-                str(value)
-                for value in (
-                    entry.entry_id,
-                    entry.title,
-                    *entry.instruments,
-                    entry.market_behavior,
-                    entry.causal_mechanism,
-                    entry.counterparty_transfer_rationale,
-                    *entry.information_inputs,
-                    entry.information_availability,
-                    entry.expected_effect,
-                    entry.holding_horizon,
-                    entry.market_context,
-                )
-            )
+            haystack = f"{entry.entry_id} {self._entry_text(entry)}"
             if query_tokens and not query_tokens.intersection(duplicate_core.economic_tokens(haystack)):
                 continue
             rows.append(summary)
@@ -1157,7 +1093,7 @@ class EdgeBacklogStore:
     @_transactional(exclusive=False)
     def duplicate_candidates(self, entry_id: str) -> list[dict[str, Any]]:
         query = self.latest_entry(entry_id)
-        query_text = _entry_text(query)
+        query_text = self._entry_text(query)
         query_tokens = duplicate_core.economic_tokens(query_text)
         query_links = self.links(query.entry_id)
         rows: list[dict[str, Any]] = []
@@ -1193,12 +1129,12 @@ class EdgeBacklogStore:
         candidate_links: Sequence[EdgeBacklogLinkV1],
     ) -> dict[str, Any]:
         score = duplicate_core.deterministic_duplicate_score(
-            query_tokens=duplicate_core.economic_tokens(_entry_text(query)),
-            candidate_tokens=duplicate_core.economic_tokens(_entry_text(candidate)),
+            query_tokens=duplicate_core.economic_tokens(self._entry_text(query)),
+            candidate_tokens=duplicate_core.economic_tokens(self._entry_text(candidate)),
             query_fingerprint=query.fingerprint_sha256,
             candidate_fingerprint=candidate.fingerprint_sha256,
-            query_dimensions=_economic_payload(query),
-            candidate_dimensions=_economic_payload(candidate),
+            query_dimensions=self._entry_match_dimensions(query),
+            candidate_dimensions=self._entry_match_dimensions(candidate),
             dimension_fields=_IDENTITY_FIELDS,
             dimension_tokenizer=_backlog_dimension_tokens,
             taxonomy_schema="alphaquest.edge-backlog-duplicate-taxonomy/v1",
@@ -1220,7 +1156,7 @@ class EdgeBacklogStore:
                 candidate_decisions[-1].record_sha256 if candidate_decisions else None
             ),
             "candidate_link_chain_sha256": _record_chain_sha256(candidate_links),
-            "title": candidate.title,
+            "title": self._entry_display_label(candidate),
             "state": state,
             "exact_fingerprint": score["exact_fingerprint"],
             "taxonomy_score": score["taxonomy_score"],
@@ -1235,6 +1171,7 @@ class EdgeBacklogStore:
 
     @_transactional(exclusive=False)
     def validate(self) -> dict[str, Any]:
+        self._taxonomy_catalog()
         self._historical_index_records()
         observations = self._validate_observations()
         entries = self._validate_entries()
@@ -1307,8 +1244,8 @@ class EdgeBacklogStore:
         previous: EdgeBacklogEntryRevisionV1 | None,
     ) -> EdgeBacklogEntryRevisionV1:
         supplied_id = payload.get("entry_id")
-        if supplied_id is not None and supplied_id != entry_id:
-            raise EdgeBacklogConflictError("entry revision cannot change entry_id")
+        if supplied_id is not None:
+            raise EdgeBacklogConflictError("entry_id is managed and cannot be supplied in an entry revision")
         revision = 1 if previous is None else previous.revision + 1
         material = _without_managed_fields(payload)
         material.update(
@@ -1320,16 +1257,21 @@ class EdgeBacklogStore:
                 "previous_revision_sha256": previous.record_sha256 if previous else None,
                 "actor": actor.model_dump(mode="json"),
                 "recorded_at": recorded_at or _now(),
-                "fingerprint_version": FINGERPRINT_SCHEMA,
-                "fingerprint_sha256": "0" * 64,
             }
         )
+        classification_status = material.get("classification_status")
+        material["fingerprint_schema"] = (
+            FINGERPRINT_SCHEMA if classification_status == "CLASSIFIED" else None
+        )
+        material["fingerprint_sha256"] = "0" * 64 if classification_status == "CLASSIFIED" else None
         draft = EdgeBacklogEntryRevisionV1.model_validate(
             {**material, "record_sha256": "0" * 64},
             context={"skip_record_hash": True, "skip_fingerprint": True},
         )
         material = draft.model_dump(mode="json", by_alias=True, exclude={"record_sha256"})
-        material["fingerprint_sha256"] = backlog_fingerprint(material)
+        self._validate_entry_taxonomy(draft, check_fingerprint=False)
+        if draft.classification_status == "CLASSIFIED":
+            material["fingerprint_sha256"] = backlog_fingerprint(material)
         record = _seal(EdgeBacklogEntryRevisionV1, material)
         if previous and record.recorded_at < previous.recorded_at:
             raise EdgeBacklogConflictError("entry revision recorded_at cannot move backward")
@@ -1497,6 +1439,7 @@ class EdgeBacklogStore:
             paths = self._entry_paths(entry_dir.name)
             for expected_revision, path in enumerate(paths, start=1):
                 record = self._load_record(path, EdgeBacklogEntryRevisionV1)
+                self._validate_entry_taxonomy(record)
                 if (
                     path.name != f"{expected_revision:06d}.json"
                     or record.entry_id != entry_dir.name
@@ -1619,7 +1562,7 @@ class EdgeBacklogStore:
         reviewing_decision: EdgeBacklogDecisionV1,
     ) -> None:
         resolved: list[dict[str, Any]] = []
-        query_tokens = duplicate_core.economic_tokens(_entry_text(reviewing_entry))
+        query_tokens = duplicate_core.economic_tokens(self._entry_text(reviewing_entry))
         for candidate in reviewing_decision.candidate_snapshot:
             if candidate.candidate_kind == "DERIVED_HISTORICAL_RECORD":
                 if candidate.historical_record is None:  # model guard; keeps the resolver fail closed
@@ -1890,7 +1833,6 @@ class EdgeBacklogStore:
         historical_record: HistoricalEdgeIndexRecordV1,
     ) -> dict[str, Any]:
         record = historical_record.model_dump(mode="json", by_alias=True)
-        raw = _historical_economic_payload(record)
         history_text = " ".join(
             str(record.get(key) or "")
             for key in (
@@ -1902,15 +1844,13 @@ class EdgeBacklogStore:
                 "raw_failure_reason",
             )
         )
-        legacy = record.get("legacy_fingerprint")
-        legacy_exact = isinstance(legacy, dict) and _legacy_matches_backlog(query, legacy)
         score = duplicate_core.deterministic_duplicate_score(
             query_tokens=query_tokens,
             candidate_tokens=duplicate_core.economic_tokens(history_text),
-            query_fingerprint=query.fingerprint_sha256,
-            candidate_fingerprint=query.fingerprint_sha256 if legacy_exact else None,
-            query_dimensions=_economic_payload(query),
-            candidate_dimensions=raw,
+            query_fingerprint=None,
+            candidate_fingerprint=None,
+            query_dimensions=None,
+            candidate_dimensions=None,
             dimension_fields=_IDENTITY_FIELDS,
             dimension_tokenizer=_backlog_dimension_tokens,
             taxonomy_schema="alphaquest.edge-backlog-duplicate-taxonomy/v1",
@@ -1942,6 +1882,71 @@ class EdgeBacklogStore:
             return load_historical_edge_index_records(path)
         except (OSError, ValueError) as exc:
             raise EdgeBacklogIntegrityError(f"invalid configured historical backlog index {path}: {exc}") from exc
+
+    def _taxonomy_catalog(self) -> dict[int, EconomicEdgeTaxonomyV1]:
+        try:
+            return load_taxonomy_catalog(self.taxonomy_root)
+        except (OSError, ValueError) as exc:
+            raise EdgeBacklogIntegrityError(
+                f"invalid configured economic-edge taxonomy under {self.taxonomy_root}: {exc}"
+            ) from exc
+
+    def _taxonomy_for_entry(self, entry: EdgeBacklogEntryRevisionV1) -> EconomicEdgeTaxonomyV1:
+        try:
+            return resolve_taxonomy(self._taxonomy_catalog(), entry.taxonomy_ref)
+        except ValueError as exc:
+            raise EdgeBacklogIntegrityError(f"entry taxonomy_ref is invalid: {exc}") from exc
+
+    def _validate_entry_taxonomy(
+        self,
+        entry: EdgeBacklogEntryRevisionV1,
+        *,
+        check_fingerprint: bool = True,
+    ) -> None:
+        taxonomy = self._taxonomy_for_entry(entry)
+        if entry.economic_concepts is None:
+            return
+        try:
+            validate_concepts(taxonomy, entry.economic_concepts)
+        except ValueError as exc:
+            raise EdgeBacklogIntegrityError(f"entry economic concepts are invalid: {exc}") from exc
+        if check_fingerprint and entry.fingerprint_sha256 != economic_fingerprint_sha256(
+            taxonomy.taxonomy_id,
+            entry.economic_concepts,
+        ):
+            raise EdgeBacklogIntegrityError("entry fingerprint does not match its bound economic concepts")
+
+    def _entry_display_label(self, entry: EdgeBacklogEntryRevisionV1) -> str:
+        if entry.economic_concepts is None:
+            return f"Needs classification · {entry.entry_id}"
+        taxonomy = self._taxonomy_for_entry(entry)
+        return derived_display_label(taxonomy, entry.economic_concepts)
+
+    def _entry_match_dimensions(self, entry: EdgeBacklogEntryRevisionV1) -> dict[str, Any] | None:
+        if entry.economic_concepts is None:
+            return None
+        taxonomy = self._taxonomy_for_entry(entry)
+        return matcher_dimensions(taxonomy, entry.economic_concepts)
+
+    def _entry_text(self, entry: EdgeBacklogEntryRevisionV1) -> str:
+        dimensions = self._entry_match_dimensions(entry)
+        if dimensions is not None:
+            return " ".join(term for field in _IDENTITY_FIELDS for term in dimensions[field])
+        statements: list[str] = []
+        for ref in entry.observation_refs:
+            for revision in self._all_observation_revisions(ref.observation_id):
+                if revision.record_sha256 == ref.observation_revision_sha256:
+                    statements.append(revision.statement)
+                    statements.extend(revision.known_conflicts)
+                    break
+        return " ".join(statements)
+
+    def _new_entry_id(self) -> str:
+        for _attempt in range(128):
+            candidate = f"edge.{secrets.token_hex(16)}"
+            if not self._entry_paths(candidate):
+                return candidate
+        raise EdgeBacklogConflictError("could not allocate a unique opaque entry_id")
 
     def _all_observation_revisions(self, observation_id: str) -> list[ObservationRevisionV1]:
         return [self._load_record(path, ObservationRevisionV1) for path in self._observation_paths(observation_id)]
@@ -2113,7 +2118,7 @@ def _without_managed_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
         "actor",
         "recorded_at",
         "record_sha256",
-        "fingerprint_version",
+        "fingerprint_schema",
         "fingerprint_sha256",
     }
     unexpected = managed.intersection(payload)
@@ -2174,45 +2179,6 @@ def _unique_text(values: Sequence[str], label: str) -> list[str]:
     return normalized
 
 
-def _normalize_phrase(value: str) -> str:
-    return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
-
-
-def _validate_economic_edge_content(value: Any, *, label: str) -> None:
-    """Accept only the versioned positive economic vocabulary.
-
-    This intentionally rejects every unknown term.  It is not an attempt to
-    infer intent from prose and cannot be bypassed by choosing a synonym that
-    is absent from a forbidden-word list.
-    """
-
-    stack: list[Any] = [value]
-    while stack:
-        current = stack.pop()
-        if isinstance(current, Mapping):
-            stack.extend(current.values())
-            continue
-        if isinstance(current, (list, tuple, set)):
-            stack.extend(current)
-            continue
-        if not isinstance(current, str):
-            continue
-        if not _ECONOMIC_CONTENT_CHARACTERS.fullmatch(current):
-            raise ValueError(
-                f"{label} must remain economic-edge-only and satisfy "
-                f"{_ECONOMIC_CONTENT_VOCABULARY_SCHEMA}; "
-                "only registered economic terms and punctuation are permitted"
-            )
-        tokens = set(_normalize_phrase(current).split())
-        unknown = sorted(tokens - _ECONOMIC_CONTENT_VOCABULARY)
-        if unknown:
-            raise ValueError(
-                f"{label} must remain economic-edge-only and satisfy "
-                f"{_ECONOMIC_CONTENT_VOCABULARY_SCHEMA}; "
-                f"unregistered terms: {', '.join(unknown)}"
-            )
-
-
 def _historical_candidate_projection(record: HistoricalEdgeIndexRecordV1) -> dict[str, Any]:
     return {
         "title": record.raw_title or record.campaign_id or "historical record",
@@ -2256,19 +2222,6 @@ def _fsync_directory(path: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
-
-
-def _economic_payload(value: EdgeBacklogEntryRevisionV1) -> dict[str, Any]:
-    return {field: getattr(value, field) for field in _IDENTITY_FIELDS}
-
-
-def _entry_text(value: EdgeBacklogEntryRevisionV1) -> str:
-    payload = value.model_dump(mode="json")
-    return " ".join(
-        str(item)
-        for field in _IDENTITY_FIELDS
-        for item in (payload[field] if isinstance(payload[field], list) else [payload[field]])
-    )
 
 
 def _backlog_dimension_tokens(_field: str, value: Any) -> set[str]:
@@ -2332,43 +2285,6 @@ def _lineage_related(
     return any(item.relationship == "REVISIT_OF" and item.target_id == right_id for item in left) or any(
         item.relationship == "REVISIT_OF" and item.target_id == left_id for item in right
     )
-
-
-def _historical_economic_payload(record: Mapping[str, Any]) -> dict[str, Any]:
-    legacy = record.get("legacy_fingerprint")
-    legacy = legacy if isinstance(legacy, dict) else {}
-    return {
-        "instruments": [record.get("instrument")] if record.get("instrument") else [],
-        "market_behavior": legacy.get("market_behavior") or record.get("raw_edge") or "",
-        "causal_mechanism": legacy.get("causal_mechanism") or record.get("raw_hypothesis") or "",
-        "counterparty_transfer_rationale": record.get("raw_counterparty_transfer_rationale") or "",
-        "information_inputs": legacy.get("signal_inputs") or [],
-        "information_availability": record.get("raw_information_availability") or "",
-        "expected_effect": record.get("raw_expected_effect") or "",
-        "holding_horizon": legacy.get("holding_period") or record.get("timeframe") or "",
-        "market_context": legacy.get("market_context") or "",
-    }
-
-
-def _legacy_matches_backlog(query: EdgeBacklogEntryRevisionV1, legacy: Mapping[str, Any]) -> bool:
-    mappings = {
-        "market_behavior": query.market_behavior,
-        "causal_mechanism": query.causal_mechanism,
-        "signal_inputs": query.information_inputs,
-        "market_context": query.market_context,
-        "holding_period": query.holding_horizon,
-    }
-    for field, current in mappings.items():
-        historical = legacy.get(field)
-        if historical is None:
-            return False
-        left = duplicate_core.economic_tokens(" ".join(current) if isinstance(current, list) else str(current))
-        right = duplicate_core.economic_tokens(
-            " ".join(historical) if isinstance(historical, list) else str(historical)
-        )
-        if left != right:
-            return False
-    return True
 
 
 def _assert_source_identity_compatible(

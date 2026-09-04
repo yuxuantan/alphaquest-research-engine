@@ -21,10 +21,18 @@ candidates are validated against exact historical entry, decision-chain, and
 link-chain prefixes; historical-index candidates embed their complete strict
 derived record so later index rebuilds do not erase the review binding.
 
-Economic observation and entry prose is intentionally narrow: every token must
-belong to the positively admitted, versioned P2 economic vocabulary. Arbitrary
-free text is rejected because it could encode strategy mechanics through
-paraphrase; expanding the vocabulary requires a reviewed contract change.
+Observation statements and conflicts are unrestricted, source-bound memory and
+grant no P1 or strategy authority. Canonical entry identity is instead limited
+to the immutable taxonomy under `contracts/`: a classified entry contains only
+closed economic codes, while a `NEEDS_CLASSIFICATION` entry contains no concept
+payload or fingerprint. Entry IDs are opaque and engine-generated. The initial
+taxonomy-local instruments are only `ES` and `NQ`; unsupported instruments
+remain observation memory pending an owner-reviewed additive extension.
+
+Taxonomy labels and recall aliases are derived matcher material. Fingerprints
+contain stable taxonomy ID and selected codes, not taxonomy version, taxonomy
+hash, labels, or aliases. Every entry revision still binds the exact taxonomy
+ID/version/SHA used to validate it.
 
 The backlog is not a strategy list and cannot create a scientific verdict,
 admit a hypothesis, create an edge family or campaign, promote a candidate, or

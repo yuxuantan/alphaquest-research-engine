@@ -57,6 +57,10 @@ from alphaquest.research.edge_backlog import (
     EdgeBacklogLinkV1,
     ObservationRevisionV1,
 )
+from alphaquest.research.edge_backlog_taxonomy import (
+    EconomicEdgeFingerprintV1,
+    EconomicEdgeTaxonomyV1,
+)
 
 
 STUDIO_SCHEMA_MODELS = {
@@ -73,7 +77,9 @@ STUDIO_SCHEMA_MODELS = {
     "deployment-decision-v1.schema.json": DeploymentDecisionV1,
     "deployment-monitoring-event-v1.schema.json": DeploymentMonitoringEventV1,
     "edge-backlog-decision-v1.schema.json": EdgeBacklogDecisionV1,
+    "edge-backlog-economic-taxonomy-v1.schema.json": EconomicEdgeTaxonomyV1,
     "edge-backlog-entry-revision-v1.schema.json": EdgeBacklogEntryRevisionV1,
+    "edge-backlog-fingerprint-v1.schema.json": EconomicEdgeFingerprintV1,
     "edge-backlog-link-v1.schema.json": EdgeBacklogLinkV1,
     "edge-backlog-observation-revision-v1.schema.json": ObservationRevisionV1,
     "engineering-handoff-proposal-v1.schema.json": EngineeringHandoffProposalV1,
