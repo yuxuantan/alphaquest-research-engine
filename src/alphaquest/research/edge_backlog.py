@@ -40,6 +40,17 @@ Identifier = Annotated[str, Field(pattern=IDENTIFIER_PATTERN)]
 RecordIdentifier = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_.-]{0,255}$")]
 Sha256 = Annotated[str, Field(pattern=SHA256_PATTERN)]
 NonBlank = Annotated[str, Field(min_length=1)]
+EconomicText = Annotated[
+    str,
+    Field(
+        min_length=1,
+        description=(
+            "Economic-edge description constrained by the positive "
+            "alphaquest.edge-backlog-economic-vocabulary/v1 runtime contract; "
+            "strategy mechanics and unregistered terms fail closed."
+        ),
+    ),
+]
 
 ActorClass = Literal[
     "CODEX",
@@ -95,58 +106,27 @@ _LINK_TARGETS: dict[str, str] = {
 }
 _IDENTIFIER = re.compile(IDENTIFIER_PATTERN)
 _EMPTY_RECORD_CHAIN_SHA256 = hashlib.sha256(b"[]").hexdigest()
-_STRATEGY_MECHANICS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    (
-        "indicator",
-        re.compile(
-            r"\b(?:rsi|macd|stochastic|bollinger(?:\s+bands?)?|moving\s+averages?|ema|sma|atr|"
-            r"average\s+true\s+range|relative\s+strength\s+index|"
-            r"(?:exponential|simple)\s+moving\s+averages?|vwap|volume[-\s]weighted\s+average\s+price|"
-            r"z[-\s]?score|parabolic\s+sar|ichimoku)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "parameter",
-        re.compile(
-            r"\b(?:parameter(?:s|ization)?|parameter\s+grid|lookback(?:\s+(?:period|window))?|"
-            r"period\s*=\s*\d+|window\s+of\s+\d+|length\s*=\s*\d+|"
-            r"\d+[-\s](?:period|bar|tick)\b|risk[-\s/]reward)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "threshold",
-        re.compile(
-            r"\bthresholds?\b|(?:>=|<=|>|<)\s*-?\d+(?:\.\d+)?|"
-            r"\b(?:above|below|exceeds?|crosses?|at\s+least|no\s+more\s+than|"
-            r"minimum(?:\s+of)?|maximum(?:\s+of)?)\s+-?\d+(?:\.\d+)?(?:\s*%)?\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "entry or exit instruction",
-        re.compile(
-            r"\b(?:enter|entry|buy|sell|go\s+long|go\s+short|open\s+(?:a\s+)?(?:long|short)|"
-            r"exit|flatten|close\s+(?:the\s+)?position)\s+(?:when|if|at|on|after|before)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "stop instruction",
-        re.compile(
-            r"\b(?:stop[-\s]?(?:loss|order)|protective\s+stop|trailing\s+stop|"
-            r"place\s+(?:a\s+)?stop|stop\s+(?:at|when|if|of))\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "target instruction",
-        re.compile(
-            r"\b(?:profit\s+target|price\s+target|take[-\s]?profit|target\s+(?:at|of|when|if))\b",
-            re.IGNORECASE,
-        ),
-    ),
+_ECONOMIC_CONTENT_VOCABULARY_SCHEMA = "alphaquest.edge-backlog-economic-vocabulary/v1"
+_ECONOMIC_CONTENT_CHARACTERS = re.compile(r"^[A-Za-z][A-Za-z\s,.'?\-]*$")
+# This is deliberately a positive, versioned ontology rather than a list of
+# forbidden strategy words.  An unregistered term is unrepresentable until a
+# reviewed contract version explicitly admits it.
+_ECONOMIC_CONTENT_VOCABULARY = frozenset(
+    """
+    a after against an and another append are as at auction available backdated before beyond book both bound
+    bursts buyers by campaign cannot causal changes child claim clarified classification complete completed completes
+    concurrent constrained continuation costs cross data dealers delayed description different direction
+    discovery does contradicts during early edge edited ends entry entirely equity exhausts effect first flow
+    for forced from futures
+    hand hedgers hedging horizon hours identifies imbalance in index information inputs interval into
+    intraday invalid inventory is late later legitimate liquid liquidation liquidity makers market
+    materially mean mechanism minutes name new observation observed of only opening order parent participant
+    participants patient paper persist persistence persisted persists post preserves pressure price prior
+    providers question regular relation remains renamed reports response resume returns reversion reverts review
+    revision same sample second sellers separate separately session short signed slow source sourced stress style supplied
+    survive temporarily the this through time timestamp title to trading transfer unconstrained use valid
+    wording was while
+    """.split()
 )
 
 
@@ -252,9 +232,9 @@ class ObservationRevisionV1(HashedRecord):
     observation_id: Identifier
     revision: Annotated[int, Field(ge=1)]
     previous_revision_sha256: Sha256 | None = None
-    statement: NonBlank
+    statement: EconomicText
     evidence_refs: Annotated[list[EvidenceReferenceV1], Field(min_length=1)]
-    known_conflicts: list[NonBlank] = Field(default_factory=list)
+    known_conflicts: list[EconomicText] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -294,18 +274,18 @@ class EdgeBacklogEntryRevisionV1(HashedRecord):
     entry_id: Identifier
     revision: Annotated[int, Field(ge=1)]
     previous_revision_sha256: Sha256 | None = None
-    title: NonBlank
+    title: EconomicText
     instruments: Annotated[list[NonBlank], Field(min_length=1)]
-    market_behavior: NonBlank
-    causal_mechanism: NonBlank
-    counterparty_transfer_rationale: NonBlank
-    information_inputs: Annotated[list[NonBlank], Field(min_length=1)]
-    information_availability: NonBlank
-    expected_effect: NonBlank
-    holding_horizon: NonBlank
-    market_context: NonBlank
+    market_behavior: EconomicText
+    causal_mechanism: EconomicText
+    counterparty_transfer_rationale: EconomicText
+    information_inputs: Annotated[list[EconomicText], Field(min_length=1)]
+    information_availability: EconomicText
+    expected_effect: EconomicText
+    holding_horizon: EconomicText
+    market_context: EconomicText
     observation_refs: Annotated[list[ObservationReferenceV1], Field(min_length=1)]
-    open_questions: list[NonBlank] = Field(default_factory=list)
+    open_questions: list[EconomicText] = Field(default_factory=list)
     fingerprint_version: Literal[FINGERPRINT_SCHEMA] = FINGERPRINT_SCHEMA
     fingerprint_sha256: Sha256
 
@@ -463,6 +443,7 @@ class DuplicateCandidateV1(StrictBacklogModel):
     semantic_resolution: Literal["NEEDS_MANUAL_REVIEW"] | None = None
     historical_scientific_verdict: str | None = None
     historical_disposition: str | None = None
+    historical_record: HistoricalEdgeIndexRecordV1 | None = None
 
     @model_validator(mode="after")
     def validate_candidate_kind(self) -> "DuplicateCandidateV1":
@@ -477,16 +458,40 @@ class DuplicateCandidateV1(StrictBacklogModel):
         if self.candidate_kind == "DERIVED_HISTORICAL_RECORD":
             if any(value is None for value in historical_fields):
                 raise ValueError("historical duplicate candidates require complete derived-index provenance")
+            if self.historical_record is None:
+                raise ValueError("historical duplicate candidates require the complete historical record")
             if self.candidate_id != f"history:{self.candidate_record_sha256}":
                 raise ValueError("historical candidate_id must bind the complete record_sha256")
+            if self.candidate_record_sha256 != self.historical_record.record_sha256:
+                raise ValueError("historical candidate hash must match the embedded historical record")
             if self.candidate_decision_sha256 is not None:
                 raise ValueError("historical candidates cannot claim a canonical decision")
             if self.candidate_link_chain_sha256 != _EMPTY_RECORD_CHAIN_SHA256:
                 raise ValueError("historical candidates cannot claim a canonical link chain")
+            expected = _historical_candidate_projection(self.historical_record)
+            actual = {
+                "title": self.title,
+                "state": self.state,
+                "source_path": self.source_path,
+                "archive_generation": self.archive_generation,
+                "source_generation": self.source_generation,
+                "p1_evidence_eligibility": self.p1_evidence_eligibility,
+                "derived_index_use": self.derived_index_use,
+                "semantic_resolution": self.semantic_resolution,
+                "historical_scientific_verdict": self.historical_scientific_verdict,
+                "historical_disposition": self.historical_disposition,
+            }
+            if actual != expected:
+                raise ValueError("historical candidate projection does not match its embedded record")
         else:
             if not _IDENTIFIER.fullmatch(self.candidate_id):
                 raise ValueError("canonical candidate_id must be a backlog identifier")
-            optional_history = (*historical_fields, self.historical_scientific_verdict, self.historical_disposition)
+            optional_history = (
+                *historical_fields,
+                self.historical_scientific_verdict,
+                self.historical_disposition,
+                self.historical_record,
+            )
             if any(value is not None for value in optional_history):
                 raise ValueError("canonical backlog candidates cannot carry historical-index fields")
         return self
@@ -559,7 +564,7 @@ class EdgeBacklogDecisionV1(HashedRecord):
             "entry_id": self.entry_id,
             "entry_revision_sha256": self.entry_revision_sha256,
             "entry_link_chain_sha256": self.entry_link_chain_sha256,
-            "candidates": [item.model_dump(mode="json") for item in self.candidate_snapshot],
+            "candidates": [item.model_dump(mode="json", by_alias=True) for item in self.candidate_snapshot],
         }
         actual_snapshot_sha256 = hashlib.sha256(canonical_json_bytes(candidate_core)).hexdigest()
         if self.candidate_snapshot_sha256 != actual_snapshot_sha256:
@@ -1137,7 +1142,7 @@ class EdgeBacklogStore:
         entry = self.latest_entry(entry_id)
         entry_link_chain_sha256 = _record_chain_sha256(self.links(entry.entry_id))
         candidates = [
-            DuplicateCandidateV1.model_validate(item).model_dump(mode="json")
+            DuplicateCandidateV1.model_validate(item).model_dump(mode="json", by_alias=True)
             for item in self.duplicate_candidates(entry_id)
         ]
         core = {
@@ -1154,7 +1159,6 @@ class EdgeBacklogStore:
         query = self.latest_entry(entry_id)
         query_text = _entry_text(query)
         query_tokens = duplicate_core.economic_tokens(query_text)
-        query_sources = self._entry_source_ids(query)
         query_links = self.links(query.entry_id)
         rows: list[dict[str, Any]] = []
         for summary in self.list_entries():
@@ -1163,41 +1167,14 @@ class EdgeBacklogStore:
             candidate = self.latest_entry(summary["entry_id"])
             candidate_links = self.links(candidate.entry_id)
             candidate_decisions = self.decisions(candidate.entry_id)
-            score = duplicate_core.deterministic_duplicate_score(
-                query_tokens=query_tokens,
-                candidate_tokens=duplicate_core.economic_tokens(_entry_text(candidate)),
-                query_fingerprint=query.fingerprint_sha256,
-                candidate_fingerprint=candidate.fingerprint_sha256,
-                query_dimensions=_economic_payload(query),
-                candidate_dimensions=_economic_payload(candidate),
-                dimension_fields=_IDENTITY_FIELDS,
-                dimension_tokenizer=_backlog_dimension_tokens,
-                taxonomy_schema="alphaquest.edge-backlog-duplicate-taxonomy/v1",
-            )
-            source_overlap = sorted(query_sources & self._entry_source_ids(candidate))
-            related_targets = _shared_link_targets(query_links, candidate_links)
-            lineage = _lineage_related(query.entry_id, candidate.entry_id, query_links, candidate_links)
             rows.append(
-                {
-                    "candidate_id": candidate.entry_id,
-                    "candidate_kind": "CANONICAL_BACKLOG_ENTRY",
-                    "candidate_record_sha256": candidate.record_sha256,
-                    "candidate_decision_sha256": (
-                        candidate_decisions[-1].record_sha256 if candidate_decisions else None
-                    ),
-                    "candidate_link_chain_sha256": _record_chain_sha256(candidate_links),
-                    "title": candidate.title,
-                    "state": summary["state"],
-                    "exact_fingerprint": score["exact_fingerprint"],
-                    "taxonomy_score": score["taxonomy_score"],
-                    "dimension_scores": score["dimension_scores"],
-                    "matched_dimensions": score["matched_dimensions"],
-                    "lexical_similarity": score["lexical_similarity"],
-                    "source_overlap": source_overlap,
-                    "shared_link_targets": related_targets,
-                    "lineage_related": lineage,
-                    "_force_recall": bool(source_overlap or related_targets or lineage),
-                }
+                self._canonical_candidate_material(
+                    query,
+                    query_links,
+                    candidate,
+                    candidate_decisions,
+                    candidate_links,
+                )
             )
         rows.extend(self._historical_candidates(query, query_tokens))
         return duplicate_core.rank_duplicate_candidates(
@@ -1206,6 +1183,55 @@ class EdgeBacklogStore:
             lexical_field="lexical_similarity",
             minimum_similarity=0.12,
         )
+
+    def _canonical_candidate_material(
+        self,
+        query: EdgeBacklogEntryRevisionV1,
+        query_links: Sequence[EdgeBacklogLinkV1],
+        candidate: EdgeBacklogEntryRevisionV1,
+        candidate_decisions: Sequence[EdgeBacklogDecisionV1],
+        candidate_links: Sequence[EdgeBacklogLinkV1],
+    ) -> dict[str, Any]:
+        score = duplicate_core.deterministic_duplicate_score(
+            query_tokens=duplicate_core.economic_tokens(_entry_text(query)),
+            candidate_tokens=duplicate_core.economic_tokens(_entry_text(candidate)),
+            query_fingerprint=query.fingerprint_sha256,
+            candidate_fingerprint=candidate.fingerprint_sha256,
+            query_dimensions=_economic_payload(query),
+            candidate_dimensions=_economic_payload(candidate),
+            dimension_fields=_IDENTITY_FIELDS,
+            dimension_tokenizer=_backlog_dimension_tokens,
+            taxonomy_schema="alphaquest.edge-backlog-duplicate-taxonomy/v1",
+        )
+        source_overlap = sorted(self._entry_source_ids(query) & self._entry_source_ids(candidate))
+        related_targets = _shared_link_targets(query_links, candidate_links)
+        lineage = _lineage_related(query.entry_id, candidate.entry_id, query_links, candidate_links)
+        state = (
+            candidate_decisions[-1].disposition
+            if candidate_decisions
+            and candidate_decisions[-1].entry_revision_sha256 == candidate.record_sha256
+            else "UNREVIEWED"
+        )
+        return {
+            "candidate_id": candidate.entry_id,
+            "candidate_kind": "CANONICAL_BACKLOG_ENTRY",
+            "candidate_record_sha256": candidate.record_sha256,
+            "candidate_decision_sha256": (
+                candidate_decisions[-1].record_sha256 if candidate_decisions else None
+            ),
+            "candidate_link_chain_sha256": _record_chain_sha256(candidate_links),
+            "title": candidate.title,
+            "state": state,
+            "exact_fingerprint": score["exact_fingerprint"],
+            "taxonomy_score": score["taxonomy_score"],
+            "dimension_scores": score["dimension_scores"],
+            "matched_dimensions": score["matched_dimensions"],
+            "lexical_similarity": score["lexical_similarity"],
+            "source_overlap": source_overlap,
+            "shared_link_targets": related_targets,
+            "lineage_related": lineage,
+            "_force_recall": bool(source_overlap or related_targets or lineage),
+        }
 
     @_transactional(exclusive=False)
     def validate(self) -> dict[str, Any]:
@@ -1545,6 +1571,12 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError("decision precedes a link included in its bound link-chain prefix")
             if any(link.recorded_at < decision.recorded_at for link in link_history[link_prefix:]):
                 raise EdgeBacklogIntegrityError("a later link is backdated before its preceding decision")
+            if decision.disposition != "RESUMED":
+                self._validate_persisted_candidate_snapshot(
+                    reviewing_entry=bound_revision,
+                    reviewing_links=link_history[:link_prefix],
+                    reviewing_decision=decision,
+                )
             if previous:
                 if previous.disposition in _TERMINAL_DISPOSITIONS:
                     raise EdgeBacklogIntegrityError("terminal decision has later history")
@@ -1579,6 +1611,139 @@ class EdgeBacklogStore:
                 if previous_link_prefix != len(link_history):
                     raise EdgeBacklogIntegrityError("entry received a link without a human resume")
 
+    def _validate_persisted_candidate_snapshot(
+        self,
+        *,
+        reviewing_entry: EdgeBacklogEntryRevisionV1,
+        reviewing_links: Sequence[EdgeBacklogLinkV1],
+        reviewing_decision: EdgeBacklogDecisionV1,
+    ) -> None:
+        resolved: list[dict[str, Any]] = []
+        query_tokens = duplicate_core.economic_tokens(_entry_text(reviewing_entry))
+        for candidate in reviewing_decision.candidate_snapshot:
+            if candidate.candidate_kind == "DERIVED_HISTORICAL_RECORD":
+                if candidate.historical_record is None:  # model guard; keeps the resolver fail closed
+                    raise EdgeBacklogIntegrityError("historical candidate is missing its embedded record")
+                resolved.append(
+                    self._historical_candidate_material(
+                        reviewing_entry,
+                        query_tokens,
+                        candidate.historical_record,
+                    )
+                )
+                continue
+            if candidate.candidate_id == reviewing_entry.entry_id:
+                raise EdgeBacklogIntegrityError("candidate snapshot cannot include its reviewing entry")
+            revisions = self._all_entry_revisions(candidate.candidate_id)
+            if not revisions:
+                raise EdgeBacklogIntegrityError(
+                    f"candidate snapshot references nonexistent entry {candidate.candidate_id}"
+                )
+            revision_position = next(
+                (
+                    position
+                    for position, revision in enumerate(revisions)
+                    if revision.record_sha256 == candidate.candidate_record_sha256
+                ),
+                None,
+            )
+            if revision_position is None:
+                raise EdgeBacklogIntegrityError(
+                    "candidate_record_sha256 does not resolve to a revision belonging to the candidate"
+                )
+            bound_revision = revisions[revision_position]
+            self._validate_candidate_prefix_chronology(
+                included=(*revisions[: revision_position + 1],),
+                excluded=(*revisions[revision_position + 1 :],),
+                reviewing_at=reviewing_decision.recorded_at,
+                label="candidate revision",
+            )
+
+            decisions = self.decisions(candidate.candidate_id)
+            if candidate.candidate_decision_sha256 is None:
+                decision_prefix_length = 0
+            else:
+                decision_prefix_length = next(
+                    (
+                        position
+                        for position, item in enumerate(decisions, start=1)
+                        if item.record_sha256 == candidate.candidate_decision_sha256
+                    ),
+                    0,
+                )
+                if not decision_prefix_length:
+                    raise EdgeBacklogIntegrityError(
+                        "candidate_decision_sha256 is not an exact historical decision prefix"
+                    )
+            candidate_decisions = decisions[:decision_prefix_length]
+            self._validate_candidate_prefix_chronology(
+                included=tuple(candidate_decisions),
+                excluded=tuple(decisions[decision_prefix_length:]),
+                reviewing_at=reviewing_decision.recorded_at,
+                label="candidate decision prefix",
+            )
+
+            links = self.links(candidate.candidate_id)
+            link_prefix_length = next(
+                (
+                    length
+                    for length in range(len(links) + 1)
+                    if _record_chain_sha256(links[:length]) == candidate.candidate_link_chain_sha256
+                ),
+                None,
+            )
+            if link_prefix_length is None:
+                raise EdgeBacklogIntegrityError(
+                    "candidate_link_chain_sha256 is not an exact historical link prefix"
+                )
+            candidate_links = links[:link_prefix_length]
+            self._validate_candidate_prefix_chronology(
+                included=tuple(candidate_links),
+                excluded=tuple(links[link_prefix_length:]),
+                reviewing_at=reviewing_decision.recorded_at,
+                label="candidate link prefix",
+            )
+            resolved.append(
+                self._canonical_candidate_material(
+                    reviewing_entry,
+                    reviewing_links,
+                    bound_revision,
+                    candidate_decisions,
+                    candidate_links,
+                )
+            )
+
+        expected = [
+            DuplicateCandidateV1.model_validate(item).model_dump(mode="json", by_alias=True)
+            for item in duplicate_core.rank_duplicate_candidates(
+                resolved,
+                identity_field="candidate_id",
+                lexical_field="lexical_similarity",
+                minimum_similarity=0.12,
+            )
+        ]
+        actual = [
+            item.model_dump(mode="json", by_alias=True)
+            for item in reviewing_decision.candidate_snapshot
+        ]
+        if expected != actual:
+            raise EdgeBacklogIntegrityError(
+                "candidate snapshot fields or deterministic ranking do not match the bound historical state"
+            )
+
+    @staticmethod
+    def _validate_candidate_prefix_chronology(
+        *,
+        included: Sequence[HashedRecord],
+        excluded: Sequence[HashedRecord],
+        reviewing_at: datetime,
+        label: str,
+    ) -> None:
+        if any(item.recorded_at > reviewing_at for item in included):
+            raise EdgeBacklogIntegrityError(f"{label} contains activity after the reviewing decision")
+        if any(item.recorded_at < reviewing_at for item in excluded):
+            raise EdgeBacklogIntegrityError(f"{label} omits activity preceding the reviewing decision")
+
     def _validate_link_history(
         self,
         entry: EdgeBacklogEntryRevisionV1,
@@ -1606,7 +1771,12 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError("link precedes its bound entry revision")
             target = self._target_file(link.target_locator)
             if link.relationship == "REVISIT_OF":
-                target_sha256 = self._load_record(target, EdgeBacklogEntryRevisionV1).record_sha256
+                target_record = self._load_record(target, EdgeBacklogEntryRevisionV1)
+                target_sha256 = target_record.record_sha256
+                if link.recorded_at < target_record.recorded_at:
+                    raise EdgeBacklogIntegrityError(
+                        "REVISIT_OF link precedes its exact targeted prior-entry revision"
+                    )
                 if link.authorizing_decision_id is not None:
                     try:
                         authorization = self.decision(link.target_id, link.authorizing_decision_id)
@@ -1708,64 +1878,61 @@ class EdgeBacklogStore:
         query: EdgeBacklogEntryRevisionV1,
         query_tokens: set[str],
     ) -> list[dict[str, Any]]:
-        rows: list[dict[str, Any]] = []
-        for historical_record in self._historical_index_records():
-            record = historical_record.model_dump(mode="json", by_alias=True)
-            historical_sha256 = historical_record.record_sha256
-            raw = _historical_economic_payload(record)
-            history_text = " ".join(
-                str(record.get(key) or "")
-                for key in (
-                    "campaign_id",
-                    "raw_title",
-                    "raw_edge",
-                    "raw_hypothesis",
-                    "raw_edge_family",
-                    "raw_failure_reason",
-                )
+        return [
+            self._historical_candidate_material(query, query_tokens, record)
+            for record in self._historical_index_records()
+        ]
+
+    def _historical_candidate_material(
+        self,
+        query: EdgeBacklogEntryRevisionV1,
+        query_tokens: set[str],
+        historical_record: HistoricalEdgeIndexRecordV1,
+    ) -> dict[str, Any]:
+        record = historical_record.model_dump(mode="json", by_alias=True)
+        raw = _historical_economic_payload(record)
+        history_text = " ".join(
+            str(record.get(key) or "")
+            for key in (
+                "campaign_id",
+                "raw_title",
+                "raw_edge",
+                "raw_hypothesis",
+                "raw_edge_family",
+                "raw_failure_reason",
             )
-            legacy = record.get("legacy_fingerprint")
-            legacy_exact = isinstance(legacy, dict) and _legacy_matches_backlog(query, legacy)
-            score = duplicate_core.deterministic_duplicate_score(
-                query_tokens=query_tokens,
-                candidate_tokens=duplicate_core.economic_tokens(history_text),
-                query_fingerprint=query.fingerprint_sha256,
-                candidate_fingerprint=query.fingerprint_sha256 if legacy_exact else None,
-                query_dimensions=_economic_payload(query),
-                candidate_dimensions=raw,
-                dimension_fields=_IDENTITY_FIELDS,
-                dimension_tokenizer=_backlog_dimension_tokens,
-                taxonomy_schema="alphaquest.edge-backlog-duplicate-taxonomy/v1",
-                available_only=True,
-            )
-            rows.append(
-                {
-                    "candidate_id": f"history:{historical_sha256}",
-                    "candidate_kind": "DERIVED_HISTORICAL_RECORD",
-                    "candidate_record_sha256": historical_sha256,
-                    "candidate_decision_sha256": None,
-                    "candidate_link_chain_sha256": _record_chain_sha256(()),
-                    "title": record.get("raw_title") or record.get("campaign_id") or "historical record",
-                    "state": record.get("raw_outcome") or record.get("semantic_resolution"),
-                    "exact_fingerprint": score["exact_fingerprint"],
-                    "taxonomy_score": score["taxonomy_score"],
-                    "dimension_scores": score["dimension_scores"],
-                    "matched_dimensions": score["matched_dimensions"],
-                    "lexical_similarity": score["lexical_similarity"],
-                    "source_overlap": [],
-                    "shared_link_targets": [],
-                    "lineage_related": False,
-                    "source_path": record.get("source_path"),
-                    "archive_generation": record.get("archive_generation"),
-                    "source_generation": record.get("source_generation"),
-                    "p1_evidence_eligibility": record.get("p1_evidence_eligibility"),
-                    "derived_index_use": record.get("derived_index_use"),
-                    "semantic_resolution": record.get("semantic_resolution"),
-                    "historical_scientific_verdict": record.get("raw_scientific_verdict"),
-                    "historical_disposition": record.get("raw_disposition"),
-                }
-            )
-        return rows
+        )
+        legacy = record.get("legacy_fingerprint")
+        legacy_exact = isinstance(legacy, dict) and _legacy_matches_backlog(query, legacy)
+        score = duplicate_core.deterministic_duplicate_score(
+            query_tokens=query_tokens,
+            candidate_tokens=duplicate_core.economic_tokens(history_text),
+            query_fingerprint=query.fingerprint_sha256,
+            candidate_fingerprint=query.fingerprint_sha256 if legacy_exact else None,
+            query_dimensions=_economic_payload(query),
+            candidate_dimensions=raw,
+            dimension_fields=_IDENTITY_FIELDS,
+            dimension_tokenizer=_backlog_dimension_tokens,
+            taxonomy_schema="alphaquest.edge-backlog-duplicate-taxonomy/v1",
+            available_only=True,
+        )
+        return {
+            "candidate_id": f"history:{historical_record.record_sha256}",
+            "candidate_kind": "DERIVED_HISTORICAL_RECORD",
+            "candidate_record_sha256": historical_record.record_sha256,
+            "candidate_decision_sha256": None,
+            "candidate_link_chain_sha256": _EMPTY_RECORD_CHAIN_SHA256,
+            **_historical_candidate_projection(historical_record),
+            "exact_fingerprint": score["exact_fingerprint"],
+            "taxonomy_score": score["taxonomy_score"],
+            "dimension_scores": score["dimension_scores"],
+            "matched_dimensions": score["matched_dimensions"],
+            "lexical_similarity": score["lexical_similarity"],
+            "source_overlap": [],
+            "shared_link_targets": [],
+            "lineage_related": False,
+            "historical_record": record,
+        }
 
     def _historical_index_records(self) -> list[HistoricalEdgeIndexRecordV1]:
         path = self.layout.edge_backlog_history_index
@@ -1796,9 +1963,16 @@ class EdgeBacklogStore:
 
     def _load_record(self, path: Path, model: type[RecordType]) -> RecordType:
         try:
-            return model.model_validate_json(path.read_bytes())
+            data = path.read_bytes()
+            record = model.model_validate_json(data)
         except (OSError, ValueError) as exc:
             raise EdgeBacklogIntegrityError(f"invalid canonical backlog record {path}: {exc}") from exc
+        expected = canonical_json_bytes(record) + b"\n"
+        if data != expected:
+            raise EdgeBacklogIntegrityError(
+                f"canonical backlog record is not byte-canonically serialized: {path}"
+            )
+        return record
 
     def _target_file(self, locator: str | Path) -> Path:
         path = Path(locator)
@@ -2005,7 +2179,12 @@ def _normalize_phrase(value: str) -> str:
 
 
 def _validate_economic_edge_content(value: Any, *, label: str) -> None:
-    """Reject deterministic strategy mechanics hidden inside accepted free text."""
+    """Accept only the versioned positive economic vocabulary.
+
+    This intentionally rejects every unknown term.  It is not an attempt to
+    infer intent from prose and cannot be bypassed by choosing a synonym that
+    is absent from a forbidden-word list.
+    """
 
     stack: list[Any] = [value]
     while stack:
@@ -2018,9 +2197,35 @@ def _validate_economic_edge_content(value: Any, *, label: str) -> None:
             continue
         if not isinstance(current, str):
             continue
-        for mechanic, pattern in _STRATEGY_MECHANICS_PATTERNS:
-            if pattern.search(current):
-                raise ValueError(f"{label} must remain economic-edge-only; prohibited {mechanic} supplied")
+        if not _ECONOMIC_CONTENT_CHARACTERS.fullmatch(current):
+            raise ValueError(
+                f"{label} must remain economic-edge-only and satisfy "
+                f"{_ECONOMIC_CONTENT_VOCABULARY_SCHEMA}; "
+                "only registered economic terms and punctuation are permitted"
+            )
+        tokens = set(_normalize_phrase(current).split())
+        unknown = sorted(tokens - _ECONOMIC_CONTENT_VOCABULARY)
+        if unknown:
+            raise ValueError(
+                f"{label} must remain economic-edge-only and satisfy "
+                f"{_ECONOMIC_CONTENT_VOCABULARY_SCHEMA}; "
+                f"unregistered terms: {', '.join(unknown)}"
+            )
+
+
+def _historical_candidate_projection(record: HistoricalEdgeIndexRecordV1) -> dict[str, Any]:
+    return {
+        "title": record.raw_title or record.campaign_id or "historical record",
+        "state": record.raw_outcome or record.semantic_resolution,
+        "source_path": record.source_path,
+        "archive_generation": record.archive_generation,
+        "source_generation": record.source_generation,
+        "p1_evidence_eligibility": record.p1_evidence_eligibility,
+        "derived_index_use": record.derived_index_use,
+        "semantic_resolution": record.semantic_resolution,
+        "historical_scientific_verdict": record.raw_scientific_verdict,
+        "historical_disposition": record.raw_disposition,
+    }
 
 
 def _json_default(value: Any) -> Any:

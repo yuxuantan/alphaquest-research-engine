@@ -26,11 +26,14 @@ mechanism, counterparties, information inputs and availability, expected
 effect, horizon, context, and source-bound observations. It does not contain
 entry/stop/target rules, indicators, thresholds, parameter grids, modules,
 PnL, scientific verdicts, candidate status, or deployment status. Mechanical
-expressions remain downstream strategy variants. The closed model also scans
-accepted observation and entry text for explicit indicator, parameter,
-threshold, entry/exit, stop, and target instructions. Such content fails before
-write even when hidden in an otherwise valid economic field; unknown
-structured fields remain forbidden.
+expressions remain downstream strategy variants. Observation and entry
+economic text uses the closed, versioned
+`alphaquest.edge-backlog-economic-vocabulary/v1` vocabulary. Every token and
+character must be positively admitted by that vocabulary; unregistered prose
+fails closed before write. This deliberately narrow representation prevents
+arbitrary free text from encoding indicators, parameter values, thresholds,
+or trade instructions through paraphrase. Extending the vocabulary is a
+reviewed contract change, and unknown structured fields remain forbidden.
 
 The canonical files live under `research/edge_backlog/`. SQLite, CSV, Markdown,
 the bootstrap index, and future registry views are derived and rebuildable.
@@ -39,6 +42,10 @@ the bootstrap index, and future registry views are derived and rebuildable.
 
 All contracts reject unknown fields, use canonical JSON serialization, and
 carry a stable SHA-256 over the complete record except its own hash field.
+Full validation reads the raw bytes of every observation, entry, decision, and
+link record and requires exact equality with the validated canonical JSON plus
+one final newline. Pretty printing, alternate key order, missing or extra final
+newlines, and strings that normalize to different canonical bytes fail closed.
 Timezone-aware timestamps and exact referenced-record hashes are required.
 The committed JSON Schemas provide closed, structural validation for one
 record. Cross-record semantics—including source-identity upgrades, chronology,
@@ -95,6 +102,16 @@ canonical decision and link-chain identities where applicable. Candidate
 revision, evidence, disposition, or relevant-link changes stale an earlier
 snapshot.
 
+Full validation reconstructs each persisted canonical candidate at the exact
+bound revision, decision-chain prefix, and link-chain prefix. The bound title,
+state, matcher material, and other derived fields must match that historical
+state, and every included record must be no later than the reviewing decision.
+A null decision identity is valid only for an empty prefix. Later candidate
+activity remains valid because it does not alter the earlier bound prefix.
+Historical candidates instead embed the complete strict
+`HistoricalEdgeIndexRecordV1`; their hash and restrictive classifications are
+self-contained and remain verifiable if the derived index is later rebuilt.
+
 - `REVIEWED_CONTINUE` is optional curation. It is not scientific approval and
   is not required before a later P4 hypothesis proposal.
 - `REJECTED` is terminal.
@@ -122,6 +139,10 @@ operations:
 - a deterministic `HYPOTHESIS_PROPOSAL` link, which does not require
   `REVIEWED_CONTINUE`;
 - a human-governed `REVISIT_OF` link to an exact prior entry revision.
+
+A `REVISIT_OF` link cannot precede the timestamp of that exact targeted entry
+revision. This target chronology is checked both before append and during full
+history validation, independently of the authorizing-decision chronology.
 
 Admission, family, and campaign link operations intentionally have no P2 CLI
 surface and remain reserved for P3-P5 transitions. A revisit never changes the

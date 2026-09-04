@@ -402,6 +402,31 @@ def test_historical_duplicate_candidate_contract_is_literal_and_cross_field_boun
         )
 
 
+def test_persisted_historical_candidate_is_self_contained_after_index_rebuild(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    _canonical_entry(store)
+    build_historical_edge_index(tmp_path)
+    snapshot = store.duplicate_snapshot("edge.bootstrap")
+    historical = [
+        item for item in snapshot["candidates"] if item["candidate_kind"] == "DERIVED_HISTORICAL_RECORD"
+    ]
+    assert historical
+    assert all(item["historical_record"]["record_sha256"] == item["candidate_record_sha256"] for item in historical)
+    store.record_human_decision(
+        "edge.bootstrap",
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="The historical candidates remain advisory and manually resolved.",
+        reviewer_id="owner",
+    )
+
+    (tmp_path / "catalogs/edge_backlog_history.jsonl").write_bytes(b"")
+    assert store.validate()["status"] == "PASS"
+
+
 def test_bootstrap_cli_writes_only_the_configured_derived_path(tmp_path: Path, capsys) -> None:
     source_bytes = _fixture(tmp_path)
 
