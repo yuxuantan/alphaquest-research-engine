@@ -34,6 +34,12 @@ contain stable taxonomy ID and selected codes, not taxonomy version, taxonomy
 hash, labels, or aliases. Every entry revision still binds the exact taxonomy
 ID/version/SHA used to validate it.
 
+Published taxonomy files have one byte representation: compact UTF-8 JSON,
+sorted object keys, declared array order, and exactly one final LF. Taxonomy
+references hash that complete file byte sequence; fingerprint hashes remain
+newline-free. Additive versions cannot introduce invariants triggered by old
+codes or remove any prohibited category.
+
 The backlog is not a strategy list and cannot create a scientific verdict,
 admit a hypothesis, create an edge family or campaign, promote a candidate, or
 authorize deployment. See [the Edge Backlog guide](../../docs/research/edge-backlog.md).

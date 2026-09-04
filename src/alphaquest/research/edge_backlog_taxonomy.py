@@ -93,11 +93,7 @@ class EconomicConceptsV1(StrictTaxonomyModel):
 
 
 class EconomicEdgeFingerprintV1(EconomicConceptsV1):
-    schema_name: Literal[FINGERPRINT_SCHEMA] = Field(
-        default=FINGERPRINT_SCHEMA,
-        alias="schema",
-        serialization_alias="schema",
-    )
+    schema_name: Literal[FINGERPRINT_SCHEMA] = Field(alias="schema", serialization_alias="schema")
     taxonomy_id: Literal[TAXONOMY_ID]
 
 
@@ -171,29 +167,33 @@ class CrossFieldInvariantV1(StrictTaxonomyModel):
 
 
 class TaxonomyHashGenerationV1(StrictTaxonomyModel):
-    canonicalization: Literal["UTF8_SORTED_KEYS_COMPACT_JSON_NO_NAN"]
+    canonicalization: Literal["UTF8_SORTED_KEYS_COMPACT_JSON_NO_NAN_FINAL_LF"]
     digest: Literal["SHA256_LOWERCASE_HEX"]
-    hash_scope: Literal["COMPLETE_VALIDATED_TAXONOMY_DOCUMENT"]
+    hash_scope: Literal["EXACT_CANONICAL_TAXONOMY_FILE_BYTES_INCLUDING_FINAL_LF"]
 
 
 ProhibitedCategory = Literal[
     "COSMETIC_TIMEFRAMES",
     "ENTRY_OR_EXIT_RULES",
+    "EXACT_TIMEFRAMES",
+    "FREE_FORM_UNKNOWN_OTHER_AND_CUSTOM_ESCAPE_CHANNELS",
     "INDICATORS",
     "PARAMETER_VALUES",
+    "PERFORMANCE_AND_PNL_CLAIMS",
+    "POSITION_SIZING_AND_RISK_RULES",
     "STOPS",
+    "STRATEGY_IMPLEMENTATIONS",
     "STRATEGY_MODULES",
     "TARGETS",
     "THRESHOLDS",
+    "TRADE_ACTIONS",
+    "TRIGGERS",
+    "VERDICT_APPROVAL_ADMISSION_CERTIFICATION_AND_DEPLOYMENT_CLAIMS",
 ]
 
 
 class EconomicEdgeTaxonomyV1(StrictTaxonomyModel):
-    schema_name: Literal[TAXONOMY_SCHEMA] = Field(
-        default=TAXONOMY_SCHEMA,
-        alias="schema",
-        serialization_alias="schema",
-    )
+    schema_name: Literal[TAXONOMY_SCHEMA] = Field(alias="schema", serialization_alias="schema")
     taxonomy_id: Literal[TAXONOMY_ID]
     taxonomy_version: Annotated[int, Field(ge=1)]
     previous_taxonomy_sha256: Sha256 | None
@@ -243,7 +243,7 @@ class EconomicEdgeTaxonomyV1(StrictTaxonomyModel):
         return self
 
 
-def canonical_taxonomy_bytes(value: BaseModel | Mapping[str, Any]) -> bytes:
+def _canonical_compact_json_bytes(value: BaseModel | Mapping[str, Any]) -> bytes:
     payload = value.model_dump(mode="json", by_alias=True) if isinstance(value, BaseModel) else dict(value)
     return json.dumps(
         payload,
@@ -254,15 +254,29 @@ def canonical_taxonomy_bytes(value: BaseModel | Mapping[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
-def taxonomy_sha256(value: EconomicEdgeTaxonomyV1 | Mapping[str, Any]) -> str:
-    return hashlib.sha256(canonical_taxonomy_bytes(value)).hexdigest()
+def canonical_taxonomy_file_bytes(value: EconomicEdgeTaxonomyV1) -> bytes:
+    """Return the one valid on-disk representation, including exactly one final LF."""
+
+    return _canonical_compact_json_bytes(value) + b"\n"
+
+
+def taxonomy_file_sha256(value: EconomicEdgeTaxonomyV1) -> str:
+    """Hash the exact canonical taxonomy file bytes, including their final LF."""
+
+    return hashlib.sha256(canonical_taxonomy_file_bytes(value)).hexdigest()
+
+
+def canonical_fingerprint_bytes(value: EconomicEdgeFingerprintV1) -> bytes:
+    """Return canonical fingerprint payload bytes; fingerprints never include a final LF."""
+
+    return _canonical_compact_json_bytes(value)
 
 
 def taxonomy_ref(value: EconomicEdgeTaxonomyV1) -> TaxonomyRefV1:
     return TaxonomyRefV1(
         taxonomy_id=value.taxonomy_id,
         taxonomy_version=value.taxonomy_version,
-        taxonomy_sha256=taxonomy_sha256(value),
+        taxonomy_sha256=taxonomy_file_sha256(value),
     )
 
 
@@ -276,8 +290,14 @@ def load_taxonomy_catalog(directory: str | Path) -> dict[int, EconomicEdgeTaxono
     catalog: dict[int, EconomicEdgeTaxonomyV1] = {}
     for path in paths:
         try:
-            raw = json.loads(path.read_bytes())
+            raw_bytes = path.read_bytes()
+            raw = json.loads(raw_bytes)
             taxonomy = EconomicEdgeTaxonomyV1.model_validate(raw)
+            if raw_bytes != canonical_taxonomy_file_bytes(taxonomy):
+                raise ValueError(
+                    "taxonomy file must be canonical compact UTF-8 JSON with sorted object keys "
+                    "and exactly one final LF"
+                )
         except (OSError, ValueError) as exc:
             raise ValueError(f"invalid economic-edge taxonomy {path}: {exc}") from exc
         expected_name = TAXONOMY_FILENAME_PATTERN.format(version=taxonomy.taxonomy_version)
@@ -292,7 +312,7 @@ def load_taxonomy_catalog(directory: str | Path) -> dict[int, EconomicEdgeTaxono
     for version in versions[1:]:
         previous = catalog[version - 1]
         current = catalog[version]
-        if current.previous_taxonomy_sha256 != taxonomy_sha256(previous):
+        if current.previous_taxonomy_sha256 != taxonomy_file_sha256(previous):
             raise ValueError(f"taxonomy v{version} does not bind the exact v{version - 1} hash")
         _validate_additive_evolution(previous, current)
     return catalog
@@ -305,7 +325,10 @@ def resolve_taxonomy(
     taxonomy = catalog.get(reference.taxonomy_version)
     if taxonomy is None:
         raise ValueError(f"taxonomy version {reference.taxonomy_version} is not published")
-    if taxonomy.taxonomy_id != reference.taxonomy_id or taxonomy_sha256(taxonomy) != reference.taxonomy_sha256:
+    if (
+        taxonomy.taxonomy_id != reference.taxonomy_id
+        or taxonomy_file_sha256(taxonomy) != reference.taxonomy_sha256
+    ):
         raise ValueError("taxonomy_ref does not bind the exact published taxonomy")
     return taxonomy
 
@@ -340,7 +363,9 @@ def fingerprint_document(taxonomy_id: str, concepts: EconomicConceptsV1) -> Econ
 
 
 def fingerprint_sha256(taxonomy_id: str, concepts: EconomicConceptsV1) -> str:
-    return hashlib.sha256(canonical_taxonomy_bytes(fingerprint_document(taxonomy_id, concepts))).hexdigest()
+    return hashlib.sha256(
+        canonical_fingerprint_bytes(fingerprint_document(taxonomy_id, concepts))
+    ).hexdigest()
 
 
 def derived_display_label(taxonomy: EconomicEdgeTaxonomyV1, concepts: EconomicConceptsV1) -> str:
@@ -408,6 +433,19 @@ def _validate_additive_evolution(
     for invariant_id, old in old_invariants.items():
         if new_invariants.get(invariant_id) != old:
             raise ValueError(f"taxonomy v{current.taxonomy_version} changes or removes invariant {invariant_id}")
+    field_code_sets = {field: code_set for field, code_set, _cardinality in DIMENSION_SPECS}
+    for invariant_id, invariant in new_invariants.items():
+        if invariant_id in old_invariants:
+            continue
+        for trigger in invariant.if_any:
+            code_set = field_code_sets[trigger.field]
+            introduced_codes = set(current_sets[code_set]) - set(previous_sets[code_set])
+            pre_existing = sorted(set(trigger.codes) - introduced_codes)
+            if pre_existing:
+                raise ValueError(
+                    f"taxonomy v{current.taxonomy_version} adds invariant {invariant_id} "
+                    f"triggered by pre-existing {trigger.field} codes: {', '.join(pre_existing)}"
+                )
     if not set(previous.prohibited_concept_categories).issubset(current.prohibited_concept_categories):
         raise ValueError("taxonomy evolution cannot remove prohibited concept categories")
     if previous.taxonomy_hash_generation != current.taxonomy_hash_generation:
@@ -440,6 +478,8 @@ __all__ = [
     "UnclassifiedReason",
     "bundled_taxonomy_ref",
     "bundled_taxonomy_root",
+    "canonical_fingerprint_bytes",
+    "canonical_taxonomy_file_bytes",
     "derived_display_label",
     "fingerprint_document",
     "fingerprint_sha256",
@@ -447,6 +487,6 @@ __all__ = [
     "matcher_dimensions",
     "resolve_taxonomy",
     "taxonomy_ref",
-    "taxonomy_sha256",
+    "taxonomy_file_sha256",
     "validate_concepts",
 ]

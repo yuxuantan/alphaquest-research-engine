@@ -234,9 +234,9 @@
       "additionalProperties": false,
       "properties": {
         "canonicalization": {
-          "const": "UTF8_SORTED_KEYS_COMPACT_JSON_NO_NAN",
+          "const": "UTF8_SORTED_KEYS_COMPACT_JSON_NO_NAN_FINAL_LF",
           "enum": [
-            "UTF8_SORTED_KEYS_COMPACT_JSON_NO_NAN"
+            "UTF8_SORTED_KEYS_COMPACT_JSON_NO_NAN_FINAL_LF"
           ],
           "title": "Canonicalization",
           "type": "string"
@@ -250,9 +250,9 @@
           "type": "string"
         },
         "hash_scope": {
-          "const": "COMPLETE_VALIDATED_TAXONOMY_DOCUMENT",
+          "const": "EXACT_CANONICAL_TAXONOMY_FILE_BYTES_INCLUDING_FINAL_LF",
           "enum": [
-            "COMPLETE_VALIDATED_TAXONOMY_DOCUMENT"
+            "EXACT_CANONICAL_TAXONOMY_FILE_BYTES_INCLUDING_FINAL_LF"
           ],
           "title": "Hash Scope",
           "type": "string"
@@ -353,12 +353,20 @@
         "enum": [
           "COSMETIC_TIMEFRAMES",
           "ENTRY_OR_EXIT_RULES",
+          "EXACT_TIMEFRAMES",
+          "FREE_FORM_UNKNOWN_OTHER_AND_CUSTOM_ESCAPE_CHANNELS",
           "INDICATORS",
           "PARAMETER_VALUES",
+          "PERFORMANCE_AND_PNL_CLAIMS",
+          "POSITION_SIZING_AND_RISK_RULES",
           "STOPS",
+          "STRATEGY_IMPLEMENTATIONS",
           "STRATEGY_MODULES",
           "TARGETS",
-          "THRESHOLDS"
+          "THRESHOLDS",
+          "TRADE_ACTIONS",
+          "TRIGGERS",
+          "VERDICT_APPROVAL_ADMISSION_CERTIFICATION_AND_DEPLOYMENT_CLAIMS"
         ],
         "type": "string"
       },
@@ -367,7 +375,6 @@
     },
     "schema": {
       "const": "alphaquest.economic-edge-taxonomy/v1",
-      "default": "alphaquest.economic-edge-taxonomy/v1",
       "enum": [
         "alphaquest.economic-edge-taxonomy/v1"
       ],
@@ -406,6 +413,7 @@
     }
   },
   "required": [
+    "schema",
     "taxonomy_id",
     "taxonomy_version",
     "previous_taxonomy_sha256",

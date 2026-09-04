@@ -122,21 +122,35 @@ also fixes `PRE_HYPOTHESIS_BACKLOG_ONLY` and
 
 The complete taxonomy is
 `research/edge_backlog/contracts/economic-edge-taxonomy-v1.json`. Each
-published version is immutable and hash-bound. Evolution is additive: an
-existing code, definition, label, invariant, or prohibited category cannot be
-changed or removed; recall aliases may be added; and new codes may be added.
-A semantic change requires a new code or owner-reviewed namespace. Old files
-remain available. The taxonomy declares each dimension's cardinality,
-cross-field invariants, unclassified reasons, prohibited categories, and hash
-rules. The initial taxonomy-local instrument set is exactly `ES` and `NQ`;
-there is no runtime-inferred or free-form instrument fallback.
+published version is immutable and byte-bound. Its only accepted file form is
+compact UTF-8 JSON with lexicographically sorted object keys, declared array
+order preserved, no non-finite numbers or insignificant whitespace, and
+exactly one final LF. The taxonomy SHA hashes those exact file bytes, including
+the LF; pretty printing, alternate key order, omitted defaulted fields, and
+missing or extra newlines fail closed.
+
+Evolution is additive: an existing code, definition, label, invariant, or
+prohibited category cannot be changed or removed; recall aliases may be added;
+and new codes may be added. A newly added invariant may be triggered only by
+codes introduced in that same version, so it cannot retroactively invalidate
+a combination of existing codes. A semantic restriction involving an existing
+concept requires a new code or owner-reviewed namespace. Old files remain
+available. The taxonomy explicitly prohibits technical indicators, numeric
+parameters, thresholds or triggers, trade actions, exit/position-sizing/risk
+rules, exact or cosmetic timeframes, strategy implementations/modules,
+performance/PnL/verdict claims, approval/admission/certification/deployment
+claims, and free-form `UNKNOWN`/`OTHER`/`CUSTOM` escape channels. It also
+declares each dimension's cardinality, cross-field invariants, unclassified
+reasons, and hash rules. The initial taxonomy-local instrument set is exactly
+`ES` and `NQ`; there is no runtime-inferred or free-form instrument fallback.
 
 Human-readable labels are derived from the bound taxonomy's display labels and
 are non-authoritative. Labels and recall aliases participate only in duplicate
 matching and search; they cannot create a fingerprint, classification,
 evidence, acceptance, or admission.
 
-The economic fingerprint is SHA-256 over canonical JSON containing only
+The economic fingerprint is SHA-256 over compact canonical JSON without a
+trailing newline, containing only
 `alphaquest.edge-backlog-fingerprint/v1`, the stable `taxonomy_id`, sorted
 instrument codes, and all selected economic concept codes. Taxonomy version,
 taxonomy SHA, display labels, and recall aliases are excluded, so additive

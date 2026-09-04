@@ -26,18 +26,38 @@ from alphaquest.research.edge_backlog import (
     record_sha256,
 )
 from alphaquest.research.edge_backlog_taxonomy import (
+    FINGERPRINT_SCHEMA,
+    TAXONOMY_SCHEMA,
+    EconomicConceptsV1,
+    EconomicEdgeFingerprintV1,
     EconomicEdgeTaxonomyV1,
     bundled_taxonomy_ref,
     bundled_taxonomy_root,
+    canonical_taxonomy_file_bytes,
     fingerprint_document,
+    load_taxonomy_catalog,
     taxonomy_ref,
-    taxonomy_sha256,
+    taxonomy_file_sha256,
+    validate_concepts,
 )
 from alphaquest.studio.duplicates import duplicate_matches, edge_fingerprint
 
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
 TAXONOMY_REF = bundled_taxonomy_ref().model_dump(mode="json")
+
+
+def _canonical_raw_json_file_bytes(payload: dict) -> bytes:
+    return (
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
 
 
 def _additive_taxonomy_catalog(tmp_path: Path, *, add_alias: bool = True) -> tuple[Path, dict, dict]:
@@ -49,7 +69,7 @@ def _additive_taxonomy_catalog(tmp_path: Path, *, add_alias: bool = True) -> tup
     first = EconomicEdgeTaxonomyV1.model_validate(first_payload)
     second_payload = json.loads(json.dumps(first_payload))
     second_payload["taxonomy_version"] = 2
-    second_payload["previous_taxonomy_sha256"] = taxonomy_sha256(first)
+    second_payload["previous_taxonomy_sha256"] = taxonomy_file_sha256(first)
     second_payload["code_sets"]["market_behavior"].append(
         {
             "code": "VOLATILITY_CLUSTERING",
@@ -64,14 +84,8 @@ def _additive_taxonomy_catalog(tmp_path: Path, *, add_alias: bool = True) -> tup
         aliases.sort(key=str.casefold)
     second_payload["code_sets"]["market_behavior"].sort(key=lambda item: item["code"])
     second = EconomicEdgeTaxonomyV1.model_validate(second_payload)
-    (root / "economic-edge-taxonomy-v1.json").write_text(
-        json.dumps(first_payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    (root / "economic-edge-taxonomy-v2.json").write_text(
-        json.dumps(second_payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    (root / "economic-edge-taxonomy-v1.json").write_bytes(canonical_taxonomy_file_bytes(first))
+    (root / "economic-edge-taxonomy-v2.json").write_bytes(canonical_taxonomy_file_bytes(second))
     return root, taxonomy_ref(first).model_dump(mode="json"), taxonomy_ref(second).model_dump(mode="json")
 
 
@@ -413,6 +427,102 @@ def test_canonical_serialization_and_hash_are_stable(tmp_path: Path) -> None:
         assert path.read_bytes() == canonical_json_bytes(record) + b"\n"
 
 
+def test_published_taxonomy_ref_hashes_exact_canonical_file_bytes() -> None:
+    path = bundled_taxonomy_root() / "economic-edge-taxonomy-v1.json"
+    raw_bytes = path.read_bytes()
+    taxonomy = EconomicEdgeTaxonomyV1.model_validate_json(raw_bytes)
+
+    assert raw_bytes == canonical_taxonomy_file_bytes(taxonomy)
+    assert raw_bytes.endswith(b"\n")
+    assert not raw_bytes.endswith(b"\n\n")
+    assert raw_bytes.count(b"\n") == 1
+    assert taxonomy_file_sha256(taxonomy) == hashlib.sha256(raw_bytes).hexdigest()
+    assert taxonomy_ref(taxonomy).taxonomy_sha256 == hashlib.sha256(raw_bytes).hexdigest()
+    assert taxonomy.schema_name == TAXONOMY_SCHEMA
+    assert set(taxonomy.prohibited_concept_categories) == {
+        "COSMETIC_TIMEFRAMES",
+        "ENTRY_OR_EXIT_RULES",
+        "EXACT_TIMEFRAMES",
+        "FREE_FORM_UNKNOWN_OTHER_AND_CUSTOM_ESCAPE_CHANNELS",
+        "INDICATORS",
+        "PARAMETER_VALUES",
+        "PERFORMANCE_AND_PNL_CLAIMS",
+        "POSITION_SIZING_AND_RISK_RULES",
+        "STOPS",
+        "STRATEGY_IMPLEMENTATIONS",
+        "STRATEGY_MODULES",
+        "TARGETS",
+        "THRESHOLDS",
+        "TRADE_ACTIONS",
+        "TRIGGERS",
+        "VERDICT_APPROVAL_ADMISSION_CERTIFICATION_AND_DEPLOYMENT_CLAIMS",
+    }
+
+
+@pytest.mark.parametrize(
+    "serialization",
+    ["pretty", "alternate-order", "missing-newline", "extra-newline", "omitted-default"],
+)
+def test_taxonomy_loader_rejects_every_byte_different_representation(
+    tmp_path: Path,
+    serialization: str,
+) -> None:
+    root = tmp_path / "taxonomy-contracts"
+    root.mkdir()
+    source = bundled_taxonomy_root() / "economic-edge-taxonomy-v1.json"
+    canonical = source.read_bytes()
+    payload = json.loads(canonical)
+    if serialization == "pretty":
+        forged = (json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
+    elif serialization == "alternate-order":
+        forged = (
+            json.dumps(
+                dict(reversed(list(payload.items()))),
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            + "\n"
+        ).encode()
+    elif serialization == "missing-newline":
+        forged = canonical[:-1]
+    elif serialization == "extra-newline":
+        forged = canonical + b"\n"
+    else:
+        del payload["cross_field_invariants"][0]["require_any"]
+        forged = _canonical_raw_json_file_bytes(payload)
+    assert forged != canonical
+    (root / "economic-edge-taxonomy-v1.json").write_bytes(forged)
+
+    with pytest.raises(ValueError, match="canonical compact UTF-8 JSON"):
+        load_taxonomy_catalog(root)
+
+
+def test_taxonomy_and_fingerprint_runtime_require_schema_discriminators(tmp_path: Path) -> None:
+    taxonomy_payload = json.loads(
+        (bundled_taxonomy_root() / "economic-edge-taxonomy-v1.json").read_bytes()
+    )
+    del taxonomy_payload["schema"]
+    with pytest.raises(ValidationError, match="schema"):
+        EconomicEdgeTaxonomyV1.model_validate(taxonomy_payload)
+    root = tmp_path / "taxonomy-contracts"
+    root.mkdir()
+    (root / "economic-edge-taxonomy-v1.json").write_bytes(
+        _canonical_raw_json_file_bytes(taxonomy_payload)
+    )
+    with pytest.raises(ValueError, match="schema"):
+        load_taxonomy_catalog(root)
+
+    concepts = EconomicConceptsV1.model_validate(_concepts())
+    fingerprint_payload = fingerprint_document(
+        TAXONOMY_REF["taxonomy_id"], concepts
+    ).model_dump(mode="json", by_alias=True)
+    assert fingerprint_payload["schema"] == FINGERPRINT_SCHEMA
+    del fingerprint_payload["schema"]
+    with pytest.raises(ValidationError, match="schema"):
+        EconomicEdgeFingerprintV1.model_validate(fingerprint_payload)
+
+
 def test_additive_taxonomy_versions_preserve_fingerprint_but_change_entry_revision_hash(
     tmp_path: Path,
 ) -> None:
@@ -456,11 +566,53 @@ def test_taxonomy_redefinition_or_removal_fails_closed(tmp_path: Path, mutation:
         inventory["definition"] = "A silently changed semantic definition."
     else:
         codes.remove(inventory)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_bytes(
+        canonical_taxonomy_file_bytes(EconomicEdgeTaxonomyV1.model_validate(payload))
+    )
 
     store = EdgeBacklogStore(tmp_path, taxonomy_root=taxonomy_root)
     with pytest.raises(EdgeBacklogIntegrityError, match="redefines|removes"):
         store.validate()
+
+
+def test_additive_taxonomy_rejects_new_invariant_triggered_by_preexisting_code(
+    tmp_path: Path,
+) -> None:
+    taxonomy_root, _v1_ref, _v2_ref = _additive_taxonomy_catalog(tmp_path)
+    v1 = load_taxonomy_catalog(taxonomy_root)[1]
+    concepts = EconomicConceptsV1.model_validate(_concepts(instrument_ids=["ES"]))
+    validate_concepts(v1, concepts)
+
+    path = taxonomy_root / "economic-edge-taxonomy-v2.json"
+    payload = json.loads(path.read_bytes())
+    payload["cross_field_invariants"].append(
+        {
+            "invariant_id": "inventory_imbalance_requires_nq",
+            "definition": "A forged semantic restriction on an already-published concept.",
+            "if_any": [
+                {"field": "market_behavior_code", "codes": ["INVENTORY_IMBALANCE"]}
+            ],
+            "require_all": [{"field": "instrument_ids", "codes": ["NQ"]}],
+            "require_any": [],
+        }
+    )
+    payload["cross_field_invariants"].sort(key=lambda item: item["invariant_id"])
+    forged = EconomicEdgeTaxonomyV1.model_validate(payload)
+    path.write_bytes(canonical_taxonomy_file_bytes(forged))
+
+    with pytest.raises(ValueError, match="triggered by pre-existing market_behavior_code"):
+        load_taxonomy_catalog(taxonomy_root)
+
+
+def test_additive_taxonomy_cannot_remove_any_prohibited_category(tmp_path: Path) -> None:
+    taxonomy_root, _v1_ref, _v2_ref = _additive_taxonomy_catalog(tmp_path)
+    path = taxonomy_root / "economic-edge-taxonomy-v2.json"
+    payload = json.loads(path.read_bytes())
+    payload["prohibited_concept_categories"].remove("TRADE_ACTIONS")
+    path.write_bytes(_canonical_raw_json_file_bytes(payload))
+
+    with pytest.raises(ValueError, match="prohibited concept categories must be complete and sorted"):
+        load_taxonomy_catalog(taxonomy_root)
 
 
 @pytest.mark.parametrize("instrument_ids", [["MES"], ["E-mini S&P 500 futures"], ["UNKNOWN"]])

@@ -30,6 +30,42 @@ def test_published_economic_edge_taxonomy_satisfies_final_v1_schema():
     assert list(Draft202012Validator(schema).iter_errors(taxonomy)) == []
 
 
+def test_economic_taxonomy_and_fingerprint_schemas_require_discriminators():
+    taxonomy_schema = _schema("edge-backlog-economic-taxonomy-v1.schema.json")
+    fingerprint_schema = _schema("edge-backlog-fingerprint-v1.schema.json")
+    assert "schema" in taxonomy_schema["required"]
+    assert "schema" in fingerprint_schema["required"]
+
+    taxonomy = json.loads(
+        Path("research/edge_backlog/contracts/economic-edge-taxonomy-v1.json").read_bytes()
+    )
+    del taxonomy["schema"]
+    taxonomy_errors = list(Draft202012Validator(taxonomy_schema).iter_errors(taxonomy))
+    assert any(error.validator == "required" and "schema" in error.message for error in taxonomy_errors)
+
+    fingerprint = {
+        "taxonomy_id": "alphaquest-economic-edge",
+        "instrument_ids": ["ES"],
+        "market_behavior_code": "INVENTORY_IMBALANCE",
+        "causal_mechanism_code": "DELAYED_INVENTORY_ADJUSTMENT",
+        "beneficiary_counterparty_codes": ["LIQUIDITY_PROVIDERS"],
+        "cost_bearer_counterparty_codes": ["HEDGERS"],
+        "transfer_rationale_code": "INVENTORY_RISK_COMPENSATION",
+        "information_input_codes": ["PRICE"],
+        "information_availability_code": "AVAILABLE_AFTER_INTERVAL",
+        "expected_effect_code": "PRICE_CONTINUATION",
+        "holding_horizon_code": "INTRASESSION",
+        "market_context_codes": ["CONTINUOUS_SESSION"],
+    }
+    fingerprint_errors = list(
+        Draft202012Validator(fingerprint_schema).iter_errors(fingerprint)
+    )
+    assert any(
+        error.validator == "required" and "schema" in error.message
+        for error in fingerprint_errors
+    )
+
+
 def test_campaign_schema_accepts_representative_authored_campaign():
     schema = _schema("campaign.schema.json")
     campaign = yaml.safe_load(
