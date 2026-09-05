@@ -315,9 +315,10 @@ advisory until human resolution, and uncertainty stays unresolved.
 alphaquest edge-backlog bootstrap-index
 ```
 
-This deterministically rebuilds `catalogs/edge_backlog_history.jsonl` from
-current campaign definitions, historical clean-slate definitions and ledgers,
-the experiment registry, and research-reset manifests. Every row retains its
+This deterministically rebuilds the optional
+`catalogs/edge_backlog_history.jsonl` cache from current campaign definitions,
+historical clean-slate definitions and ledgers, the experiment registry, and
+research-reset manifests. Every row retains its
 source path, source hash, generation, evidence eligibility, raw identifiers,
 raw edge/hypothesis/family/fingerprint, outcome, failure reason, and extraction
 completeness. Output is fixed to the configured history-index path beneath the
@@ -332,8 +333,13 @@ promotion beyond `NOT_CURRENT_P1_EVIDENCE`, `DUPLICATE_RECALL_ONLY`, and
 `NEEDS_MANUAL_REVIEW`. Historical duplicate candidates repeat those values as
 literals and bind `history:<complete-record-sha256>`.
 
-Structural validity is not enough. Before a row may enter recall, a snapshot,
-decision persistence, full validation, or prior-index replacement, its
+Structural validity is not enough. Record-level provenance validation proves
+that one embedded row exactly matches its approved source projection. Separate
+index-level validation re-extracts every approved current source and requires
+record-for-record equality with the complete, canonically ordered index;
+missing, extra, duplicated, substituted, or reordered rows fail. Before a row
+may enter recall, a snapshot, decision persistence, full validation, or
+prior-index replacement, its
 project-relative `source_path` must resolve inside the approved historical
 source inventory, exist, match the actual file-byte SHA, use the source kind
 and row convention for that file, and equal a fresh source-specific extraction.
@@ -342,11 +348,23 @@ manifest JSON each use one shared parser for generation and verification;
 paths outside those configured roots, source substitution, and fabricated
 self-hashed provenance fail closed.
 
-An existing configured target is replaceable only when it validates as the
-current derived contract or as the one explicit closed prior-v1 row contract,
-including source path/hash/row provenance, deterministic record ID, canonical
-ordering, and record hash. An arbitrary self-hashed payload or existing file
-fails closed.
+An existing configured target is replaceable only when its entire contents
+validate as the complete current projection or as the complete projection in
+the one explicit closed prior-v1 row contract, including source
+path/hash/row provenance, deterministic record ID, canonical ordering, and
+record hash. A genuine-but-truncated index, arbitrary self-hashed payload, or
+other existing file fails closed.
+
+Duplicate review does not treat the derived cache as historical authority. It
+resolves an immutable Git commit, loads the strict
+`config/storage_layout.yaml` blob from that same commit, and reconstructs the
+complete universe from source blobs in that tree through the shared source
+parsers. Missing, malformed, unsupported, or noncanonical committed layouts
+fail closed. A present cache must equal both the complete current working-tree
+projection and the reconstructed commit projection. If the cache is absent,
+review uses the Git-derived universe without creating it. Only a source-empty
+state may use the canonical empty-universe digest; unresolved source-bearing
+history never silently becomes empty.
 
 Legacy scientific verdict and lifecycle/disposition text are retained in
 separate fields when both exist; the derived index does not collapse those

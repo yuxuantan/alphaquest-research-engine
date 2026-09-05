@@ -8,7 +8,7 @@ import hashlib
 import io
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import subprocess
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Mapping
@@ -27,6 +27,42 @@ from alphaquest.research.edge_backlog import (
     record_sha256,
 )
 from alphaquest.research.storage import StorageLayout, campaign_definition_paths, display_path, load_storage_layout
+
+
+_COMMITTED_LAYOUT_FIELDS = frozenset(
+    {
+        "schema",
+        "active_campaign_root",
+        "archive_campaign_roots",
+        "evidence_roots",
+        "research_artifact_root",
+        "catalog_root",
+        "views_root",
+        "run_store_root",
+        "draft_root",
+        "dataset_root",
+        "handoff_root",
+        "studio_runtime_root",
+        "edge_backlog_root",
+        "edge_backlog_history_index",
+        "migration_manifest",
+        "legacy_prefixes",
+    }
+)
+_COMMITTED_LAYOUT_PATH_FIELDS = (
+    "active_campaign_root",
+    "research_artifact_root",
+    "catalog_root",
+    "views_root",
+    "run_store_root",
+    "draft_root",
+    "dataset_root",
+    "handoff_root",
+    "studio_runtime_root",
+    "edge_backlog_root",
+    "edge_backlog_history_index",
+    "migration_manifest",
+)
 
 
 class HistoricalEdgeIndexPriorV1(StrictBacklogModel):
@@ -170,6 +206,8 @@ def validate_historical_record_provenance(
     project_root: str | Path,
     layout: StorageLayout | None = None,
 ) -> None:
+    """Verify one embedded row against its exact approved source projection."""
+
     validate_historical_records_provenance(
         [record],
         project_root=project_root,
@@ -183,7 +221,7 @@ def validate_historical_records_provenance(
     project_root: str | Path,
     layout: StorageLayout | None = None,
 ) -> None:
-    """Verify strict rows against existing files in approved historical roots."""
+    """Verify supplied strict rows against their exact approved source projections."""
 
     root = Path(project_root).resolve()
     layout = layout or load_storage_layout(root)
@@ -217,6 +255,25 @@ def validate_historical_records_provenance(
                 )
 
 
+def validate_historical_index_records(
+    records: list[HistoricalEdgeIndexRecordV1],
+    *,
+    project_root: str | Path,
+    layout: StorageLayout | None = None,
+) -> None:
+    """Require exact equality with the complete current approved-source projection."""
+
+    root = Path(project_root).resolve()
+    layout = layout or load_storage_layout(root)
+    expected = _historical_records_for_working_tree(root, layout)
+    actual_payloads = [item.model_dump(mode="json", by_alias=True) for item in records]
+    expected_payloads = [item.model_dump(mode="json", by_alias=True) for item in expected]
+    if actual_payloads != expected_payloads:
+        raise ValueError(
+            "historical edge index does not equal the complete approved-source projection"
+        )
+
+
 def historical_records_for_repository_commit(
     project_root: str | Path,
     commit: str | None = None,
@@ -224,11 +281,16 @@ def historical_records_for_repository_commit(
     """Rebuild the complete matcher universe from one immutable Git source tree."""
 
     root = Path(project_root).resolve()
-    layout = load_storage_layout(root)
+    repository_root = Path(
+        _git(root, "rev-parse", "--show-toplevel", text=True).strip()
+    ).resolve()
+    if repository_root != root:
+        raise ValueError("historical source Git root does not equal the configured project root")
     requested = commit or "HEAD"
     resolved = _git(root, "rev-parse", f"{requested}^{{commit}}", text=True).strip()
     if commit is not None and resolved != commit:
         raise ValueError("historical source commit must be a full immutable Git object ID")
+    layout = _storage_layout_for_repository_commit(root, resolved)
     tree = _git(root, "ls-tree", "-r", "-z", "--full-tree", resolved)
     blobs: list[tuple[str, str, str]] = []
     for raw in tree.split(b"\0"):
@@ -258,6 +320,181 @@ def historical_records_for_repository_commit(
     return resolved, records
 
 
+def _historical_records_for_working_tree(
+    root: Path,
+    layout: StorageLayout,
+    *,
+    inventory: dict[Path, str] | None = None,
+) -> list[HistoricalEdgeIndexRecordV1]:
+    approved = inventory if inventory is not None else historical_source_inventory(root, layout=layout)
+    records: list[HistoricalEdgeIndexRecordV1] = []
+    for path, source_kind in sorted(approved.items(), key=lambda item: item[0].as_posix()):
+        records.extend(
+            extract_historical_source_records(
+                root,
+                path,
+                source_kind,
+                layout=layout,
+            )
+        )
+    records.sort(
+        key=lambda item: (
+            item.source_path,
+            item.source_row_number or 0,
+            item.source_kind,
+            item.record_id,
+        )
+    )
+    return records
+
+
+def _storage_layout_for_repository_commit(root: Path, commit: str) -> StorageLayout:
+    relative = "config/storage_layout.yaml"
+    entry = _git(root, "ls-tree", "-z", commit, "--", relative)
+    rows = [row for row in entry.split(b"\0") if row]
+    if len(rows) != 1:
+        raise ValueError("historical source commit is missing the committed storage layout file")
+    metadata, raw_path = rows[0].split(b"\t", 1)
+    mode, object_type, object_id = metadata.decode("ascii").split()
+    if raw_path.decode("utf-8") != relative or mode != "100644" or object_type != "blob":
+        raise ValueError("committed storage layout must be one canonical regular Git blob")
+    data = _git(root, "cat-file", "blob", object_id)
+    return _strict_committed_storage_layout(root, data)
+
+
+def _strict_committed_storage_layout(root: Path, data: bytes) -> StorageLayout:
+    if not data or not data.endswith(b"\n") or data.endswith(b"\n\n"):
+        raise ValueError("committed storage layout must have exactly one final LF")
+    if b"\r" in data or b"\t" in data or data.startswith(b"\xef\xbb\xbf"):
+        raise ValueError("committed storage layout is not canonically encoded")
+    try:
+        text = data.decode("utf-8")
+        node = yaml.compose(text, Loader=yaml.SafeLoader)
+        _validate_unique_yaml_mappings(node)
+        document = yaml.safe_load(text)
+    except (UnicodeDecodeError, yaml.YAMLError, ValueError) as exc:
+        raise ValueError(f"committed storage layout is malformed: {exc}") from exc
+    if not isinstance(document, dict):
+        raise ValueError("committed storage layout must be a mapping")
+    keys = set(document)
+    if keys != _COMMITTED_LAYOUT_FIELDS:
+        missing = sorted(_COMMITTED_LAYOUT_FIELDS - keys)
+        extra = sorted(keys - _COMMITTED_LAYOUT_FIELDS)
+        raise ValueError(
+            f"committed storage layout fields are not canonical; missing={missing}, extra={extra}"
+        )
+    if document["schema"] != "alphaquest.storage-layout/v1":
+        raise ValueError(f"unsupported committed storage layout schema: {document['schema']!r}")
+
+    paths = {
+        field: _canonical_layout_path(document[field], field=field)
+        for field in _COMMITTED_LAYOUT_PATH_FIELDS
+    }
+    arrays: dict[str, tuple[str, ...]] = {}
+    for field in ("archive_campaign_roots", "evidence_roots"):
+        values = document[field]
+        if not isinstance(values, list) or not values:
+            raise ValueError(f"committed storage layout {field} must be a nonempty path list")
+        normalized = tuple(
+            _canonical_layout_path(value, field=f"{field}[{position}]")
+            for position, value in enumerate(values)
+        )
+        if len(set(normalized)) != len(normalized):
+            raise ValueError(f"committed storage layout {field} contains duplicate paths")
+        arrays[field] = normalized
+
+    prefixes = document["legacy_prefixes"]
+    if not isinstance(prefixes, dict) or not prefixes:
+        raise ValueError("committed storage layout legacy_prefixes must be a nonempty mapping")
+    normalized_prefixes: list[tuple[str, str]] = []
+    for old, new in prefixes.items():
+        normalized_prefixes.append(
+            (
+                _canonical_layout_path(old, field="legacy_prefixes key", trailing_slash=True),
+                _canonical_layout_path(new, field=f"legacy_prefixes[{old!r}]", trailing_slash=True),
+            )
+        )
+
+    active = paths["active_campaign_root"]
+    if any(_layout_paths_overlap(active, archive) for archive in arrays["archive_campaign_roots"]):
+        raise ValueError("committed active and archive campaign roots must not overlap")
+    for position, archive in enumerate(arrays["archive_campaign_roots"]):
+        if any(
+            _layout_paths_overlap(archive, other)
+            for other in arrays["archive_campaign_roots"][position + 1 :]
+        ):
+            raise ValueError("committed archive campaign roots must not overlap")
+
+    def absolute(value: str) -> Path:
+        return root / PurePosixPath(value)
+
+    return StorageLayout(
+        project_root=root,
+        active_campaign_root=absolute(active),
+        archive_campaign_roots=tuple(absolute(value) for value in arrays["archive_campaign_roots"]),
+        evidence_roots=tuple(absolute(value) for value in arrays["evidence_roots"]),
+        research_artifact_root=absolute(paths["research_artifact_root"]),
+        catalog_root=absolute(paths["catalog_root"]),
+        views_root=absolute(paths["views_root"]),
+        run_store_root=absolute(paths["run_store_root"]),
+        draft_root=absolute(paths["draft_root"]),
+        dataset_root=absolute(paths["dataset_root"]),
+        handoff_root=absolute(paths["handoff_root"]),
+        studio_runtime_root=absolute(paths["studio_runtime_root"]),
+        edge_backlog_root=absolute(paths["edge_backlog_root"]),
+        edge_backlog_history_index=absolute(paths["edge_backlog_history_index"]),
+        migration_manifest=absolute(paths["migration_manifest"]),
+        legacy_prefixes=tuple(
+            sorted(normalized_prefixes, key=lambda item: len(item[0]), reverse=True)
+        ),
+    )
+
+
+def _validate_unique_yaml_mappings(node: yaml.Node | None) -> None:
+    if node is None:
+        raise ValueError("empty YAML document")
+    if isinstance(node, yaml.MappingNode):
+        seen: set[str] = set()
+        for key, value in node.value:
+            if not isinstance(key, yaml.ScalarNode):
+                raise ValueError("mapping keys must be plain scalar values")
+            if key.value in seen:
+                raise ValueError(f"duplicate mapping key {key.value!r}")
+            seen.add(key.value)
+            _validate_unique_yaml_mappings(value)
+    elif isinstance(node, yaml.SequenceNode):
+        for value in node.value:
+            _validate_unique_yaml_mappings(value)
+
+
+def _canonical_layout_path(
+    value: Any,
+    *,
+    field: str,
+    trailing_slash: bool = False,
+) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(f"committed storage layout {field} must be a nonblank canonical path")
+    if "\\" in value or "\x00" in value or value.startswith("/"):
+        raise ValueError(f"committed storage layout {field} must be a project-relative POSIX path")
+    if trailing_slash != value.endswith("/"):
+        requirement = "end with /" if trailing_slash else "not end with /"
+        raise ValueError(f"committed storage layout {field} must {requirement}")
+    raw = value[:-1] if trailing_slash else value
+    path = PurePosixPath(raw)
+    if raw in {"", "."} or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError(f"committed storage layout {field} is not canonical")
+    if path.as_posix() != raw:
+        raise ValueError(f"committed storage layout {field} is not canonical")
+    return value
+
+
+def _layout_paths_overlap(first: str, second: str) -> bool:
+    first_path = PurePosixPath(first)
+    second_path = PurePosixPath(second)
+    return first_path == second_path or first_path in second_path.parents or second_path in first_path.parents
+
+
 def repository_commit_recorded_at(project_root: str | Path, commit: str) -> datetime:
     root = Path(project_root).resolve()
     value = _git(root, "show", "-s", "--format=%cI", commit, text=True).strip()
@@ -281,22 +518,11 @@ def build_historical_edge_index(
     layout = load_storage_layout(root)
     output = _validated_output_path(root, layout, output_path)
 
-    records: list[HistoricalEdgeIndexRecordV1] = []
     source_inventory = historical_source_inventory(root, layout=layout)
     source_paths = set(source_inventory)
     if output.resolve() in {path.resolve() for path in source_paths}:
         raise ValueError("derived history index target cannot replace a bootstrap source file")
-    for path, source_kind in sorted(source_inventory.items(), key=lambda item: item[0].as_posix()):
-        records.extend(extract_historical_source_records(root, path, source_kind, layout=layout))
-
-    records.sort(
-        key=lambda item: (
-            item.source_path,
-            item.source_row_number or 0,
-            item.source_kind,
-            item.record_id,
-        )
-    )
+    records = _historical_records_for_working_tree(root, layout, inventory=source_inventory)
     data = b"".join(canonical_json_bytes(item) + b"\n" for item in records)
     lock_path = layout.studio_runtime_root / "edge-backlog.lock"
     with backlog_file_lock(lock_path, exclusive=True):
@@ -331,7 +557,7 @@ def validate_historical_edge_index(
     source = Path(path)
     records = load_historical_edge_index_records(source)
     root = Path(project_root).resolve() if project_root is not None else _infer_project_root(source)
-    validate_historical_records_provenance(records, project_root=root)
+    validate_historical_index_records(records, project_root=root)
     return {
         "schema": "alphaquest.edge-backlog-history-index-validation/v1",
         "status": "PASS",
@@ -661,12 +887,12 @@ def _is_valid_prior_history_index_v1(path: Path) -> bool:
     try:
         root = _infer_project_root(path)
         layout = load_storage_layout(root)
-        inventory = historical_source_inventory(root, layout=layout)
+        expected = _historical_records_for_working_tree(root, layout)
     except (OSError, ValueError):
         return False
     seen_ids: set[str] = set()
-    expected_cache: dict[Path, list[HistoricalEdgeIndexRecordV1]] = {}
     previous_key: tuple[str, int, str, str] | None = None
+    records: list[HistoricalEdgeIndexPriorV1] = []
     for raw_line in data.splitlines():
         if not raw_line:
             return False
@@ -678,33 +904,6 @@ def _is_valid_prior_history_index_v1(path: Path) -> bool:
             return False
         if record.record_id in seen_ids:
             return False
-        source = (root / record.source_path).resolve()
-        expected_kind = inventory.get(source)
-        if expected_kind != record.source_kind:
-            return False
-        try:
-            if source not in expected_cache:
-                expected_cache[source] = extract_historical_source_records(
-                    root,
-                    source,
-                    expected_kind,
-                    layout=layout,
-                )
-            expected_rows = expected_cache[source]
-        except (OSError, ValueError):
-            return False
-        expected = next(
-            (
-                item
-                for item in expected_rows
-                if item.source_row_number == record.source_row_number
-                and item.source_path == record.source_path
-                and item.source_sha256 == record.source_sha256
-            ),
-            None,
-        )
-        if expected is None or not _prior_projection_matches(record, expected):
-            return False
         key = (
             record.source_path,
             record.source_row_number or 0,
@@ -713,9 +912,13 @@ def _is_valid_prior_history_index_v1(path: Path) -> bool:
         )
         if previous_key is not None and key <= previous_key:
             return False
+        records.append(record)
         seen_ids.add(record.record_id)
         previous_key = key
-    return True
+    return len(records) == len(expected) and all(
+        _prior_projection_matches(prior, current)
+        for prior, current in zip(records, expected, strict=True)
+    )
 
 
 def _prior_projection_matches(
@@ -897,5 +1100,10 @@ __all__ = [
     "HISTORY_INDEX_SCHEMA",
     "HistoricalEdgeIndexRecordV1",
     "build_historical_edge_index",
+    "historical_records_for_repository_commit",
+    "historical_source_inventory",
     "validate_historical_edge_index",
+    "validate_historical_index_records",
+    "validate_historical_record_provenance",
+    "validate_historical_records_provenance",
 ]

@@ -2893,7 +2893,7 @@ def test_campaign_and_backlog_adapters_use_the_same_matcher_core(tmp_path: Path,
         expected_mechanism="delayed inventory hedging",
     )
 
-    store = EdgeBacklogStore(tmp_path)
+    store = EdgeBacklogStore(tmp_path / "backlog-store")
     first_observation = _capture(store, "obs.shared-core.first")
     second_observation = _capture(store, "obs.shared-core.second")
     _create(store, "edge.shared-core.first", first_observation)

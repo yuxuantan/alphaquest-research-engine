@@ -507,9 +507,10 @@ class EdgeBacklogDecisionV1(HashedRecord):
         ):
             raise ValueError("review decisions require duplicate resolution and candidate snapshot")
         if (
-            self.historical_universe_sha256 == _EMPTY_HISTORICAL_UNIVERSE_SHA256
-        ) != (self.historical_source_commit is None):
-            raise ValueError("historical source commit must be present exactly when the historical universe is nonempty")
+            self.historical_universe_sha256 != _EMPTY_HISTORICAL_UNIVERSE_SHA256
+            and self.historical_source_commit is None
+        ):
+            raise ValueError("a nonempty historical universe requires an immutable source commit")
         candidate_core = {
             "schema": DUPLICATE_SNAPSHOT_SCHEMA,
             "entry_id": self.entry_id,
@@ -1080,7 +1081,7 @@ class EdgeBacklogStore:
 
     @_transactional(exclusive=False)
     def search(self, query: str | None = None, *, state: str | None = None) -> list[dict[str, Any]]:
-        self._historical_index_records()
+        self._historical_snapshot_universe()
         query_tokens = duplicate_core.economic_tokens(query or "")
         rows = []
         for summary in self.list_entries():
@@ -1243,7 +1244,7 @@ class EdgeBacklogStore:
     @_transactional(exclusive=False)
     def validate(self) -> dict[str, Any]:
         self._taxonomy_catalog()
-        self._historical_index_records()
+        self._historical_snapshot_universe()
         observations = self._validate_observations()
         entries = self._validate_entries()
         decision_count = 0
@@ -1884,9 +1885,10 @@ class EdgeBacklogStore:
         query: EdgeBacklogEntryRevisionV1,
         query_tokens: set[str],
     ) -> list[dict[str, Any]]:
+        records, _commit, _universe_sha256 = self._historical_snapshot_universe()
         return [
             self._historical_candidate_material(query, query_tokens, record)
-            for record in self._historical_index_records()
+            for record in records
         ]
 
     def _historical_candidate_material(
@@ -1943,9 +1945,9 @@ class EdgeBacklogStore:
             return []
         try:
             records = load_historical_edge_index_records(path)
-            from alphaquest.research.edge_backlog_bootstrap import validate_historical_records_provenance
+            from alphaquest.research.edge_backlog_bootstrap import validate_historical_index_records
 
-            validate_historical_records_provenance(
+            validate_historical_index_records(
                 records,
                 project_root=self.project_root,
                 layout=self.layout,
@@ -1957,24 +1959,39 @@ class EdgeBacklogStore:
     def _historical_snapshot_universe(
         self,
     ) -> tuple[list[HistoricalEdgeIndexRecordV1], str | None, str]:
-        records = self._historical_index_records()
-        if not records:
-            return [], None, _EMPTY_HISTORICAL_UNIVERSE_SHA256
-        from alphaquest.research.edge_backlog_bootstrap import historical_records_for_repository_commit
+        from alphaquest.research.edge_backlog_bootstrap import (
+            historical_records_for_repository_commit,
+            historical_source_inventory,
+        )
 
         try:
             commit, committed_records = historical_records_for_repository_commit(self.project_root)
         except (OSError, ValueError) as exc:
+            try:
+                source_inventory = historical_source_inventory(
+                    self.project_root,
+                    layout=self.layout,
+                )
+            except (OSError, ValueError) as inventory_exc:
+                raise EdgeBacklogIntegrityError(
+                    "historical matcher universe source inventory cannot be established"
+                ) from inventory_exc
+            if not (self.project_root / ".git").exists() and not source_inventory and not (
+                self.layout.edge_backlog_history_index.exists()
+            ):
+                return [], None, _EMPTY_HISTORICAL_UNIVERSE_SHA256
             raise EdgeBacklogIntegrityError(
                 f"historical matcher universe is not bound to an immutable repository source state: {exc}"
             ) from exc
-        if [item.model_dump(mode="json", by_alias=True) for item in records] != [
-            item.model_dump(mode="json", by_alias=True) for item in committed_records
-        ]:
-            raise EdgeBacklogIntegrityError(
-                "configured historical index does not equal the complete repository-bound source extraction"
-            )
-        return records, commit, _historical_universe_sha256(records)
+        if self.layout.edge_backlog_history_index.is_file():
+            records = self._historical_index_records()
+            if [item.model_dump(mode="json", by_alias=True) for item in records] != [
+                item.model_dump(mode="json", by_alias=True) for item in committed_records
+            ]:
+                raise EdgeBacklogIntegrityError(
+                    "configured historical index does not equal the complete repository-bound source extraction"
+                )
+        return committed_records, commit, _historical_universe_sha256(committed_records)
 
     def _taxonomy_catalog(self) -> dict[int, EconomicEdgeTaxonomyV1]:
         try:
