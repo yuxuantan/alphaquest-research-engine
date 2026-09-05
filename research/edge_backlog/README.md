@@ -31,10 +31,12 @@ actual file-byte hash, source kind/row, and the shared source-specific
 extraction.
 
 In Git repositories a newly appended decision is provisional until its path
-and exact canonical blob are committed. Full validation then requires one
-unambiguous introduction commit, source-commit ancestry, an equal historical
-universe in the introduction parent, and an unchanged decision blob in every
-reachable descendant. Commit timestamps grant no ordering authority. A
+and exact canonical blob are committed. Full validation then requires the
+unique first reachable commit where the path existed at all to contain the
+expected canonical `100644` blob, source-commit ancestry, an equal historical
+universe in the introduction parent, and the same path, mode, type, and blob in
+every reachable descendant. Delete/re-add history cannot establish a new
+anchor. Commit timestamps grant no ordering authority. A
 wholesale rewrite before that first Git anchor cannot be detected
 cryptographically.
 

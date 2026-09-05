@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 import stat
 import subprocess
 from tempfile import NamedTemporaryFile
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import Field, model_validator
 import yaml
@@ -460,10 +460,11 @@ def repository_file_anchor(
     relative_path: str,
     expected_bytes: bytes,
 ) -> RepositoryFileAnchor | None:
-    """Resolve a unique, unchanged first Git anchor for exact canonical bytes.
+    """Resolve a unique, unchanged first Git anchor for one canonical path.
 
     None means the canonical file has never been committed and is provisional.
-    Once introduced, every reachable descendant must retain the exact same blob.
+    The path's first appearance must contain the expected blob. Once introduced,
+    every reachable descendant must retain that exact path, mode, type, and blob.
     """
 
     root = Path(project_root).resolve()
@@ -478,17 +479,9 @@ def repository_file_anchor(
     entries: dict[str, tuple[str, str, str] | None] = {
         commit: _repository_path_entry(root, commit, relative_path) for commit in commits
     }
-    matching = {
-        commit
-        for commit, entry in entries.items()
-        if entry == ("100644", "blob", expected_object_id)
-    }
-    if not matching:
-        if any(entry is not None for entry in entries.values()):
-            raise ValueError("committed canonical decision was rewritten or removed")
+    present = {commit for commit, entry in entries.items() if entry is not None}
+    if not present:
         return None
-    if entries[head] != ("100644", "blob", expected_object_id):
-        raise ValueError("committed canonical decision blob no longer matches its first Git anchor")
 
     parents = {
         commit: tuple(
@@ -496,26 +489,31 @@ def repository_file_anchor(
         )
         for commit in commits
     }
-    introductions = [
-        commit
-        for commit in matching
-        if not any(parent in matching for parent in parents[commit])
-    ]
+    # Process parents before children and remember whether the path existed at
+    # any reachable ancestor. This is deliberately path-history based: a
+    # deletion does not let a later re-add become a fresh introduction merely
+    # because its immediate parent lacks the path.
+    has_present_ancestor: dict[str, bool] = {}
+    for commit in reversed(commits):
+        has_present_ancestor[commit] = any(
+            parent in present or has_present_ancestor[parent]
+            for parent in parents[commit]
+        )
+    introductions = [commit for commit in present if not has_present_ancestor[commit]]
     if len(introductions) != 1:
         raise ValueError("canonical decision has an ambiguous Git introduction history")
     introduction = introductions[0]
     introduction_parents = parents[introduction]
     if len(introduction_parents) != 1:
         raise ValueError("canonical decision introduction must have exactly one Git parent")
-    if any(entries[parent] is not None for parent in introduction_parents):
-        raise ValueError("canonical decision path existed before its exact Git anchor")
+    expected_entry = ("100644", "blob", expected_object_id)
+    if entries[introduction] != expected_entry:
+        raise ValueError(
+            "canonical decision path's first Git appearance did not contain the expected 100644 blob"
+        )
 
     for commit, entry in entries.items():
-        if repository_commit_is_ancestor(root, introduction, commit) and entry != (
-            "100644",
-            "blob",
-            expected_object_id,
-        ):
+        if repository_commit_is_ancestor(root, introduction, commit) and entry != expected_entry:
             raise ValueError("committed canonical decision was changed or removed after introduction")
     return RepositoryFileAnchor(
         introduction_commit=introduction,
@@ -1543,24 +1541,24 @@ def _is_valid_reachable_history_index(path: Path) -> bool:
 
 
 def _is_valid_prior_history_index_v1(path: Path) -> bool:
+    """Accept only the exact prior-v1 projection of one reachable Git tree."""
+
     try:
         data = path.read_bytes()
-    except OSError:
-        return False
-    if not data or not data.endswith(b"\n"):
-        return False
-    try:
         root = _infer_project_root(path)
-        layout = load_storage_layout(root)
-        expected = _historical_records_for_working_tree(root, layout)
+        commits = str(_git(root, "rev-list", "HEAD", text=True)).splitlines()
     except (OSError, ValueError):
         return False
+    if not data or not data.endswith(b"\n") or data.endswith(b"\n\n"):
+        return False
+    raw_lines = data.split(b"\n")
+    if raw_lines[-1] != b"" or any(not raw_line for raw_line in raw_lines[:-1]):
+        return False
     seen_ids: set[str] = set()
+    seen_hashes: set[str] = set()
     previous_key: tuple[str, int, str, str] | None = None
     records: list[HistoricalEdgeIndexPriorV1] = []
-    for raw_line in data.splitlines():
-        if not raw_line:
-            return False
+    for raw_line in raw_lines[:-1]:
         try:
             record = HistoricalEdgeIndexPriorV1.model_validate_json(raw_line)
         except ValueError:
@@ -1568,6 +1566,8 @@ def _is_valid_prior_history_index_v1(path: Path) -> bool:
         if raw_line != canonical_json_bytes(record):
             return False
         if record.record_id in seen_ids:
+            return False
+        if record.record_sha256 in seen_hashes:
             return False
         key = (
             record.source_path,
@@ -1579,46 +1579,44 @@ def _is_valid_prior_history_index_v1(path: Path) -> bool:
             return False
         records.append(record)
         seen_ids.add(record.record_id)
+        seen_hashes.add(record.record_sha256)
         previous_key = key
-    return len(records) == len(expected) and all(
-        _prior_projection_matches(prior, current)
-        for prior, current in zip(records, expected, strict=True)
-    )
+    if data != b"".join(canonical_json_bytes(record) + b"\n" for record in records):
+        return False
+    for commit in commits:
+        try:
+            expected = _prior_history_index_v1_projection(
+                historical_repository_state(root, commit).records
+            )
+        except (OSError, ValueError):
+            continue
+        if records == expected:
+            return True
+    return False
 
 
-def _prior_projection_matches(
-    prior: HistoricalEdgeIndexPriorV1,
-    current: HistoricalEdgeIndexRecordV1,
-) -> bool:
-    shared_fields = (
-        "record_id",
-        "source_kind",
-        "source_path",
-        "source_sha256",
-        "source_row_number",
-        "archive_generation",
-        "campaign_id",
-        "variant_id",
-        "attempt_id",
-        "instrument",
-        "timeframe",
-        "raw_title",
-        "raw_edge",
-        "raw_hypothesis",
-        "raw_edge_family",
-        "raw_counterparty_transfer_rationale",
-        "raw_information_availability",
-        "raw_expected_effect",
-        "raw_config_path",
-        "raw_report_path",
-        "legacy_fingerprint",
-        "raw_outcome",
-        "raw_scientific_verdict",
-        "raw_disposition",
-        "raw_failure_reason",
-        "extraction_completeness",
-    )
-    return all(getattr(prior, field) == getattr(current, field) for field in shared_fields)
+def _prior_history_index_v1_projection(
+    current_records: Sequence[HistoricalEdgeIndexRecordV1],
+) -> list[HistoricalEdgeIndexPriorV1]:
+    projected: list[HistoricalEdgeIndexPriorV1] = []
+    for current in current_records:
+        payload = current.model_dump(mode="json", by_alias=True)
+        payload.pop("source_generation")
+        payload.pop("p1_evidence_eligibility")
+        payload.pop("derived_index_use")
+        payload["evidence_eligibility"] = (
+            "CURRENT_SCOPE"
+            if current.archive_generation == "CURRENT"
+            else "HISTORICAL_INELIGIBLE"
+        )
+        payload["semantic_resolution"] = (
+            "LEGACY_CANDIDATE"
+            if current.extraction_completeness == "COMPLETE"
+            else "NEEDS_MANUAL_REVIEW"
+        )
+        payload["record_sha256"] = record_sha256(payload)
+        projected.append(HistoricalEdgeIndexPriorV1.model_validate(payload))
+    return projected
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:

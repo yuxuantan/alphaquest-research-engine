@@ -199,12 +199,14 @@ and committer dates are informational only and never authorize ordering.
 In a Git-backed repository, every new decision binds exact clean `HEAD` for the
 historical layout and source universe. Until its canonical path and exact blob
 are committed, full validation reports `PROVISIONAL`, not `PASS`. After commit,
-validation finds the unique first reachable commit that introduced that path
-and blob, requires the bound source commit to be its ancestor, and requires the
-layout and source universe in the introduction commit's sole parent to equal
-the binding. The decision path and blob must remain unchanged in every
-reachable descendant; removal, rewriting, or ambiguous merge introductions
-fail closed. Git cannot reveal a wholesale rewrite that occurs before the
+validation finds the unique first reachable commit where that path existed at
+all and requires that first appearance to contain the exact canonical `100644`
+blob. The bound source commit must be its ancestor, and the layout and source
+universe in the introduction commit's sole parent must equal the binding. Every
+reachable descendant must retain the same path, mode, type, and blob; removal,
+relocation, rewriting, disappearance/reappearance, or ambiguous merge
+introductions fail closed. A later re-add cannot establish a fresh anchor. Git
+cannot reveal a wholesale rewrite that occurs before the
 provisional file receives its first Git anchor, so that pre-anchor interval is
 not cryptographically detectable.
 
@@ -361,9 +363,10 @@ self-hashed provenance fail closed.
 
 An existing configured target is replaceable only when its entire contents
 validate as the complete current projection, the exact canonical projection of
-a reachable historical commit, or the complete projection in the one explicit
-closed prior-v1 row contract. Source path/hash/row provenance, deterministic
-record ID, canonical ordering, and record hash remain mandatory. A
+a reachable historical commit, or the exact canonical prior-v1 projection of a
+reachable historical commit. The closed prior-v1 contract requires complete
+canonical bytes, source path/hash/row provenance, deterministic record identity,
+strict ordering, and record hashes. A
 genuine-but-truncated index, arbitrary self-hashed payload, or other existing
 file fails closed.
 

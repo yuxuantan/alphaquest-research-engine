@@ -14,6 +14,7 @@ from alphaquest.cli import main
 from alphaquest.research.edge_backlog import (
     DuplicateCandidateV1,
     EdgeBacklogConflictError,
+    EdgeBacklogEntryRevisionV1,
     EdgeBacklogIntegrityError,
     EdgeBacklogStore,
     canonical_json_bytes,
@@ -265,6 +266,34 @@ def _commit_paths(root: Path, message: str, *paths: str) -> str:
 
 def _commit_backlog(root: Path, store: EdgeBacklogStore, message: str) -> str:
     return _commit_paths(root, message, store.root.relative_to(root).as_posix())
+
+
+def _commit_then_delete_decision(
+    root: Path,
+) -> tuple[EdgeBacklogStore, EdgeBacklogEntryRevisionV1, Path, bytes]:
+    _fixture(root)
+    store = EdgeBacklogStore(root)
+    entry = _canonical_entry(store)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="Decision A is durably anchored before the adversarial deletion.",
+        reviewer_id="owner",
+    )
+    _commit_backlog(root, store, "anchor decision A")
+    decision_path = store.root / f"entries/{entry.entry_id}/decisions/000001.json"
+    original = decision_path.read_bytes()
+    decision_path.unlink()
+    _commit_paths(
+        root,
+        "delete anchored decision A",
+        decision_path.relative_to(root).as_posix(),
+    )
+    return store, entry, decision_path, original
 
 
 def _apply_dirty_historical_change(root: Path, change: str) -> tuple[str, ...]:
@@ -829,6 +858,81 @@ def test_bootstrap_migrates_only_hash_valid_prior_derived_index(tmp_path: Path) 
     assert result["status"] == "PASS"
     assert index.read_bytes() != prior_bytes
     assert validate_historical_edge_index(index)["status"] == "PASS"
+
+
+def test_bootstrap_replaces_stale_prior_v1_only_from_a_reachable_commit(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    build_historical_edge_index(tmp_path)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    prior_rows = [_prior_v1_row(row) for row in _index_rows(index)]
+    prior_bytes = b"".join(canonical_json_bytes(row) + b"\n" for row in prior_rows)
+    index.write_bytes(prior_bytes)
+    source = tmp_path / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    source.write_bytes(source.read_bytes() + b"owner_note: reachable later projection\n")
+    _commit_paths(
+        tmp_path,
+        "commit later projection",
+        source.relative_to(tmp_path).as_posix(),
+    )
+
+    result = build_historical_edge_index(tmp_path)
+
+    assert result["status"] == "PASS"
+    assert index.read_bytes() != prior_bytes
+    assert validate_historical_edge_index(index, project_root=tmp_path)["status"] == "PASS"
+
+
+def test_bootstrap_rejects_unreachable_prior_v1_projection(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    source = tmp_path / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    committed_source = source.read_bytes()
+    source.write_bytes(committed_source + b"owner_note: never committed projection\n")
+    build_historical_edge_index(tmp_path)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    unreachable_rows = [_prior_v1_row(row) for row in _index_rows(index)]
+    unreachable = b"".join(
+        canonical_json_bytes(row) + b"\n" for row in unreachable_rows
+    )
+    index.write_bytes(unreachable)
+    source.write_bytes(committed_source)
+
+    with pytest.raises(ValueError, match="not a valid derived index"):
+        build_historical_edge_index(tmp_path)
+    assert index.read_bytes() == unreachable
+
+
+@pytest.mark.parametrize(
+    "defect",
+    ["alternate-key-order", "missing-final-lf", "extra-final-lf", "reversed-order", "malformed"],
+)
+def test_prior_v1_replacement_requires_exact_canonical_bytes_and_order(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    _fixture(tmp_path)
+    build_historical_edge_index(tmp_path)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    rows = [_prior_v1_row(row) for row in _index_rows(index)]
+    canonical = b"".join(canonical_json_bytes(row) + b"\n" for row in rows)
+    if defect == "alternate-key-order":
+        first = dict(rows[0])
+        schema = first.pop("schema")
+        first["schema"] = schema
+        bad = json.dumps(first, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+        bad += b"".join(canonical_json_bytes(row) + b"\n" for row in rows[1:])
+    elif defect == "missing-final-lf":
+        bad = canonical[:-1]
+    elif defect == "extra-final-lf":
+        bad = canonical + b"\n"
+    elif defect == "reversed-order":
+        bad = b"".join(canonical_json_bytes(row) + b"\n" for row in reversed(rows))
+    else:
+        bad = b"[" + canonical[1:]
+    index.write_bytes(bad)
+
+    with pytest.raises(ValueError, match="not a valid derived index"):
+        build_historical_edge_index(tmp_path)
+    assert index.read_bytes() == bad
 
 
 @pytest.mark.parametrize(
@@ -1449,6 +1553,58 @@ def test_removed_git_anchored_decision_fails_closed(tmp_path: Path) -> None:
     )
 
     with pytest.raises(EdgeBacklogIntegrityError, match="removed or relocated"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+def test_deleted_decision_path_cannot_be_reanchored_with_resealed_later_decision(
+    tmp_path: Path,
+) -> None:
+    store, entry, decision_path, original = _commit_then_delete_decision(tmp_path)
+    source = tmp_path / "research/campaigns/active/later_universe_edge/campaign.yaml"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "campaign_id: later_universe_edge\n"
+        "title: Later universe edge\n"
+        "instrument: ES\n"
+        "edge: Inventory transfer persists after delayed hedging\n",
+        encoding="utf-8",
+    )
+    later_commit = _commit_paths(
+        tmp_path,
+        "commit later historical universe",
+        source.relative_to(tmp_path).as_posix(),
+    )
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    assert snapshot["historical_source_commit"] == later_commit
+    payload = json.loads(original)
+    payload["historical_source_commit"] = snapshot["historical_source_commit"]
+    payload["historical_universe_sha256"] = snapshot["historical_universe_sha256"]
+    payload["candidate_snapshot"] = snapshot["candidates"]
+    payload["rationale"] = "Resealed decision B is bound to the later source universe."
+    _reseal_decision_snapshot(payload)
+    decision_path.parent.mkdir(parents=True, exist_ok=True)
+    decision_path.write_bytes(canonical_json_bytes(payload) + b"\n")
+    _commit_paths(
+        tmp_path,
+        "forge decision B at the deleted canonical path",
+        decision_path.relative_to(tmp_path).as_posix(),
+    )
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="first Git appearance"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+def test_deleted_decision_path_cannot_reanchor_the_original_blob(tmp_path: Path) -> None:
+    _store, _entry, decision_path, original = _commit_then_delete_decision(tmp_path)
+    decision_path.parent.mkdir(parents=True, exist_ok=True)
+    decision_path.write_bytes(original)
+    _commit_paths(
+        tmp_path,
+        "re-add original decision blob",
+        decision_path.relative_to(tmp_path).as_posix(),
+    )
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="changed or removed after introduction"):
         EdgeBacklogStore(tmp_path).validate()
 
 
