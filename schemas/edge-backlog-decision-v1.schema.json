@@ -658,6 +658,11 @@
     "actor": {
       "$ref": "#/$defs/ActorProvenanceV1"
     },
+    "append_sequence": {
+      "minimum": 1,
+      "title": "Append Sequence",
+      "type": "integer"
+    },
     "candidate_snapshot": {
       "items": {
         "$ref": "#/$defs/DuplicateCandidateV1"
@@ -739,6 +744,32 @@
       "pattern": "^[a-f0-9]{64}$",
       "title": "Entry Revision Sha256",
       "type": "string"
+    },
+    "historical_source_commit": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{40}(?:[a-f0-9]{24})?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Historical Source Commit"
+    },
+    "historical_universe_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Historical Universe Sha256"
     },
     "previous_decision_sha256": {
       "anyOf": [
@@ -828,6 +859,7 @@
   },
   "required": [
     "record_id",
+    "append_sequence",
     "recorded_at",
     "actor",
     "record_sha256",

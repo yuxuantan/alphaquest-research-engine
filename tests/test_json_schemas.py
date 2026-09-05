@@ -66,6 +66,17 @@ def test_economic_taxonomy_and_fingerprint_schemas_require_discriminators():
     )
 
 
+def test_all_canonical_backlog_schemas_require_global_append_sequence():
+    for filename in (
+        "edge-backlog-observation-revision-v1.schema.json",
+        "edge-backlog-entry-revision-v1.schema.json",
+        "edge-backlog-decision-v1.schema.json",
+        "edge-backlog-link-v1.schema.json",
+    ):
+        schema = _schema(filename)
+        assert "append_sequence" in schema["required"]
+
+
 def test_campaign_schema_accepts_representative_authored_campaign():
     schema = _schema("campaign.schema.json")
     campaign = yaml.safe_load(

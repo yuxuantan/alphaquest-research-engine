@@ -45,7 +45,13 @@ the bootstrap index, and future registry views are derived and rebuildable.
 ## Canonical records
 
 All contracts reject unknown fields, use canonical JSON serialization, and
-carry a stable SHA-256 over the complete record except its own hash field.
+carry a stable SHA-256 over the complete record except its own hash field. Each
+of the four canonical record types also carries one immutable, store-wide
+`append_sequence`. The next value is derived from the validated canonical
+records while the exclusive cross-process lock is held; there is no counter
+file or fifth record type. Full validation requires the values to be globally
+unique and exactly gap-free from 1 through the record count, while every
+object-local chain must advance in append order.
 Full validation reads the raw bytes of every observation, entry, decision, and
 link record and requires exact equality with the validated canonical JSON plus
 one final newline. Pretty printing, alternate key order, missing or extra final
@@ -61,7 +67,9 @@ timestamps cannot precede their bound entry revisions, authorized links cannot
 precede their authorizing decisions, and changes after resume cannot be
 backdated before `RESUMED`. Equality remains valid inside ordinary revision,
 decision, and link chains; source-identity upgrades retain the stricter rule
-below.
+below. When timestamps are equal, `append_sequence` is the authoritative causal
+tie-break and historical-prefix boundary: activity with a lower value is in
+scope and activity with a higher value is not.
 
 All validation, current-state reads, duplicate-snapshot construction and stale
 comparison, sequence allocation, and exclusive append run under one
@@ -169,15 +177,24 @@ canonical decision and link-chain identities where applicable. Candidate
 revision, evidence, disposition, or relevant-link changes stale an earlier
 snapshot.
 
-Full validation reconstructs each persisted canonical candidate at the exact
-bound revision, decision-chain prefix, and link-chain prefix. The bound title,
-state, matcher material, and other derived fields must match that historical
-state, and every included record must be no later than the reviewing decision.
-A null decision identity is valid only for an empty prefix. Later candidate
-activity remains valid because it does not alter the earlier bound prefix.
-Historical candidates instead embed the complete strict
-`HistoricalEdgeIndexRecordV1`; their hash and restrictive classifications are
-self-contained and remain verifiable if the derived index is later rebuilt.
+Full validation independently reconstructs every canonical entry that existed
+before the reviewing decision's `append_sequence`, selects its exact latest
+entry, decision, and link prefixes at that boundary, reruns shared scoring,
+filtering, and ranking, and requires exact equality with the complete persisted
+candidate list. The bound label, state, matcher material, and other derived
+fields must agree, and every record selected into the prefix must have a
+`recorded_at` no later than the reviewing decision. A null decision identity is
+valid only for an empty prefix. Later revisions, decisions, links, and entries
+remain permissible because they fall after the immutable review boundary.
+
+For historical recall, a review binds the full matcher-universe SHA and the
+exact Git commit containing the source files used to create it. Full validation
+re-extracts the complete universe from that immutable source tree with the same
+source-specific parser used by bootstrap, then reruns filtering and ranking.
+Each included historical candidate also embeds its complete strict
+`HistoricalEdgeIndexRecordV1`. Therefore a later derived-index rebuild does not
+erase an earlier binding, an omitted historical candidate is detectable, and a
+source commit later than the reviewing decision fails closed.
 
 - `REVIEWED_CONTINUE` is optional curation. It is not scientific approval and
   is not required before a later P4 hypothesis proposal.
@@ -207,9 +224,11 @@ operations:
   `REVIEWED_CONTINUE`;
 - a human-governed `REVISIT_OF` link to an exact prior entry revision.
 
-A `REVISIT_OF` link cannot precede the timestamp of that exact targeted entry
-revision. This target chronology is checked both before append and during full
-history validation, independently of the authorizing-decision chronology.
+A `REVISIT_OF` link binds its target kind, ID, canonical locator, loaded entry
+ID and revision, payload SHA, timestamp, and append sequence as one identity.
+Its target revision and optional authorizing decision on that same target entry
+must precede the link by timestamp and append order. These invariants use the
+same validator before append and during full history validation.
 
 Admission, family, and campaign link operations intentionally have no P2 CLI
 surface and remain reserved for P3-P5 transitions. A revisit never changes the
@@ -233,7 +252,7 @@ authentication.
 ## CLI
 
 Prepare a JSON payload containing only user-controlled observation or entry
-fields; entry IDs, record IDs, revision numbers, actors, timestamps,
+fields; entry IDs, record IDs, revision numbers, append sequences, actors, timestamps,
 fingerprints, and record hashes are managed by AlphaQuest. Capture the created
 entry ID from the `create` response before subsequent commands.
 
@@ -312,6 +331,16 @@ or record hashes, noncanonical JSON/order, missing provenance, and any semantic
 promotion beyond `NOT_CURRENT_P1_EVIDENCE`, `DUPLICATE_RECALL_ONLY`, and
 `NEEDS_MANUAL_REVIEW`. Historical duplicate candidates repeat those values as
 literals and bind `history:<complete-record-sha256>`.
+
+Structural validity is not enough. Before a row may enter recall, a snapshot,
+decision persistence, full validation, or prior-index replacement, its
+project-relative `source_path` must resolve inside the approved historical
+source inventory, exist, match the actual file-byte SHA, use the source kind
+and row convention for that file, and equal a fresh source-specific extraction.
+Campaign YAML, research-ledger CSV, experiment-registry JSONL, and reset
+manifest JSON each use one shared parser for generation and verification;
+paths outside those configured roots, source substitution, and fabricated
+self-hashed provenance fail closed.
 
 An existing configured target is replaceable only when it validates as the
 current derived contract or as the one explicit closed prior-v1 row contract,

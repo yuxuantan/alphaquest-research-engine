@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
+import subprocess
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Mapping
 
@@ -101,6 +104,172 @@ class HistoricalEdgeIndexPriorV1(StrictBacklogModel):
         return self
 
 
+def historical_source_inventory(
+    project_root: str | Path,
+    *,
+    layout: StorageLayout | None = None,
+) -> dict[Path, str]:
+    """Return the complete approved source-file set used by bootstrap and verification."""
+
+    root = Path(project_root).resolve()
+    layout = layout or load_storage_layout(root)
+    inventory: dict[Path, str] = {}
+    definitions = set(campaign_definition_paths(project_root=root, layout=layout, include_ledger=True))
+    archived_root = root / "research" / "archived_generations"
+    if archived_root.is_dir():
+        definitions.update(path.resolve() for path in archived_root.glob("*/campaigns/*/*/campaign.yaml"))
+    for path in definitions:
+        _add_source(inventory, path, "CAMPAIGN_DEFINITION")
+    ledger_paths = {
+        root / "research_ledger.csv",
+        root / "Start here" / "research_ledger.csv",
+    }
+    if archived_root.is_dir():
+        ledger_paths.update(archived_root.glob("*/research_ledger.csv"))
+    for path in sorted(ledger_paths):
+        if path.is_file():
+            _add_source(inventory, path, "RESEARCH_LEDGER_ROW")
+    experiment_path = layout.research_artifact_root / "governance" / "experiment_registry.jsonl"
+    if experiment_path.is_file():
+        _add_source(inventory, experiment_path, "EXPERIMENT_REGISTRY_EVENT")
+    for path in sorted((layout.research_artifact_root / "governance").glob("research_reset*.json")):
+        if path.is_file():
+            _add_source(inventory, path, "RESEARCH_RESET_MANIFEST")
+    return inventory
+
+
+def extract_historical_source_records(
+    project_root: str | Path,
+    path: str | Path,
+    source_kind: str,
+    *,
+    layout: StorageLayout | None = None,
+    source_bytes: bytes | None = None,
+) -> list[HistoricalEdgeIndexRecordV1]:
+    """Run the sole source-specific historical projection parser."""
+
+    root = Path(project_root).resolve()
+    source = Path(path).resolve()
+    layout = layout or load_storage_layout(root)
+    if source_kind == "CAMPAIGN_DEFINITION":
+        record = _campaign_record(root, source, layout, source_bytes)
+        return [] if record is None else [record]
+    if source_kind == "RESEARCH_LEDGER_ROW":
+        return _ledger_records(root, source, layout, source_bytes)
+    if source_kind == "EXPERIMENT_REGISTRY_EVENT":
+        return _experiment_records(root, source, layout, source_bytes)
+    if source_kind == "RESEARCH_RESET_MANIFEST":
+        record = _reset_record(root, source, layout, source_bytes)
+        return [] if record is None else [record]
+    raise ValueError(f"unsupported historical source_kind: {source_kind!r}")
+
+
+def validate_historical_record_provenance(
+    record: HistoricalEdgeIndexRecordV1,
+    *,
+    project_root: str | Path,
+    layout: StorageLayout | None = None,
+) -> None:
+    validate_historical_records_provenance(
+        [record],
+        project_root=project_root,
+        layout=layout,
+    )
+
+
+def validate_historical_records_provenance(
+    records: list[HistoricalEdgeIndexRecordV1],
+    *,
+    project_root: str | Path,
+    layout: StorageLayout | None = None,
+) -> None:
+    """Verify strict rows against existing files in approved historical roots."""
+
+    root = Path(project_root).resolve()
+    layout = layout or load_storage_layout(root)
+    inventory = historical_source_inventory(root, layout=layout)
+    grouped: dict[str, list[HistoricalEdgeIndexRecordV1]] = {}
+    for record in records:
+        grouped.setdefault(record.source_path, []).append(record)
+    for source_path, claimed in grouped.items():
+        source = (root / source_path).resolve()
+        if not _is_relative_to(source, root):
+            raise ValueError(f"historical source escapes project root: {source_path}")
+        expected_kind = inventory.get(source)
+        if expected_kind is None:
+            raise ValueError(f"historical source is absent or outside approved roots: {source_path}")
+        if any(item.source_kind != expected_kind for item in claimed):
+            raise ValueError(f"historical source_kind does not match approved source: {source_path}")
+        expected = extract_historical_source_records(
+            root,
+            source,
+            expected_kind,
+            layout=layout,
+        )
+        expected_by_id = {item.record_id: item for item in expected}
+        for item in claimed:
+            resolved = expected_by_id.get(item.record_id)
+            if resolved is None or resolved.model_dump(mode="json", by_alias=True) != item.model_dump(
+                mode="json", by_alias=True
+            ):
+                raise ValueError(
+                    f"historical row does not equal the source-specific projection: {source_path}"
+                )
+
+
+def historical_records_for_repository_commit(
+    project_root: str | Path,
+    commit: str | None = None,
+) -> tuple[str, list[HistoricalEdgeIndexRecordV1]]:
+    """Rebuild the complete matcher universe from one immutable Git source tree."""
+
+    root = Path(project_root).resolve()
+    layout = load_storage_layout(root)
+    requested = commit or "HEAD"
+    resolved = _git(root, "rev-parse", f"{requested}^{{commit}}", text=True).strip()
+    if commit is not None and resolved != commit:
+        raise ValueError("historical source commit must be a full immutable Git object ID")
+    tree = _git(root, "ls-tree", "-r", "-z", "--full-tree", resolved)
+    blobs: list[tuple[str, str, str]] = []
+    for raw in tree.split(b"\0"):
+        if not raw:
+            continue
+        metadata, raw_path = raw.split(b"\t", 1)
+        _mode, object_type, object_id = metadata.decode("ascii").split()
+        if object_type != "blob":
+            continue
+        relative = raw_path.decode("utf-8")
+        source_kind = _historical_source_kind_for_relative(relative, root, layout)
+        if source_kind is not None:
+            blobs.append((relative, object_id, source_kind))
+    records: list[HistoricalEdgeIndexRecordV1] = []
+    for relative, object_id, source_kind in sorted(blobs):
+        data = _git(root, "cat-file", "blob", object_id)
+        records.extend(
+            extract_historical_source_records(
+                root,
+                root / relative,
+                source_kind,
+                layout=layout,
+                source_bytes=data,
+            )
+        )
+    records.sort(key=lambda item: (item.source_path, item.source_row_number or 0, item.source_kind, item.record_id))
+    return resolved, records
+
+
+def repository_commit_recorded_at(project_root: str | Path, commit: str) -> datetime:
+    root = Path(project_root).resolve()
+    value = _git(root, "show", "-s", "--format=%cI", commit, text=True).strip()
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("historical source commit has an invalid immutable timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("historical source commit timestamp must be timezone-aware")
+    return parsed
+
+
 def build_historical_edge_index(
     project_root: str | Path = ".",
     *,
@@ -113,36 +282,12 @@ def build_historical_edge_index(
     output = _validated_output_path(root, layout, output_path)
 
     records: list[HistoricalEdgeIndexRecordV1] = []
-    definitions = set(campaign_definition_paths(project_root=root, include_ledger=True))
-    archived_root = root / "research" / "archived_generations"
-    if archived_root.is_dir():
-        definitions.update(path.resolve() for path in archived_root.glob("*/campaigns/*/*/campaign.yaml"))
-    ledger_paths = tuple(
-        path for path in sorted(root.glob("**/research_ledger.csv")) if path.is_file() and not _is_git_path(path, root)
-    )
-    experiment_path = layout.research_artifact_root / "governance" / "experiment_registry.jsonl"
-    experiment_paths = (experiment_path,) if experiment_path.is_file() else ()
-    reset_paths = tuple(
-        path for path in sorted((layout.research_artifact_root / "governance").glob("research_reset*.json"))
-    )
-    source_paths = {*definitions, *ledger_paths, *experiment_paths, *reset_paths}
+    source_inventory = historical_source_inventory(root, layout=layout)
+    source_paths = set(source_inventory)
     if output.resolve() in {path.resolve() for path in source_paths}:
         raise ValueError("derived history index target cannot replace a bootstrap source file")
-    for path in sorted(definitions):
-        record = _campaign_record(root, path, layout)
-        if record is not None:
-            records.append(record)
-
-    for path in ledger_paths:
-        records.extend(_ledger_records(root, path, layout))
-
-    for path in experiment_paths:
-        records.extend(_experiment_records(root, path, layout))
-
-    for path in reset_paths:
-        record = _reset_record(root, path, layout)
-        if record is not None:
-            records.append(record)
+    for path, source_kind in sorted(source_inventory.items(), key=lambda item: item[0].as_posix()):
+        records.extend(extract_historical_source_records(root, path, source_kind, layout=layout))
 
     records.sort(
         key=lambda item: (
@@ -178,9 +323,15 @@ def build_historical_edge_index(
     }
 
 
-def validate_historical_edge_index(path: str | Path) -> dict[str, Any]:
+def validate_historical_edge_index(
+    path: str | Path,
+    *,
+    project_root: str | Path | None = None,
+) -> dict[str, Any]:
     source = Path(path)
     records = load_historical_edge_index_records(source)
+    root = Path(project_root).resolve() if project_root is not None else _infer_project_root(source)
+    validate_historical_records_provenance(records, project_root=root)
     return {
         "schema": "alphaquest.edge-backlog-history-index-validation/v1",
         "status": "PASS",
@@ -193,10 +344,12 @@ def _campaign_record(
     root: Path,
     path: Path,
     layout: StorageLayout,
+    source_bytes: bytes | None = None,
 ) -> HistoricalEdgeIndexRecordV1 | None:
     try:
-        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
+        data = path.read_bytes() if source_bytes is None else source_bytes
+        payload = yaml.safe_load(data.decode("utf-8")) or {}
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
         return None
     if not isinstance(payload, dict):
         return None
@@ -205,7 +358,7 @@ def _campaign_record(
     raw = {
         "source_kind": "CAMPAIGN_DEFINITION",
         "source_path": display_path(path, root),
-        "source_sha256": _file_sha256(path),
+        "source_sha256": hashlib.sha256(data).hexdigest(),
         "source_row_number": None,
         **_generation(path, root, layout),
         "campaign_id": _optional(payload.get("campaign_id") or path.parent.name),
@@ -237,11 +390,21 @@ def _campaign_record(
     return _seal_history(raw)
 
 
-def _ledger_records(root: Path, path: Path, layout: StorageLayout) -> list[HistoricalEdgeIndexRecordV1]:
+def _ledger_records(
+    root: Path,
+    path: Path,
+    layout: StorageLayout,
+    source_bytes: bytes | None = None,
+) -> list[HistoricalEdgeIndexRecordV1]:
     output = []
-    source_sha256 = _file_sha256(path)
     try:
-        with path.open(newline="", encoding="utf-8-sig") as handle:
+        data = path.read_bytes() if source_bytes is None else source_bytes
+        text = data.decode("utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"could not read historical ledger {path}: {exc}") from exc
+    source_sha256 = hashlib.sha256(data).hexdigest()
+    try:
+        with io.StringIO(text, newline="") as handle:
             for row_number, row in enumerate(csv.DictReader(handle), start=2):
                 raw = {
                     "source_kind": "RESEARCH_LEDGER_ROW",
@@ -277,10 +440,20 @@ def _ledger_records(root: Path, path: Path, layout: StorageLayout) -> list[Histo
     return output
 
 
-def _experiment_records(root: Path, path: Path, layout: StorageLayout) -> list[HistoricalEdgeIndexRecordV1]:
+def _experiment_records(
+    root: Path,
+    path: Path,
+    layout: StorageLayout,
+    source_bytes: bytes | None = None,
+) -> list[HistoricalEdgeIndexRecordV1]:
     output = []
-    source_sha256 = _file_sha256(path)
-    for row_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    try:
+        data = path.read_bytes() if source_bytes is None else source_bytes
+        text = data.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"could not read experiment registry {path}: {exc}") from exc
+    source_sha256 = hashlib.sha256(data).hexdigest()
+    for row_number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
         try:
@@ -319,15 +492,21 @@ def _experiment_records(root: Path, path: Path, layout: StorageLayout) -> list[H
     return output
 
 
-def _reset_record(root: Path, path: Path, layout: StorageLayout) -> HistoricalEdgeIndexRecordV1 | None:
+def _reset_record(
+    root: Path,
+    path: Path,
+    layout: StorageLayout,
+    source_bytes: bytes | None = None,
+) -> HistoricalEdgeIndexRecordV1 | None:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        data = path.read_bytes() if source_bytes is None else source_bytes
+        payload = json.loads(data.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     raw = {
         "source_kind": "RESEARCH_RESET_MANIFEST",
         "source_path": display_path(path, root),
-        "source_sha256": _file_sha256(path),
+        "source_sha256": hashlib.sha256(data).hexdigest(),
         "source_row_number": None,
         **_generation(path, root, layout),
         "campaign_id": None,
@@ -479,7 +658,14 @@ def _is_valid_prior_history_index_v1(path: Path) -> bool:
         return False
     if not data or not data.endswith(b"\n"):
         return False
+    try:
+        root = _infer_project_root(path)
+        layout = load_storage_layout(root)
+        inventory = historical_source_inventory(root, layout=layout)
+    except (OSError, ValueError):
+        return False
     seen_ids: set[str] = set()
+    expected_cache: dict[Path, list[HistoricalEdgeIndexRecordV1]] = {}
     previous_key: tuple[str, int, str, str] | None = None
     for raw_line in data.splitlines():
         if not raw_line:
@@ -491,6 +677,33 @@ def _is_valid_prior_history_index_v1(path: Path) -> bool:
         if raw_line != canonical_json_bytes(record):
             return False
         if record.record_id in seen_ids:
+            return False
+        source = (root / record.source_path).resolve()
+        expected_kind = inventory.get(source)
+        if expected_kind != record.source_kind:
+            return False
+        try:
+            if source not in expected_cache:
+                expected_cache[source] = extract_historical_source_records(
+                    root,
+                    source,
+                    expected_kind,
+                    layout=layout,
+                )
+            expected_rows = expected_cache[source]
+        except (OSError, ValueError):
+            return False
+        expected = next(
+            (
+                item
+                for item in expected_rows
+                if item.source_row_number == record.source_row_number
+                and item.source_path == record.source_path
+                and item.source_sha256 == record.source_sha256
+            ),
+            None,
+        )
+        if expected is None or not _prior_projection_matches(record, expected):
             return False
         key = (
             record.source_path,
@@ -505,12 +718,136 @@ def _is_valid_prior_history_index_v1(path: Path) -> bool:
     return True
 
 
+def _prior_projection_matches(
+    prior: HistoricalEdgeIndexPriorV1,
+    current: HistoricalEdgeIndexRecordV1,
+) -> bool:
+    shared_fields = (
+        "record_id",
+        "source_kind",
+        "source_path",
+        "source_sha256",
+        "source_row_number",
+        "archive_generation",
+        "campaign_id",
+        "variant_id",
+        "attempt_id",
+        "instrument",
+        "timeframe",
+        "raw_title",
+        "raw_edge",
+        "raw_hypothesis",
+        "raw_edge_family",
+        "raw_counterparty_transfer_rationale",
+        "raw_information_availability",
+        "raw_expected_effect",
+        "raw_config_path",
+        "raw_report_path",
+        "legacy_fingerprint",
+        "raw_outcome",
+        "raw_scientific_verdict",
+        "raw_disposition",
+        "raw_failure_reason",
+        "extraction_completeness",
+    )
+    return all(getattr(prior, field) == getattr(current, field) for field in shared_fields)
+
+
 def _is_relative_to(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
     except ValueError:
         return False
     return True
+
+
+def _add_source(inventory: dict[Path, str], path: Path, source_kind: str) -> None:
+    resolved = path.resolve()
+    previous = inventory.get(resolved)
+    if previous is not None and previous != source_kind:
+        raise ValueError(f"historical source has ambiguous kinds: {resolved}")
+    inventory[resolved] = source_kind
+
+
+def _historical_source_kind_for_relative(
+    value: str,
+    root: Path,
+    layout: StorageLayout,
+) -> str | None:
+    relative = Path(value)
+    if relative in {Path("research_ledger.csv"), Path("Start here/research_ledger.csv")} or (
+        len(relative.parts) == 4
+        and relative.parts[0:2] == ("research", "archived_generations")
+        and relative.name == "research_ledger.csv"
+    ):
+        return "RESEARCH_LEDGER_ROW"
+    governance = _relative_to_root(layout.research_artifact_root / "governance", root)
+    if governance is not None and relative.parent == governance:
+        if relative.name == "experiment_registry.jsonl":
+            return "EXPERIMENT_REGISTRY_EVENT"
+        if relative.name.startswith("research_reset") and relative.suffix == ".json":
+            return "RESEARCH_RESET_MANIFEST"
+    if relative.name != "campaign.yaml":
+        return None
+    campaign_roots = [layout.active_campaign_root, *layout.archive_campaign_roots]
+    for configured_root in campaign_roots:
+        configured = _relative_to_root(configured_root, root)
+        if configured is not None and _is_direct_campaign_definition(relative, configured):
+            return "CAMPAIGN_DEFINITION"
+    for old_prefix, _new_prefix in layout.legacy_prefixes:
+        legacy = Path(old_prefix.rstrip("/"))
+        if _is_direct_campaign_definition(relative, legacy):
+            return "CAMPAIGN_DEFINITION"
+    parts = relative.parts
+    if (
+        len(parts) >= 7
+        and parts[0:2] == ("research", "archived_generations")
+        and parts[3] == "campaigns"
+        and parts[-1] == "campaign.yaml"
+        and len(parts[4:]) == 3
+    ):
+        return "CAMPAIGN_DEFINITION"
+    return None
+
+
+def _is_direct_campaign_definition(path: Path, source_root: Path) -> bool:
+    try:
+        remainder = path.relative_to(source_root)
+    except ValueError:
+        return False
+    return len(remainder.parts) == 2 and remainder.parts[-1] == "campaign.yaml"
+
+
+def _relative_to_root(path: Path, root: Path) -> Path | None:
+    try:
+        return path.resolve().relative_to(root)
+    except ValueError:
+        return None
+
+
+def _infer_project_root(index_path: Path) -> Path:
+    source = index_path.resolve()
+    for parent in source.parents:
+        if (parent / "config/storage_layout.yaml").is_file():
+            return parent
+    if source.parent.name == "catalogs":
+        return source.parent.parent
+    raise ValueError("project_root is required to validate historical source provenance")
+
+
+def _git(root: Path, *arguments: str, text: bool = False) -> bytes | str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *arguments],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=text,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
+        raise ValueError(f"could not resolve immutable historical source commit: {detail}") from exc
+    return result.stdout
 
 
 def _optional(value: Any) -> str | None:
@@ -536,15 +873,6 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _is_git_path(path: Path, root: Path) -> bool:
-    resolved = path.resolve()
-    try:
-        resolved.relative_to((root / ".git").resolve())
-        return True
-    except ValueError:
-        return False
 
 
 def _atomic_replace(path: Path, data: bytes) -> None:

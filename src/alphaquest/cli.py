@@ -1247,7 +1247,7 @@ def _edge_show(args: argparse.Namespace) -> int:
                 "entry_id": payload["entry"]["entry_id"],
                 "revision": payload["entry"]["revision"],
                 "state": payload["state"],
-                "title": payload["entry"]["title"],
+                "title": payload["display_label"],
                 "decisions": len(payload["decisions"]),
                 "links": len(payload["links"]),
             }

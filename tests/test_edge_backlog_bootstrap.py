@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timedelta
+import os
 from pathlib import Path
+import subprocess
 
 import pytest
 import yaml
@@ -129,6 +132,24 @@ def _fixture(root: Path) -> dict[str, bytes]:
     )
     reset = governance / "research_reset_fixture.json"
     reset.write_text('{"status":"COMPLETE"}\n', encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=AlphaQuest Test",
+            "-c",
+            "user.email=alphaquest.test@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "fixture sources",
+        ],
+        check=True,
+    )
     return {
         str(path.relative_to(root)): path.read_bytes()
         for path in (current, configured_archive, archived, root_ledger, archive_ledger, experiment, reset)
@@ -198,6 +219,31 @@ def _write_index_rows(path: Path, rows: list[dict]) -> None:
 
 def _reseal_index_row(row: dict) -> None:
     row["record_sha256"] = record_sha256(row)
+
+
+def _reseal_index_identity(row: dict) -> None:
+    identity = {
+        "source_kind": row["source_kind"],
+        "source_path": row["source_path"],
+        "source_sha256": row["source_sha256"],
+        "source_row_number": row["source_row_number"],
+    }
+    row["record_id"] = "history." + hashlib.sha256(canonical_json_bytes(identity)).hexdigest()[:24]
+    _reseal_index_row(row)
+
+
+def _reseal_decision_snapshot(payload: dict) -> None:
+    core = {
+        "schema": "alphaquest.edge-backlog-duplicate-snapshot/v1",
+        "entry_id": payload["entry_id"],
+        "entry_revision_sha256": payload["entry_revision_sha256"],
+        "entry_link_chain_sha256": payload["entry_link_chain_sha256"],
+        "historical_source_commit": payload["historical_source_commit"],
+        "historical_universe_sha256": payload["historical_universe_sha256"],
+        "candidates": payload["candidate_snapshot"],
+    }
+    payload["candidate_snapshot_sha256"] = hashlib.sha256(canonical_json_bytes(core)).hexdigest()
+    payload["record_sha256"] = record_sha256(payload)
 
 
 def test_bootstrap_is_byte_stable_read_only_and_preserves_generation(tmp_path: Path) -> None:
@@ -351,6 +397,70 @@ def test_shared_historical_index_contract_rejects_every_malformed_row(
         validate_historical_edge_index(index)
 
 
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "nonexistent-source",
+        "wrong-source-hash",
+        "wrong-row",
+        "wrong-projection",
+        "path-traversal",
+        "unapproved-root",
+        "unapproved-ledger-root",
+        "wrong-source-kind",
+        "source-substitution",
+    ],
+)
+def test_historical_provenance_fails_closed_against_actual_sources(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    _fixture(tmp_path)
+    build_historical_edge_index(tmp_path)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    rows = _index_rows(index)
+    campaign_rows = [item for item in rows if item["source_kind"] == "CAMPAIGN_DEFINITION"]
+    ledger_row = next(item for item in rows if item["source_kind"] == "RESEARCH_LEDGER_ROW")
+    row = dict(ledger_row if defect == "unapproved-ledger-root" else campaign_rows[0])
+    if defect == "nonexistent-source":
+        row["source_path"] = "research/campaigns/active/missing/campaign.yaml"
+        row["source_sha256"] = "f" * 64
+    elif defect == "wrong-source-hash":
+        row["source_sha256"] = "f" * 64
+    elif defect == "wrong-row":
+        row = dict(ledger_row)
+        row["source_row_number"] = 999999
+    elif defect == "wrong-projection":
+        row["raw_edge"] = "A source claim that does not occur in the bound file."
+    elif defect == "path-traversal":
+        row["source_path"] = "../outside/campaign.yaml"
+    elif defect == "unapproved-root":
+        source = tmp_path / "notes/campaign.yaml"
+        source.parent.mkdir(parents=True)
+        source.write_text("campaign_id: substituted\n", encoding="utf-8")
+        row["source_path"] = str(source.relative_to(tmp_path))
+        row["source_sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
+    elif defect == "unapproved-ledger-root":
+        source = tmp_path / "notes/research_ledger.csv"
+        source.parent.mkdir(parents=True)
+        source.write_bytes((tmp_path / "research_ledger.csv").read_bytes())
+        row["source_path"] = str(source.relative_to(tmp_path))
+        row["source_sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
+    elif defect == "wrong-source-kind":
+        row["source_kind"] = "RESEARCH_RESET_MANIFEST"
+    elif defect == "source-substitution":
+        substitute = campaign_rows[1]
+        row["source_path"] = substitute["source_path"]
+        row["source_sha256"] = substitute["source_sha256"]
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(defect)
+    _reseal_index_identity(row)
+    _write_index_rows(index, [row])
+
+    with pytest.raises(ValueError):
+        validate_historical_edge_index(index, project_root=tmp_path)
+
+
 def test_configured_history_is_strictly_validated_before_every_store_consumer(tmp_path: Path) -> None:
     _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
@@ -377,6 +487,37 @@ def test_configured_history_is_strictly_validated_before_every_store_consumer(tm
             candidate_snapshot_sha256=snapshot["snapshot_sha256"],
             reason_codes=["OTHER"],
             rationale="A malformed configured history index must block decision persistence.",
+            reviewer_id="owner",
+        )
+    assert not (store.root / f"entries/{entry.entry_id}/decisions/000001.json").exists()
+
+
+def test_forged_source_provenance_is_rejected_before_every_store_consumer(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    build_historical_edge_index(tmp_path)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    rows = _index_rows(index)
+    rows[0]["raw_hypothesis"] = "A fabricated projection absent from the immutable source file."
+    _reseal_index_row(rows[0])
+    _write_index_rows(index, rows)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
+        store.search("auction")
+    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
+        store.duplicate_snapshot(entry.entry_id)
+    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
+        store.validate()
+    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
+        store.record_human_decision(
+            entry.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="Fabricated source provenance must block persistence.",
             reviewer_id="owner",
         )
     assert not (store.root / f"entries/{entry.entry_id}/decisions/000001.json").exists()
@@ -435,6 +576,105 @@ def test_persisted_historical_candidate_is_self_contained_after_index_rebuild(tm
     assert store.validate()["status"] == "PASS"
 
 
+def test_full_validation_rejects_resealed_omitted_historical_candidate(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    build_historical_edge_index(tmp_path)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    assert any(item["candidate_kind"] == "DERIVED_HISTORICAL_RECORD" for item in snapshot["candidates"])
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="The complete source-bound historical candidate universe was reviewed.",
+        reviewer_id="owner",
+    )
+    path = store.root / f"entries/{entry.entry_id}/decisions/000001.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    removed = next(
+        item for item in payload["candidate_snapshot"] if item["candidate_kind"] == "DERIVED_HISTORICAL_RECORD"
+    )
+    payload["candidate_snapshot"].remove(removed)
+    _reseal_decision_snapshot(payload)
+    path.write_bytes(canonical_json_bytes(payload) + b"\n")
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="complete deterministic universe"):
+        store.validate()
+
+
+def test_future_historical_source_commit_cannot_be_spliced_into_earlier_decision(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    build_historical_edge_index(tmp_path)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    initial_commit_time = datetime.fromisoformat(
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "show", "-s", "--format=%cI", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+    review_time = initial_commit_time + timedelta(seconds=10)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="The decision is bound to the then-current immutable historical source tree.",
+        reviewer_id="owner",
+        recorded_at=review_time,
+    )
+
+    future = tmp_path / "research/campaigns/active/future_auction_edge/campaign.yaml"
+    future.parent.mkdir(parents=True)
+    future.write_text(
+        "campaign_id: future_auction_edge\n"
+        "title: Future auction edge\n"
+        "instrument: ES\n"
+        "edge: Opening auction pressure persists\n"
+        "hypothesis: Dealers hedge slowly after price discovery\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "add", str(future.relative_to(tmp_path))], check=True)
+    future_time = (review_time + timedelta(seconds=10)).isoformat()
+    environment = {**os.environ, "GIT_AUTHOR_DATE": future_time, "GIT_COMMITTER_DATE": future_time}
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.name=AlphaQuest Test",
+            "-c",
+            "user.email=alphaquest.test@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "future source",
+        ],
+        check=True,
+        env=environment,
+    )
+    build_historical_edge_index(tmp_path)
+    future_snapshot = store.duplicate_snapshot(entry.entry_id)
+    decision_path = store.root / f"entries/{entry.entry_id}/decisions/000001.json"
+    payload = json.loads(decision_path.read_text(encoding="utf-8"))
+    payload["candidate_snapshot"] = future_snapshot["candidates"]
+    payload["historical_source_commit"] = future_snapshot["historical_source_commit"]
+    payload["historical_universe_sha256"] = future_snapshot["historical_universe_sha256"]
+    _reseal_decision_snapshot(payload)
+    decision_path.write_bytes(canonical_json_bytes(payload) + b"\n")
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit is later than the reviewing decision"):
+        store.validate()
+
+
 def test_bootstrap_cli_writes_only_the_configured_derived_path(tmp_path: Path, capsys) -> None:
     source_bytes = _fixture(tmp_path)
 
@@ -484,7 +724,10 @@ def test_bootstrap_migrates_only_hash_valid_prior_derived_index(tmp_path: Path) 
     assert validate_historical_edge_index(index)["status"] == "PASS"
 
 
-@pytest.mark.parametrize("defect", ["missing_provenance", "unknown_authority_field"])
+@pytest.mark.parametrize(
+    "defect",
+    ["missing_provenance", "unknown_authority_field", "fabricated_source_provenance"],
+)
 def test_bootstrap_rejects_arbitrary_self_hashed_prior_payload(
     tmp_path: Path,
     defect: str,
@@ -504,9 +747,14 @@ def test_bootstrap_rejects_arbitrary_self_hashed_prior_payload(
     )
     if defect == "missing_provenance":
         row.pop("source_sha256")
-    else:
+    elif defect == "unknown_authority_field":
         row["authority"] = "PROMOTE"
-    _reseal_index_row(row)
+    else:
+        row["source_path"] = "research/campaigns/archive/fabricated/campaign.yaml"
+        row["source_sha256"] = "f" * 64
+        _reseal_index_identity(row)
+    if defect != "fabricated_source_provenance":
+        _reseal_index_row(row)
     original = canonical_json_bytes(row) + b"\n"
     index.write_bytes(original)
 

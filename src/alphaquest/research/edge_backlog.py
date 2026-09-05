@@ -56,6 +56,7 @@ SHA256_PATTERN = r"^[a-f0-9]{64}$"
 Identifier = Annotated[str, Field(pattern=IDENTIFIER_PATTERN)]
 RecordIdentifier = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_.-]{0,255}$")]
 Sha256 = Annotated[str, Field(pattern=SHA256_PATTERN)]
+GitObjectId = Annotated[str, Field(pattern=r"^[a-f0-9]{40}(?:[a-f0-9]{24})?$")]
 NonBlank = Annotated[str, Field(min_length=1)]
 
 ActorClass = Literal[
@@ -103,6 +104,7 @@ _LINK_TARGETS: dict[str, str] = {
 }
 _IDENTIFIER = re.compile(IDENTIFIER_PATTERN)
 _EMPTY_RECORD_CHAIN_SHA256 = hashlib.sha256(b"[]").hexdigest()
+_EMPTY_HISTORICAL_UNIVERSE_SHA256 = hashlib.sha256(b"[]").hexdigest()
 
 
 class EdgeBacklogError(RuntimeError):
@@ -179,6 +181,7 @@ class ObservationReferenceV1(StrictBacklogModel):
 
 class HashedRecord(StrictBacklogModel):
     record_id: RecordIdentifier
+    append_sequence: Annotated[int, Field(ge=1)]
     recorded_at: datetime
     actor: ActorProvenanceV1
     record_sha256: Sha256
@@ -449,6 +452,8 @@ class EdgeBacklogDecisionV1(HashedRecord):
     duplicate_resolution: DuplicateResolution | None = None
     candidate_snapshot: list[DuplicateCandidateV1] = Field(default_factory=list)
     candidate_snapshot_sha256: Sha256 | None = None
+    historical_source_commit: GitObjectId | None = None
+    historical_universe_sha256: Sha256 | None = None
     canonical_entry_id: Identifier | None = None
     related_edge_family_ids: list[Identifier] = Field(default_factory=list)
     reason_codes: Annotated[list[ReasonCode], Field(min_length=1)]
@@ -486,6 +491,8 @@ class EdgeBacklogDecisionV1(HashedRecord):
                     self.duplicate_resolution is not None,
                     bool(self.candidate_snapshot),
                     self.candidate_snapshot_sha256 is not None,
+                    self.historical_source_commit is not None,
+                    self.historical_universe_sha256 is not None,
                     self.canonical_entry_id is not None,
                     bool(self.related_edge_family_ids),
                     bool(self.revisit_conditions),
@@ -493,13 +500,23 @@ class EdgeBacklogDecisionV1(HashedRecord):
             ):
                 raise ValueError("RESUMED records cannot carry duplicate or revisit fields")
             return self
-        if self.duplicate_resolution is None or self.candidate_snapshot_sha256 is None:
+        if (
+            self.duplicate_resolution is None
+            or self.candidate_snapshot_sha256 is None
+            or self.historical_universe_sha256 is None
+        ):
             raise ValueError("review decisions require duplicate resolution and candidate snapshot")
+        if (
+            self.historical_universe_sha256 == _EMPTY_HISTORICAL_UNIVERSE_SHA256
+        ) != (self.historical_source_commit is None):
+            raise ValueError("historical source commit must be present exactly when the historical universe is nonempty")
         candidate_core = {
             "schema": DUPLICATE_SNAPSHOT_SCHEMA,
             "entry_id": self.entry_id,
             "entry_revision_sha256": self.entry_revision_sha256,
             "entry_link_chain_sha256": self.entry_link_chain_sha256,
+            "historical_source_commit": self.historical_source_commit,
+            "historical_universe_sha256": self.historical_universe_sha256,
             "candidates": [item.model_dump(mode="json", by_alias=True) for item in self.candidate_snapshot],
         }
         actual_snapshot_sha256 = hashlib.sha256(canonical_json_bytes(candidate_core)).hexdigest()
@@ -838,8 +855,6 @@ class EdgeBacklogStore:
         snapshot = self.duplicate_snapshot(entry_id)
         if candidate_snapshot_sha256 != snapshot["snapshot_sha256"]:
             raise EdgeBacklogConflictError("duplicate candidate snapshot is stale or does not match")
-        if disposition == "DUPLICATE":
-            self._validate_duplicate_append(entry.entry_id, canonical_entry_id)
         return self._append_decision(
             entry,
             history,
@@ -847,6 +862,8 @@ class EdgeBacklogStore:
             duplicate_resolution=duplicate_resolution,
             candidate_snapshot=snapshot["candidates"],
             candidate_snapshot_sha256=candidate_snapshot_sha256,
+            historical_source_commit=snapshot["historical_source_commit"],
+            historical_universe_sha256=snapshot["historical_universe_sha256"],
             canonical_entry_id=canonical_entry_id,
             related_edge_family_ids=related_edge_family_ids,
             reason_codes=reason_codes,
@@ -880,6 +897,8 @@ class EdgeBacklogStore:
             duplicate_resolution=None,
             candidate_snapshot=(),
             candidate_snapshot_sha256=None,
+            historical_source_commit=None,
+            historical_universe_sha256=None,
             canonical_entry_id=None,
             related_edge_family_ids=(),
             reason_codes=reason_codes,
@@ -1053,6 +1072,7 @@ class EdgeBacklogStore:
         entry = self.latest_entry(entry_id)
         return {
             "entry": entry.model_dump(mode="json", by_alias=True),
+            "display_label": self._entry_display_label(entry),
             "state": self.entry_state(entry_id),
             "decisions": [item.model_dump(mode="json", by_alias=True) for item in self.decisions(entry_id)],
             "links": [item.model_dump(mode="json", by_alias=True) for item in self.links(entry_id)],
@@ -1077,15 +1097,23 @@ class EdgeBacklogStore:
     def duplicate_snapshot(self, entry_id: str) -> dict[str, Any]:
         entry = self.latest_entry(entry_id)
         entry_link_chain_sha256 = _record_chain_sha256(self.links(entry.entry_id))
+        historical_records, historical_source_commit, historical_universe_sha256 = (
+            self._historical_snapshot_universe()
+        )
         candidates = [
             DuplicateCandidateV1.model_validate(item).model_dump(mode="json", by_alias=True)
-            for item in self.duplicate_candidates(entry_id)
+            for item in self._duplicate_candidates(
+                entry,
+                historical_records=historical_records,
+            )
         ]
         core = {
             "schema": DUPLICATE_SNAPSHOT_SCHEMA,
             "entry_id": entry.entry_id,
             "entry_revision_sha256": entry.record_sha256,
             "entry_link_chain_sha256": entry_link_chain_sha256,
+            "historical_source_commit": historical_source_commit,
+            "historical_universe_sha256": historical_universe_sha256,
             "candidates": candidates,
         }
         return {**core, "snapshot_sha256": hashlib.sha256(canonical_json_bytes(core)).hexdigest()}
@@ -1093,26 +1121,69 @@ class EdgeBacklogStore:
     @_transactional(exclusive=False)
     def duplicate_candidates(self, entry_id: str) -> list[dict[str, Any]]:
         query = self.latest_entry(entry_id)
+        historical_records, _commit, _universe_sha256 = self._historical_snapshot_universe()
+        return self._duplicate_candidates(query, historical_records=historical_records)
+
+    def _duplicate_candidates(
+        self,
+        query: EdgeBacklogEntryRevisionV1,
+        *,
+        historical_records: Sequence[HistoricalEdgeIndexRecordV1],
+        before_append_sequence: int | None = None,
+        reviewing_recorded_at: datetime | None = None,
+        query_links: Sequence[EdgeBacklogLinkV1] | None = None,
+    ) -> list[dict[str, Any]]:
         query_text = self._entry_text(query)
         query_tokens = duplicate_core.economic_tokens(query_text)
-        query_links = self.links(query.entry_id)
+        bound_query_links = list(query_links) if query_links is not None else self.links(query.entry_id)
         rows: list[dict[str, Any]] = []
         for summary in self.list_entries():
-            if summary["entry_id"] == entry_id:
+            candidate_id = summary["entry_id"]
+            if candidate_id == query.entry_id:
                 continue
-            candidate = self.latest_entry(summary["entry_id"])
-            candidate_links = self.links(candidate.entry_id)
-            candidate_decisions = self.decisions(candidate.entry_id)
+            revision_history = self._all_entry_revisions(candidate_id)
+            revisions = revision_history
+            if before_append_sequence is not None:
+                revisions = [item for item in revisions if item.append_sequence < before_append_sequence]
+                self._validate_candidate_prefix_chronology(
+                    included=revisions,
+                    reviewing_at=reviewing_recorded_at,
+                )
+            if not revisions:
+                continue
+            candidate = revisions[-1]
+            link_history = self.links(candidate.entry_id)
+            decision_history = self.decisions(candidate.entry_id)
+            candidate_links = link_history
+            candidate_decisions = decision_history
+            if before_append_sequence is not None:
+                candidate_links = [
+                    item for item in candidate_links if item.append_sequence < before_append_sequence
+                ]
+                candidate_decisions = [
+                    item for item in candidate_decisions if item.append_sequence < before_append_sequence
+                ]
+                self._validate_candidate_prefix_chronology(
+                    included=candidate_links,
+                    reviewing_at=reviewing_recorded_at,
+                )
+                self._validate_candidate_prefix_chronology(
+                    included=candidate_decisions,
+                    reviewing_at=reviewing_recorded_at,
+                )
             rows.append(
                 self._canonical_candidate_material(
                     query,
-                    query_links,
+                    bound_query_links,
                     candidate,
                     candidate_decisions,
                     candidate_links,
                 )
             )
-        rows.extend(self._historical_candidates(query, query_tokens))
+        rows.extend(
+            self._historical_candidate_material(query, query_tokens, record)
+            for record in historical_records
+        )
         return duplicate_core.rank_duplicate_candidates(
             rows,
             identity_field="candidate_id",
@@ -1186,7 +1257,8 @@ class EdgeBacklogStore:
             link_count += len(links)
         self._validate_source_identities(observations)
         self._validate_revisit_cycles()
-        self._validate_duplicate_canonicalization()
+        self._validate_duplicate_state()
+        self._validate_append_order()
         return {
             "schema": "alphaquest.edge-backlog-validation/v1",
             "status": "PASS",
@@ -1214,6 +1286,7 @@ class EdgeBacklogStore:
             {
                 "schema": OBSERVATION_SCHEMA,
                 "record_id": _revision_record_id(observation_id, revision),
+                "append_sequence": self._next_append_sequence(),
                 "observation_id": observation_id,
                 "revision": revision,
                 "previous_revision_sha256": previous.record_sha256 if previous else None,
@@ -1252,6 +1325,7 @@ class EdgeBacklogStore:
             {
                 "schema": ENTRY_SCHEMA,
                 "record_id": _revision_record_id(entry_id, revision),
+                "append_sequence": self._next_append_sequence(),
                 "entry_id": entry_id,
                 "revision": revision,
                 "previous_revision_sha256": previous.record_sha256 if previous else None,
@@ -1278,7 +1352,11 @@ class EdgeBacklogStore:
         decision_history = self.decisions(entry_id) if previous else []
         if decision_history and record.recorded_at < decision_history[-1].recorded_at:
             raise EdgeBacklogConflictError("entry revision cannot precede the latest decision")
-        self._validate_observation_refs(record.observation_refs, recorded_at=record.recorded_at)
+        self._validate_observation_refs(
+            record.observation_refs,
+            recorded_at=record.recorded_at,
+            append_sequence=record.append_sequence,
+        )
         if previous:
             previous_contradictions = {
                 (item.observation_id, item.observation_revision_sha256)
@@ -1306,6 +1384,8 @@ class EdgeBacklogStore:
         duplicate_resolution: DuplicateResolution | None,
         candidate_snapshot: Sequence[Mapping[str, Any]],
         candidate_snapshot_sha256: str | None,
+        historical_source_commit: str | None,
+        historical_universe_sha256: str | None,
         canonical_entry_id: str | None,
         related_edge_family_ids: Sequence[str],
         reason_codes: Sequence[ReasonCode],
@@ -1320,6 +1400,7 @@ class EdgeBacklogStore:
         material = {
             "schema": DECISION_SCHEMA,
             "record_id": identifier,
+            "append_sequence": self._next_append_sequence(),
             "decision_id": identifier,
             "entry_id": entry.entry_id,
             "entry_revision_sha256": entry.record_sha256,
@@ -1330,6 +1411,8 @@ class EdgeBacklogStore:
             "duplicate_resolution": duplicate_resolution,
             "candidate_snapshot": list(candidate_snapshot),
             "candidate_snapshot_sha256": candidate_snapshot_sha256,
+            "historical_source_commit": historical_source_commit,
+            "historical_universe_sha256": historical_universe_sha256,
             "canonical_entry_id": canonical_entry_id,
             "related_edge_family_ids": list(related_edge_family_ids),
             "reason_codes": list(reason_codes),
@@ -1346,6 +1429,10 @@ class EdgeBacklogStore:
         if history and record.recorded_at < history[-1].recorded_at:
             raise EdgeBacklogConflictError("decision recorded_at cannot move backward")
         self._validate_decision_history(entry, [*history, record])
+        try:
+            self._validate_duplicate_state(pending=record)
+        except EdgeBacklogIntegrityError as exc:
+            raise EdgeBacklogConflictError(str(exc)) from exc
         path = self.root / "entries" / entry.entry_id / "decisions" / f"{sequence:06d}.json"
         self._exclusive_write(path, record)
         return record
@@ -1374,6 +1461,7 @@ class EdgeBacklogStore:
         material = {
             "schema": LINK_SCHEMA,
             "record_id": identifier,
+            "append_sequence": self._next_append_sequence(),
             "link_id": identifier,
             "entry_id": entry.entry_id,
             "entry_revision_sha256": entry.record_sha256,
@@ -1422,6 +1510,8 @@ class EdgeBacklogStore:
                     raise EdgeBacklogIntegrityError(f"broken observation revision chain: {path}")
                 if previous and record.recorded_at < previous.recorded_at:
                     raise EdgeBacklogIntegrityError(f"observation revision chronology moved backward at {path}")
+                if previous and record.append_sequence <= previous.append_sequence:
+                    raise EdgeBacklogIntegrityError(f"observation append order moved backward at {path}")
                 if previous and not set(previous.known_conflicts).issubset(record.known_conflicts):
                     raise EdgeBacklogIntegrityError(f"observation conflicts were removed at {path}")
                 previous = record
@@ -1450,7 +1540,13 @@ class EdgeBacklogStore:
                     raise EdgeBacklogIntegrityError(f"broken entry revision chain: {path}")
                 if previous and record.recorded_at < previous.recorded_at:
                     raise EdgeBacklogIntegrityError(f"entry revision chronology moved backward at {path}")
-                self._validate_observation_refs(record.observation_refs, recorded_at=record.recorded_at)
+                if previous and record.append_sequence <= previous.append_sequence:
+                    raise EdgeBacklogIntegrityError(f"entry append order moved backward at {path}")
+                self._validate_observation_refs(
+                    record.observation_refs,
+                    recorded_at=record.recorded_at,
+                    append_sequence=record.append_sequence,
+                )
                 if previous:
                     old = {
                         (item.observation_id, item.observation_revision_sha256)
@@ -1492,6 +1588,8 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError("broken decision hash chain")
             if previous and decision.recorded_at < previous.recorded_at:
                 raise EdgeBacklogIntegrityError("decision chronology moved backward")
+            if previous and decision.append_sequence <= previous.append_sequence:
+                raise EdgeBacklogIntegrityError("decision append order moved backward")
             if decision.entry_revision_sha256 not in revisions:
                 raise EdgeBacklogIntegrityError("decision references a missing entry revision")
             bound_revision = revisions[decision.entry_revision_sha256]
@@ -1500,6 +1598,13 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError("decision entry-revision binding moved backward")
             if decision.recorded_at < bound_revision.recorded_at:
                 raise EdgeBacklogIntegrityError("decision precedes its bound entry revision")
+            if decision.append_sequence <= bound_revision.append_sequence:
+                raise EdgeBacklogIntegrityError("decision append order precedes its bound entry revision")
+            if any(
+                later.append_sequence < decision.append_sequence
+                for later in revision_history[revision_position:]
+            ):
+                raise EdgeBacklogIntegrityError("decision omits an entry revision that preceded it in append order")
             if any(
                 later.recorded_at < decision.recorded_at
                 for later in revision_history[revision_position:]
@@ -1512,6 +1617,10 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError("decision link-chain binding moved backward")
             if any(link.recorded_at > decision.recorded_at for link in link_history[:link_prefix]):
                 raise EdgeBacklogIntegrityError("decision precedes a link included in its bound link-chain prefix")
+            if any(link.append_sequence >= decision.append_sequence for link in link_history[:link_prefix]):
+                raise EdgeBacklogIntegrityError("decision includes a link appended after the decision")
+            if any(link.append_sequence < decision.append_sequence for link in link_history[link_prefix:]):
+                raise EdgeBacklogIntegrityError("decision omits a link that preceded it in append order")
             if any(link.recorded_at < decision.recorded_at for link in link_history[link_prefix:]):
                 raise EdgeBacklogIntegrityError("a later link is backdated before its preceding decision")
             if decision.disposition != "RESUMED":
@@ -1561,108 +1670,37 @@ class EdgeBacklogStore:
         reviewing_links: Sequence[EdgeBacklogLinkV1],
         reviewing_decision: EdgeBacklogDecisionV1,
     ) -> None:
-        resolved: list[dict[str, Any]] = []
-        query_tokens = duplicate_core.economic_tokens(self._entry_text(reviewing_entry))
-        for candidate in reviewing_decision.candidate_snapshot:
-            if candidate.candidate_kind == "DERIVED_HISTORICAL_RECORD":
-                if candidate.historical_record is None:  # model guard; keeps the resolver fail closed
-                    raise EdgeBacklogIntegrityError("historical candidate is missing its embedded record")
-                resolved.append(
-                    self._historical_candidate_material(
-                        reviewing_entry,
-                        query_tokens,
-                        candidate.historical_record,
-                    )
-                )
-                continue
-            if candidate.candidate_id == reviewing_entry.entry_id:
-                raise EdgeBacklogIntegrityError("candidate snapshot cannot include its reviewing entry")
-            revisions = self._all_entry_revisions(candidate.candidate_id)
-            if not revisions:
-                raise EdgeBacklogIntegrityError(
-                    f"candidate snapshot references nonexistent entry {candidate.candidate_id}"
-                )
-            revision_position = next(
-                (
-                    position
-                    for position, revision in enumerate(revisions)
-                    if revision.record_sha256 == candidate.candidate_record_sha256
-                ),
-                None,
-            )
-            if revision_position is None:
-                raise EdgeBacklogIntegrityError(
-                    "candidate_record_sha256 does not resolve to a revision belonging to the candidate"
-                )
-            bound_revision = revisions[revision_position]
-            self._validate_candidate_prefix_chronology(
-                included=(*revisions[: revision_position + 1],),
-                excluded=(*revisions[revision_position + 1 :],),
-                reviewing_at=reviewing_decision.recorded_at,
-                label="candidate revision",
+        if reviewing_decision.historical_source_commit is None:
+            historical_records: list[HistoricalEdgeIndexRecordV1] = []
+        else:
+            from alphaquest.research.edge_backlog_bootstrap import (
+                historical_records_for_repository_commit,
+                repository_commit_recorded_at,
             )
 
-            decisions = self.decisions(candidate.candidate_id)
-            if candidate.candidate_decision_sha256 is None:
-                decision_prefix_length = 0
-            else:
-                decision_prefix_length = next(
-                    (
-                        position
-                        for position, item in enumerate(decisions, start=1)
-                        if item.record_sha256 == candidate.candidate_decision_sha256
-                    ),
-                    0,
-                )
-                if not decision_prefix_length:
-                    raise EdgeBacklogIntegrityError(
-                        "candidate_decision_sha256 is not an exact historical decision prefix"
-                    )
-            candidate_decisions = decisions[:decision_prefix_length]
-            self._validate_candidate_prefix_chronology(
-                included=tuple(candidate_decisions),
-                excluded=tuple(decisions[decision_prefix_length:]),
-                reviewing_at=reviewing_decision.recorded_at,
-                label="candidate decision prefix",
+            commit, historical_records = historical_records_for_repository_commit(
+                self.project_root,
+                reviewing_decision.historical_source_commit,
             )
-
-            links = self.links(candidate.candidate_id)
-            link_prefix_length = next(
-                (
-                    length
-                    for length in range(len(links) + 1)
-                    if _record_chain_sha256(links[:length]) == candidate.candidate_link_chain_sha256
-                ),
-                None,
-            )
-            if link_prefix_length is None:
+            if commit != reviewing_decision.historical_source_commit:
+                raise EdgeBacklogIntegrityError("historical source commit did not resolve exactly")
+            if repository_commit_recorded_at(self.project_root, commit) > reviewing_decision.recorded_at:
                 raise EdgeBacklogIntegrityError(
-                    "candidate_link_chain_sha256 is not an exact historical link prefix"
+                    "historical matcher universe commit is later than the reviewing decision"
                 )
-            candidate_links = links[:link_prefix_length]
-            self._validate_candidate_prefix_chronology(
-                included=tuple(candidate_links),
-                excluded=tuple(links[link_prefix_length:]),
-                reviewing_at=reviewing_decision.recorded_at,
-                label="candidate link prefix",
+        actual_universe_sha256 = _historical_universe_sha256(historical_records)
+        if actual_universe_sha256 != reviewing_decision.historical_universe_sha256:
+            raise EdgeBacklogIntegrityError(
+                "historical matcher universe does not match its immutable source commit"
             )
-            resolved.append(
-                self._canonical_candidate_material(
-                    reviewing_entry,
-                    reviewing_links,
-                    bound_revision,
-                    candidate_decisions,
-                    candidate_links,
-                )
-            )
-
         expected = [
             DuplicateCandidateV1.model_validate(item).model_dump(mode="json", by_alias=True)
-            for item in duplicate_core.rank_duplicate_candidates(
-                resolved,
-                identity_field="candidate_id",
-                lexical_field="lexical_similarity",
-                minimum_similarity=0.12,
+            for item in self._duplicate_candidates(
+                reviewing_entry,
+                historical_records=historical_records,
+                before_append_sequence=reviewing_decision.append_sequence,
+                reviewing_recorded_at=reviewing_decision.recorded_at,
+                query_links=reviewing_links,
             )
         ]
         actual = [
@@ -1671,21 +1709,21 @@ class EdgeBacklogStore:
         ]
         if expected != actual:
             raise EdgeBacklogIntegrityError(
-                "candidate snapshot fields or deterministic ranking do not match the bound historical state"
+                "candidate snapshot is not the complete deterministic universe at the review append sequence"
             )
 
     @staticmethod
     def _validate_candidate_prefix_chronology(
         *,
         included: Sequence[HashedRecord],
-        excluded: Sequence[HashedRecord],
-        reviewing_at: datetime,
-        label: str,
+        reviewing_at: datetime | None,
     ) -> None:
+        if reviewing_at is None:
+            return
         if any(item.recorded_at > reviewing_at for item in included):
-            raise EdgeBacklogIntegrityError(f"{label} contains activity after the reviewing decision")
-        if any(item.recorded_at < reviewing_at for item in excluded):
-            raise EdgeBacklogIntegrityError(f"{label} omits activity preceding the reviewing decision")
+            raise EdgeBacklogIntegrityError(
+                "candidate snapshot contains activity timestamped after the reviewing decision"
+            )
 
     def _validate_link_history(
         self,
@@ -1704,6 +1742,8 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError("broken link hash chain")
             if previous and link.recorded_at < previous.recorded_at:
                 raise EdgeBacklogIntegrityError("link chronology moved backward")
+            if previous and link.append_sequence <= previous.append_sequence:
+                raise EdgeBacklogIntegrityError("link append order moved backward")
             if link.entry_revision_sha256 not in revisions:
                 raise EdgeBacklogIntegrityError("link references a missing entry revision")
             bound_revision = revisions[link.entry_revision_sha256]
@@ -1712,13 +1752,24 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError("link entry-revision binding moved backward")
             if link.recorded_at < bound_revision.recorded_at:
                 raise EdgeBacklogIntegrityError("link precedes its bound entry revision")
+            if link.append_sequence <= bound_revision.append_sequence:
+                raise EdgeBacklogIntegrityError("link append order precedes its bound entry revision")
             target = self._target_file(link.target_locator)
             if link.relationship == "REVISIT_OF":
                 target_record = self._load_record(target, EdgeBacklogEntryRevisionV1)
                 target_sha256 = target_record.record_sha256
+                expected_target = self._entry_path(link.target_id, target_record.revision).resolve()
+                if target.resolve() != expected_target or target_record.entry_id != link.target_id:
+                    raise EdgeBacklogIntegrityError(
+                        "REVISIT_OF locator, target_id, and loaded entry revision do not identify one target"
+                    )
                 if link.recorded_at < target_record.recorded_at:
                     raise EdgeBacklogIntegrityError(
                         "REVISIT_OF link precedes its exact targeted prior-entry revision"
+                    )
+                if link.append_sequence <= target_record.append_sequence:
+                    raise EdgeBacklogIntegrityError(
+                        "REVISIT_OF link append order precedes its exact target revision"
                     )
                 if link.authorizing_decision_id is not None:
                     try:
@@ -1729,6 +1780,12 @@ class EdgeBacklogStore:
                         ) from exc
                     if link.recorded_at < authorization.recorded_at:
                         raise EdgeBacklogIntegrityError("link precedes its authorizing decision")
+                    if link.append_sequence <= authorization.append_sequence:
+                        raise EdgeBacklogIntegrityError("link append order precedes its authorizing decision")
+                    if authorization.disposition not in {"REJECTED", "DUPLICATE", "SUSPENDED", "RESUMED"}:
+                        raise EdgeBacklogIntegrityError(
+                            "REVISIT_OF authorization must be a prior disposition on the exact target entry"
+                        )
             elif link.relationship in {"ADMITTED_HYPOTHESIS", "EDGE_FAMILY", "CAMPAIGN"}:
                 raise EdgeBacklogAuthorityError(f"{link.relationship} is reserved and cannot be materialized by P2")
             else:
@@ -1790,6 +1847,7 @@ class EdgeBacklogStore:
         refs: Sequence[ObservationReferenceV1],
         *,
         recorded_at: datetime,
+        append_sequence: int,
     ) -> None:
         for ref in refs:
             path = self.root / "observations" / ref.observation_id / "revisions"
@@ -1806,6 +1864,11 @@ class EdgeBacklogStore:
             if recorded_at < found.recorded_at:
                 raise EdgeBacklogIntegrityError(
                     f"entry precedes referenced observation revision {ref.observation_id}/{ref.observation_revision_sha256}"
+                )
+            if append_sequence <= found.append_sequence:
+                raise EdgeBacklogIntegrityError(
+                    f"entry append order precedes referenced observation revision "
+                    f"{ref.observation_id}/{ref.observation_revision_sha256}"
                 )
 
     def _entry_source_ids(self, entry: EdgeBacklogEntryRevisionV1) -> set[str]:
@@ -1879,9 +1942,39 @@ class EdgeBacklogStore:
         if not path.is_file():
             return []
         try:
-            return load_historical_edge_index_records(path)
+            records = load_historical_edge_index_records(path)
+            from alphaquest.research.edge_backlog_bootstrap import validate_historical_records_provenance
+
+            validate_historical_records_provenance(
+                records,
+                project_root=self.project_root,
+                layout=self.layout,
+            )
+            return records
         except (OSError, ValueError) as exc:
             raise EdgeBacklogIntegrityError(f"invalid configured historical backlog index {path}: {exc}") from exc
+
+    def _historical_snapshot_universe(
+        self,
+    ) -> tuple[list[HistoricalEdgeIndexRecordV1], str | None, str]:
+        records = self._historical_index_records()
+        if not records:
+            return [], None, _EMPTY_HISTORICAL_UNIVERSE_SHA256
+        from alphaquest.research.edge_backlog_bootstrap import historical_records_for_repository_commit
+
+        try:
+            commit, committed_records = historical_records_for_repository_commit(self.project_root)
+        except (OSError, ValueError) as exc:
+            raise EdgeBacklogIntegrityError(
+                f"historical matcher universe is not bound to an immutable repository source state: {exc}"
+            ) from exc
+        if [item.model_dump(mode="json", by_alias=True) for item in records] != [
+            item.model_dump(mode="json", by_alias=True) for item in committed_records
+        ]:
+            raise EdgeBacklogIntegrityError(
+                "configured historical index does not equal the complete repository-bound source extraction"
+            )
+        return records, commit, _historical_universe_sha256(records)
 
     def _taxonomy_catalog(self) -> dict[int, EconomicEdgeTaxonomyV1]:
         try:
@@ -1997,6 +2090,11 @@ class EdgeBacklogStore:
         # record while the cross-process lock is still held, immediately before
         # allocating the exclusive append target.
         self.validate()
+        expected_append_sequence = self._next_append_sequence()
+        if record.append_sequence != expected_append_sequence:
+            raise EdgeBacklogConflictError(
+                "canonical append sequence became stale before exclusive write"
+            )
         path.parent.mkdir(parents=True, exist_ok=True)
         data = canonical_json_bytes(record) + b"\n"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
@@ -2017,6 +2115,32 @@ class EdgeBacklogStore:
             path.unlink(missing_ok=True)
             raise
 
+    def _canonical_records(self) -> list[HashedRecord]:
+        records: list[HashedRecord] = []
+        observations = self.root / "observations"
+        if observations.is_dir():
+            for object_dir in sorted(item for item in observations.iterdir() if item.is_dir()):
+                records.extend(self._all_observation_revisions(object_dir.name))
+        entries = self.root / "entries"
+        if entries.is_dir():
+            for object_dir in sorted(item for item in entries.iterdir() if item.is_dir()):
+                records.extend(self._all_entry_revisions(object_dir.name))
+                records.extend(self.decisions(object_dir.name))
+                records.extend(self.links(object_dir.name))
+        return records
+
+    def _next_append_sequence(self) -> int:
+        return len(self._canonical_records()) + 1
+
+    def _validate_append_order(self) -> None:
+        records = self._canonical_records()
+        actual = sorted(item.append_sequence for item in records)
+        expected = list(range(1, len(records) + 1))
+        if actual != expected:
+            raise EdgeBacklogIntegrityError(
+                "canonical append_sequence values must be globally unique and gap-free"
+            )
+
     def _would_create_revisit_cycle(self, entry_id: str, target_id: str) -> bool:
         graph = self._revisit_graph()
         graph.setdefault(entry_id, set()).add(target_id)
@@ -2026,56 +2150,50 @@ class EdgeBacklogStore:
         if _graph_has_cycle(self._revisit_graph()):
             raise EdgeBacklogIntegrityError("REVISIT_OF lineage contains a cycle")
 
-    def _validate_duplicate_append(self, entry_id: str, canonical_entry_id: str | None) -> None:
-        if not canonical_entry_id:
-            raise EdgeBacklogConflictError("DUPLICATE requires canonical_entry_id")
-        try:
-            self.latest_entry(canonical_entry_id)
-        except FileNotFoundError as exc:
-            raise EdgeBacklogConflictError("DUPLICATE canonical entry does not exist") from exc
-        graph = self._duplicate_graph()
-        graph[entry_id] = canonical_entry_id
-        if _graph_has_cycle({source: {target} for source, target in graph.items()}):
-            raise EdgeBacklogConflictError("DUPLICATE would create a canonicalization cycle")
-        target_state = self.entry_state(canonical_entry_id)
-        if target_state == "REJECTED":
-            raise EdgeBacklogConflictError("DUPLICATE canonical target is terminally rejected")
-        if target_state == "DUPLICATE":
-            raise EdgeBacklogConflictError("DUPLICATE canonical target is already duplicate")
-        if set(graph).intersection(graph.values()):
-            raise EdgeBacklogConflictError("DUPLICATE canonicalization chains are not allowed")
+    def _validate_duplicate_state(self, pending: EdgeBacklogDecisionV1 | None = None) -> None:
+        """Validate one complete current/prospective canonicalization graph."""
 
-    def _validate_duplicate_canonicalization(self) -> None:
-        graph = self._duplicate_graph()
+        latest_decisions: dict[str, EdgeBacklogDecisionV1] = {}
+        directory = self.root / "entries"
+        if directory.is_dir():
+            for entry_dir in sorted(item for item in directory.iterdir() if item.is_dir()):
+                history = self.decisions(entry_dir.name)
+                if history:
+                    latest_decisions[entry_dir.name] = history[-1]
+        if pending is not None:
+            latest_decisions[pending.entry_id] = pending
+        graph: dict[str, str] = {}
+        for entry_id, decision in latest_decisions.items():
+            if decision.disposition == "DUPLICATE":
+                if decision.canonical_entry_id is None:
+                    raise EdgeBacklogIntegrityError("DUPLICATE decision is missing canonical_entry_id")
+                graph[entry_id] = decision.canonical_entry_id
         graph_sets = {source: {target} for source, target in graph.items()}
         if _graph_has_cycle(graph_sets):
-            raise EdgeBacklogIntegrityError("DUPLICATE canonicalization contains a cycle")
+            message = (
+                "DUPLICATE canonicalization cycle"
+                if pending is not None
+                else "DUPLICATE canonicalization contains a cycle"
+            )
+            raise EdgeBacklogIntegrityError(message)
+        if pending is not None and pending.disposition == "DUPLICATE":
+            pending_target = str(pending.canonical_entry_id)
+            target_decision = latest_decisions.get(pending_target)
+            if target_decision is not None and target_decision.disposition == "DUPLICATE":
+                raise EdgeBacklogIntegrityError("DUPLICATE canonical target is already duplicate")
+        if set(graph).intersection(graph.values()):
+            raise EdgeBacklogIntegrityError("DUPLICATE canonicalization multi-hop chains are not allowed")
         for target in graph.values():
             try:
                 self.latest_entry(target)
             except FileNotFoundError as exc:
                 raise EdgeBacklogIntegrityError("DUPLICATE canonical entry does not exist") from exc
-            target_state = self.entry_state(target)
+            target_decision = latest_decisions.get(target)
+            target_state = target_decision.disposition if target_decision is not None else "UNREVIEWED"
             if target_state == "REJECTED":
                 raise EdgeBacklogIntegrityError("DUPLICATE canonical target is terminally rejected")
             if target_state == "DUPLICATE":
                 raise EdgeBacklogIntegrityError("DUPLICATE canonical target is already duplicate")
-        if set(graph).intersection(graph.values()):
-            raise EdgeBacklogIntegrityError("DUPLICATE canonicalization contains a multi-hop chain")
-
-    def _duplicate_graph(self) -> dict[str, str]:
-        graph: dict[str, str] = {}
-        directory = self.root / "entries"
-        if not directory.is_dir():
-            return graph
-        for entry_dir in sorted(item for item in directory.iterdir() if item.is_dir()):
-            history = self.decisions(entry_dir.name)
-            if history and history[-1].disposition == "DUPLICATE":
-                target = history[-1].canonical_entry_id
-                if target is None:
-                    raise EdgeBacklogIntegrityError("DUPLICATE decision is missing canonical_entry_id")
-                graph[entry_dir.name] = target
-        return graph
 
     def _revisit_graph(self) -> dict[str, set[str]]:
         graph: dict[str, set[str]] = {}
@@ -2113,6 +2231,7 @@ def _without_managed_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
     managed = {
         "schema",
         "record_id",
+        "append_sequence",
         "revision",
         "previous_revision_sha256",
         "actor",
@@ -2254,6 +2373,14 @@ def _historical_sort_key(record: HistoricalEdgeIndexRecordV1) -> tuple[str, int,
         record.source_kind,
         record.record_id,
     )
+
+
+def _historical_universe_sha256(records: Sequence[HistoricalEdgeIndexRecordV1]) -> str:
+    return hashlib.sha256(
+        canonical_json_bytes(
+            [item.model_dump(mode="json", by_alias=True) for item in records]
+        )
+    ).hexdigest()
 
 
 @contextmanager

@@ -159,9 +159,61 @@ def test_cli_end_to_end_capture_search_review_and_validate(tmp_path: Path, capsy
     shown = json.loads(capsys.readouterr().out)
     assert shown["state"] == "REVIEWED_CONTINUE"
     assert shown["entry"]["record_sha256"] == entry["record_sha256"]
+    assert "display_label" in shown
+
+    assert main(["edge-backlog", "show", entry_id, "--project-root", str(tmp_path)]) == 0
+    plain = capsys.readouterr().out
+    assert "title" in plain
+    assert "Inventory imbalance" in plain
 
     assert main(["edge-backlog", "validate", "--project-root", str(tmp_path)]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "PASS"
+
+
+def test_cli_plain_show_uses_derived_unclassified_label(tmp_path: Path, capsys) -> None:
+    observation_input = _write(tmp_path / "observation.json", _observation())
+    assert main(
+        [
+            "edge-backlog",
+            "capture-observation",
+            "--project-root",
+            str(tmp_path),
+            "--input",
+            str(observation_input),
+            "--actor-id",
+            "codex-cli",
+        ]
+    ) == 0
+    observation = json.loads(capsys.readouterr().out)
+    entry_payload = _entry(observation["record_sha256"])
+    entry_payload.update(
+        classification_status="NEEDS_CLASSIFICATION",
+        economic_concepts=None,
+        unclassified_reason="NOVEL_CONCEPT_NOT_IN_TAXONOMY",
+    )
+    entry_input = _write(tmp_path / "entry-unclassified.json", entry_payload)
+    assert main(
+        [
+            "edge-backlog",
+            "create",
+            "--project-root",
+            str(tmp_path),
+            "--input",
+            str(entry_input),
+            "--actor-id",
+            "codex-cli",
+        ]
+    ) == 0
+    entry = json.loads(capsys.readouterr().out)
+
+    assert main(["edge-backlog", "show", entry["entry_id"], "--project-root", str(tmp_path)]) == 0
+    assert f"Needs classification · {entry['entry_id']}" in capsys.readouterr().out
+    assert main(
+        ["edge-backlog", "show", entry["entry_id"], "--project-root", str(tmp_path), "--json"]
+    ) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["display_label"] == f"Needs classification · {entry['entry_id']}"
+    assert shown["entry"]["classification_status"] == "NEEDS_CLASSIFICATION"
 
 
 def test_cli_suspension_requires_explicit_human_resume(tmp_path: Path, capsys) -> None:

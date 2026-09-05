@@ -8,7 +8,10 @@ research discovery records. Canonical JSON is stored under:
 - `entries/<entry_id>/decisions/`
 - `entries/<entry_id>/links/`
 
-Files are append-only and hash-bound. Do not hand-edit, replace, or delete them.
+Files are append-only and hash-bound. Every record carries a globally unique,
+gap-free `append_sequence` allocated from validated records under the existing
+exclusive lock; it is the authoritative equal-timestamp and historical-prefix
+order. Do not hand-edit, replace, or delete these files.
 Use `alphaquest edge-backlog` so closed schemas, actor classes, revision chains,
 references, duplicate snapshots, lifecycle intervals, and causal chronology are
 validated inside the cross-process backlog transaction before an exclusive
@@ -17,9 +20,13 @@ directory.
 
 Full validation also requires every record file to be the exact canonical JSON
 bytes for its validated model followed by one newline. Duplicate-review
-candidates are validated against exact historical entry, decision-chain, and
-link-chain prefixes; historical-index candidates embed their complete strict
-derived record so later index rebuilds do not erase the review binding.
+candidates are regenerated as the complete ranked universe at the reviewing
+decision's append sequence. Historical input is re-extracted from the exact
+immutable repository commit bound by the decision, and each historical
+candidate embeds its strict derived record, so later index rebuilds do not
+erase the review binding. Current and prior derived rows must also match an
+existing approved source path, actual file-byte hash, source kind/row, and the
+shared source-specific extraction.
 
 Observation statements and conflicts are unrestricted, source-bound memory and
 grant no P1 or strategy authority. Canonical entry identity is instead limited
