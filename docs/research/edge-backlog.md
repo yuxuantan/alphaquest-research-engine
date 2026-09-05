@@ -74,9 +74,8 @@ scope and activity with a higher value is not.
 All validation, current-state reads, duplicate-snapshot construction and stale
 comparison, sequence allocation, and exclusive append run under one
 cross-process backlog lock in derived runtime storage. Mutations take the lock
-before their first validation and revalidate the complete persisted store and
-configured historical index again under that lock immediately before the
-exclusive file creation.
+before their first validation and revalidate the complete persisted store
+again under that lock immediately before the exclusive file creation.
 
 ### Observation revisions
 
@@ -194,7 +193,20 @@ source-specific parser used by bootstrap, then reruns filtering and ranking.
 Each included historical candidate also embeds its complete strict
 `HistoricalEdgeIndexRecordV1`. Therefore a later derived-index rebuild does not
 erase an earlier binding, an omitted historical candidate is detectable, and a
-source commit later than the reviewing decision fails closed.
+source commit that is not in the required Git ancestry fails closed. Git author
+and committer dates are informational only and never authorize ordering.
+
+In a Git-backed repository, every new decision binds exact clean `HEAD` for the
+historical layout and source universe. Until its canonical path and exact blob
+are committed, full validation reports `PROVISIONAL`, not `PASS`. After commit,
+validation finds the unique first reachable commit that introduced that path
+and blob, requires the bound source commit to be its ancestor, and requires the
+layout and source universe in the introduction commit's sole parent to equal
+the binding. The decision path and blob must remain unchanged in every
+reachable descendant; removal, rewriting, or ambiguous merge introductions
+fail closed. Git cannot reveal a wholesale rewrite that occurs before the
+provisional file receives its first Git anchor, so that pre-anchor interval is
+not cryptographically detectable.
 
 - `REVIEWED_CONTINUE` is optional curation. It is not scientific approval and
   is not required before a later P4 hypothesis proposal.
@@ -324,9 +336,9 @@ raw edge/hypothesis/family/fingerprint, outcome, failure reason, and extraction
 completeness. Output is fixed to the configured history-index path beneath the
 derived catalog root; neither the CLI nor the builder may replace an arbitrary,
 canonical, policy, campaign, ledger, evidence, or input-source file.
-Every configured row is loaded through the same strict
-`HistoricalEdgeIndexRecordV1` contract before search, duplicate-snapshot
-construction, decision persistence, and full backlog validation. Rows reject
+Every derived row is loaded through the same strict
+`HistoricalEdgeIndexRecordV1` contract when the cache is explicitly validated
+or rebuilt. Rows reject
 wrong schemas, unknown fields, invalid source or record hashes, duplicate IDs
 or record hashes, noncanonical JSON/order, missing provenance, and any semantic
 promotion beyond `NOT_CURRENT_P1_EVIDENCE`, `DUPLICATE_RECALL_ONLY`, and
@@ -334,45 +346,56 @@ promotion beyond `NOT_CURRENT_P1_EVIDENCE`, `DUPLICATE_RECALL_ONLY`, and
 literals and bind `history:<complete-record-sha256>`.
 
 Structural validity is not enough. Record-level provenance validation proves
-that one embedded row exactly matches its approved source projection. Separate
-index-level validation re-extracts every approved current source and requires
+that one embedded row exactly matches its approved source projection. Explicit
+index validation re-extracts every approved current source and requires
 record-for-record equality with the complete, canonically ordered index;
 missing, extra, duplicated, substituted, or reordered rows fail. Before a row
-may enter recall, a snapshot, decision persistence, full validation, or
-prior-index replacement, its
-project-relative `source_path` must resolve inside the approved historical
-source inventory, exist, match the actual file-byte SHA, use the source kind
-and row convention for that file, and equal a fresh source-specific extraction.
+may enter an explicit cache validation or replacement, its project-relative
+`source_path` must be inside the approved historical source inventory, match
+the actual file-byte SHA, use the source kind and row convention for that file,
+and equal a fresh source-specific extraction.
 Campaign YAML, research-ledger CSV, experiment-registry JSONL, and reset
 manifest JSON each use one shared parser for generation and verification;
 paths outside those configured roots, source substitution, and fabricated
 self-hashed provenance fail closed.
 
 An existing configured target is replaceable only when its entire contents
-validate as the complete current projection or as the complete projection in
-the one explicit closed prior-v1 row contract, including source
-path/hash/row provenance, deterministic record ID, canonical ordering, and
-record hash. A genuine-but-truncated index, arbitrary self-hashed payload, or
-other existing file fails closed.
+validate as the complete current projection, the exact canonical projection of
+a reachable historical commit, or the complete projection in the one explicit
+closed prior-v1 row contract. Source path/hash/row provenance, deterministic
+record ID, canonical ordering, and record hash remain mandatory. A
+genuine-but-truncated index, arbitrary self-hashed payload, or other existing
+file fails closed.
 
 Duplicate review does not treat the derived cache as historical authority. It
 resolves an immutable Git commit, loads the strict
 `config/storage_layout.yaml` blob from that same commit, and reconstructs the
 complete universe from source blobs in that tree through the shared source
 parsers. Missing, malformed, unsupported, or noncanonical committed layouts
-fail closed. Before current candidates, snapshots, or decisions are returned,
-the strict working-tree layout semantics and complete ordered source projection
-must equal that committed state. An uncommitted approved-source addition,
-modification, deletion, rename, or discovery-layout change therefore fails with
-an instruction to commit or revert, while unrelated dirty files do not block
-review. A present cache must also equal that same clean committed projection.
-If the cache is absent, review uses the Git-derived universe without creating
-it, so cache presence cannot alter the integrity result. Persisted decision
-replay remains bound only to that decision's exact commit, layout blob, source
-blobs, universe hash, and append-order prefix; later clean committed history
-does not invalidate the earlier decision. Only a source-empty state may use the
+fail closed. Commit-bound replay uses lexical repository paths, regular-file
+mode, and Git blobs only; it never resolves a source through the current
+filesystem. The committed layout and every approved source must be a `100644`
+blob. Symlinks, gitlinks, executable modes, malformed or blank blobs, and an
+approved source that silently projects zero rows fail closed.
+
+Before current candidates, snapshots, or decisions are returned, HEAD, every
+index stage, and the working tree must agree exactly on the authoritative
+layout file and complete approved-source inventory. Comparison includes lexical
+repository path, source kind, regular-file mode, and byte/blob identity, so
+staged-only changes, conflicts, additions, modifications, deletions, renames,
+symlinks, modes, malformed sources, and layout changes fail with an instruction
+to commit or revert. Unrelated dirty paths remain permitted.
+
+The cache is never read, created, updated, or required by candidate, snapshot,
+decision, or persisted-replay paths. Present, absent, malformed, or stale cache
+state therefore cannot alter their result. If no cache exists, current review
+uses the Git-derived universe directly. Persisted replay reconstructs only its
+decision's bound commit, committed layout and source blobs, universe hash, and
+append prefix; current source dirt, current cache state, and later legitimate
+committed sources cannot invalidate it. Only a source-empty state may use the
 canonical empty-universe digest; unresolved source-bearing history never
-silently becomes empty.
+silently becomes empty. `edge-backlog validate` reports cache presence only;
+explicit bootstrap validation/replacement remains the cache-integrity path.
 
 Legacy scientific verdict and lifecycle/disposition text are retained in
 separate fields when both exist; the derived index does not collapse those

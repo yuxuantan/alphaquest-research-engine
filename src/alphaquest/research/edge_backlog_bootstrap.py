@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+from dataclasses import dataclass
 import hashlib
 import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import stat
 import subprocess
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Mapping
@@ -63,6 +64,32 @@ _COMMITTED_LAYOUT_PATH_FIELDS = (
     "edge_backlog_history_index",
     "migration_manifest",
 )
+
+
+@dataclass(frozen=True)
+class HistoricalSourceFileState:
+    path: str
+    source_kind: str
+    mode: str
+    data: bytes
+
+
+@dataclass(frozen=True)
+class HistoricalRepositoryState:
+    commit: str
+    layout: StorageLayout
+    layout_file: HistoricalSourceFileState
+    sources: tuple[HistoricalSourceFileState, ...]
+    source_object_ids: tuple[tuple[str, str], ...]
+    records: tuple[HistoricalEdgeIndexRecordV1, ...]
+
+
+@dataclass(frozen=True)
+class RepositoryFileAnchor:
+    """The unique immutable Git introduction of one canonical file."""
+
+    introduction_commit: str
+    preceding_commit: str
 
 
 class HistoricalEdgeIndexPriorV1(StrictBacklogModel):
@@ -185,19 +212,24 @@ def extract_historical_source_records(
     """Run the sole source-specific historical projection parser."""
 
     root = Path(project_root).resolve()
-    source = Path(path).resolve()
+    source = _historical_source_path(root, path, commit_bound=source_bytes is not None)
     layout = layout or load_storage_layout(root)
     if source_kind == "CAMPAIGN_DEFINITION":
-        record = _campaign_record(root, source, layout, source_bytes)
-        return [] if record is None else [record]
-    if source_kind == "RESEARCH_LEDGER_ROW":
-        return _ledger_records(root, source, layout, source_bytes)
-    if source_kind == "EXPERIMENT_REGISTRY_EVENT":
-        return _experiment_records(root, source, layout, source_bytes)
-    if source_kind == "RESEARCH_RESET_MANIFEST":
-        record = _reset_record(root, source, layout, source_bytes)
-        return [] if record is None else [record]
-    raise ValueError(f"unsupported historical source_kind: {source_kind!r}")
+        records = [_campaign_record(root, source, layout, source_bytes)]
+    elif source_kind == "RESEARCH_LEDGER_ROW":
+        records = _ledger_records(root, source, layout, source_bytes)
+    elif source_kind == "EXPERIMENT_REGISTRY_EVENT":
+        records = _experiment_records(root, source, layout, source_bytes)
+    elif source_kind == "RESEARCH_RESET_MANIFEST":
+        records = [_reset_record(root, source, layout, source_bytes)]
+    else:
+        raise ValueError(f"unsupported historical source_kind: {source_kind!r}")
+    if not records:
+        raise ValueError(
+            "approved historical source produced an invalid zero-row projection: "
+            f"{_historical_source_relative(root, source)}"
+        )
+    return records
 
 
 def validate_historical_record_provenance(
@@ -280,44 +312,257 @@ def historical_records_for_repository_commit(
 ) -> tuple[str, list[HistoricalEdgeIndexRecordV1]]:
     """Rebuild the complete matcher universe from one immutable Git source tree."""
 
+    state = historical_repository_state(project_root, commit)
+    return state.commit, list(state.records)
+
+
+def historical_repository_state(
+    project_root: str | Path,
+    commit: str | None = None,
+) -> HistoricalRepositoryState:
+    """Reconstruct one universe exclusively from lexical Git paths and blobs."""
+
     root = Path(project_root).resolve()
-    repository_root = Path(
-        _git(root, "rev-parse", "--show-toplevel", text=True).strip()
-    ).resolve()
+    repository_root = Path(_git(root, "rev-parse", "--show-toplevel", text=True).strip())
     if repository_root != root:
         raise ValueError("historical source Git root does not equal the configured project root")
     requested = commit or "HEAD"
     resolved = _git(root, "rev-parse", f"{requested}^{{commit}}", text=True).strip()
     if commit is not None and resolved != commit:
         raise ValueError("historical source commit must be a full immutable Git object ID")
-    layout = _storage_layout_for_repository_commit(root, resolved)
-    tree = _git(root, "ls-tree", "-r", "-z", "--full-tree", resolved)
-    blobs: list[tuple[str, str, str]] = []
-    for raw in tree.split(b"\0"):
-        if not raw:
-            continue
-        metadata, raw_path = raw.split(b"\t", 1)
-        _mode, object_type, object_id = metadata.decode("ascii").split()
-        if object_type != "blob":
-            continue
-        relative = raw_path.decode("utf-8")
-        source_kind = _historical_source_kind_for_relative(relative, root, layout)
-        if source_kind is not None:
-            blobs.append((relative, object_id, source_kind))
+    entries = _repository_tree_entries(root, resolved)
+    layout_file = _required_repository_file(
+        root,
+        entries,
+        "config/storage_layout.yaml",
+        label="committed storage layout",
+    )
+    layout = _strict_committed_storage_layout(root, layout_file.data)
+    _validate_git_discovery_nodes(entries, root, layout, label="committed")
+    sources: list[HistoricalSourceFileState] = []
+    source_object_ids: list[tuple[str, str]] = []
     records: list[HistoricalEdgeIndexRecordV1] = []
-    for relative, object_id, source_kind in sorted(blobs):
+    for relative, (mode, object_type, object_id) in sorted(entries.items()):
+        source_kind = _historical_source_kind_for_relative(relative, root, layout)
+        if source_kind is None:
+            continue
+        if mode != "100644" or object_type != "blob":
+            raise ValueError(
+                f"approved committed historical source must be one 100644 blob: {relative}"
+            )
         data = _git(root, "cat-file", "blob", object_id)
+        source = HistoricalSourceFileState(relative, source_kind, mode, data)
+        sources.append(source)
+        source_object_ids.append((relative, object_id))
         records.extend(
             extract_historical_source_records(
                 root,
-                root / relative,
+                relative,
                 source_kind,
                 layout=layout,
                 source_bytes=data,
             )
         )
-    records.sort(key=lambda item: (item.source_path, item.source_row_number or 0, item.source_kind, item.record_id))
-    return resolved, records
+    records.sort(key=_historical_record_sort_key)
+    return HistoricalRepositoryState(
+        commit=resolved,
+        layout=layout,
+        layout_file=layout_file,
+        sources=tuple(sources),
+        source_object_ids=tuple(source_object_ids),
+        records=tuple(records),
+    )
+
+
+def historical_records_for_current_review(
+    project_root: str | Path,
+) -> tuple[str, list[HistoricalEdgeIndexRecordV1]]:
+    """Require HEAD, index, and worktree to encode one exact historical source state."""
+
+    root = Path(project_root).resolve()
+    committed = historical_repository_state(root)
+    index_entries = _repository_index_entries(root)
+    index_layout = _required_index_file(
+        root,
+        index_entries,
+        "config/storage_layout.yaml",
+        label="indexed storage layout",
+    )
+    working_layout_file = _required_working_file(
+        root,
+        "config/storage_layout.yaml",
+        "STORAGE_LAYOUT",
+        label="working-tree storage layout",
+    )
+    if index_layout != committed.layout_file or working_layout_file != committed.layout_file:
+        raise ValueError("storage layout differs across HEAD, Git index, and working tree")
+    layout = _strict_committed_storage_layout(root, working_layout_file.data)
+    _validate_index_discovery_nodes(index_entries, root, layout)
+    _validate_working_discovery_nodes(root, layout)
+    candidate_paths = set(_working_tree_historical_source_paths(root, layout))
+    candidate_paths.update(source.path for source in committed.sources)
+    candidate_paths.update(
+        relative
+        for relative in index_entries
+        if _historical_source_kind_for_relative(relative, root, layout) is not None
+    )
+    indexed = _historical_sources_from_index(index_entries, root, layout, candidate_paths)
+    working = _historical_sources_from_working_tree(root, layout, candidate_paths)
+    committed_object_ids = dict(committed.source_object_ids)
+    expected_indexed = tuple(
+        (source.path, source.source_kind, source.mode, committed_object_ids[source.path])
+        for source in committed.sources
+    )
+    if indexed != expected_indexed or working != committed.sources:
+        raise ValueError("approved historical sources differ across HEAD, Git index, and working tree")
+    return committed.commit, list(committed.records)
+
+
+def repository_head(project_root: str | Path) -> str | None:
+    """Return exact HEAD for a repository rooted at project_root, or None outside Git."""
+
+    root = Path(project_root).resolve()
+    try:
+        top_level = _git_optional(root, "rev-parse", "--show-toplevel", text=True)
+    except OSError as exc:
+        raise ValueError(f"could not inspect repository HEAD: {exc}") from exc
+    if top_level is None:
+        return None
+    repository_root = Path(str(top_level).strip())
+    if repository_root != root:
+        raise ValueError("Git root does not equal the configured project root")
+    return str(_git(root, "rev-parse", "HEAD^{commit}", text=True)).strip()
+
+
+def repository_commit_is_ancestor(
+    project_root: str | Path,
+    ancestor: str,
+    descendant: str,
+) -> bool:
+    """Use the commit graph, never commit timestamps, to establish ordering."""
+
+    root = Path(project_root).resolve()
+    result = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", ancestor, descendant],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    raise ValueError(f"could not compare repository commits: {result.stderr.strip()}")
+
+
+def repository_file_anchor(
+    project_root: str | Path,
+    relative_path: str,
+    expected_bytes: bytes,
+) -> RepositoryFileAnchor | None:
+    """Resolve a unique, unchanged first Git anchor for exact canonical bytes.
+
+    None means the canonical file has never been committed and is provisional.
+    Once introduced, every reachable descendant must retain the exact same blob.
+    """
+
+    root = Path(project_root).resolve()
+    head = repository_head(root)
+    if head is None:
+        return None
+    _validate_repository_relative_path(relative_path)
+    expected_object_id = _git_with_input(root, expected_bytes, "hash-object", "--stdin").decode(
+        "ascii"
+    ).strip()
+    commits = str(_git(root, "rev-list", "--topo-order", "HEAD", text=True)).splitlines()
+    entries: dict[str, tuple[str, str, str] | None] = {
+        commit: _repository_path_entry(root, commit, relative_path) for commit in commits
+    }
+    matching = {
+        commit
+        for commit, entry in entries.items()
+        if entry == ("100644", "blob", expected_object_id)
+    }
+    if not matching:
+        if any(entry is not None for entry in entries.values()):
+            raise ValueError("committed canonical decision was rewritten or removed")
+        return None
+    if entries[head] != ("100644", "blob", expected_object_id):
+        raise ValueError("committed canonical decision blob no longer matches its first Git anchor")
+
+    parents = {
+        commit: tuple(
+            str(_git(root, "show", "-s", "--format=%P", commit, text=True)).strip().split()
+        )
+        for commit in commits
+    }
+    introductions = [
+        commit
+        for commit in matching
+        if not any(parent in matching for parent in parents[commit])
+    ]
+    if len(introductions) != 1:
+        raise ValueError("canonical decision has an ambiguous Git introduction history")
+    introduction = introductions[0]
+    introduction_parents = parents[introduction]
+    if len(introduction_parents) != 1:
+        raise ValueError("canonical decision introduction must have exactly one Git parent")
+    if any(entries[parent] is not None for parent in introduction_parents):
+        raise ValueError("canonical decision path existed before its exact Git anchor")
+
+    for commit, entry in entries.items():
+        if repository_commit_is_ancestor(root, introduction, commit) and entry != (
+            "100644",
+            "blob",
+            expected_object_id,
+        ):
+            raise ValueError("committed canonical decision was changed or removed after introduction")
+    return RepositoryFileAnchor(
+        introduction_commit=introduction,
+        preceding_commit=introduction_parents[0],
+    )
+
+
+def repository_path_inventory(
+    project_root: str | Path,
+    prefix: str,
+) -> tuple[set[str], set[str]]:
+    """Return current and ever-reachable lexical paths below one repository prefix."""
+
+    root = Path(project_root).resolve()
+    head = repository_head(root)
+    if head is None:
+        return set(), set()
+    normalized = prefix.rstrip("/")
+    _validate_repository_relative_path(normalized)
+    path_prefix = normalized + "/"
+    current = {
+        path
+        for path in _repository_tree_entries(root, head)
+        if path.startswith(path_prefix)
+    }
+    history = _git(
+        root,
+        "log",
+        "--format=",
+        "--name-only",
+        "-z",
+        "HEAD",
+        "--",
+        normalized,
+    )
+    ever: set[str] = set()
+    for raw_path in history.split(b"\0"):
+        if not raw_path:
+            continue
+        try:
+            path = raw_path.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("repository history contains a non-UTF-8 path") from exc
+        _validate_repository_relative_path(path)
+        if path.startswith(path_prefix):
+            ever.add(path)
+    return current, ever
 
 
 def historical_source_layout_for_repository_commit(
@@ -326,8 +571,7 @@ def historical_source_layout_for_repository_commit(
 ) -> StorageLayout:
     """Load the strict storage layout from one already-resolved repository commit."""
 
-    root = Path(project_root).resolve()
-    return _storage_layout_for_repository_commit(root, commit)
+    return historical_repository_state(project_root, commit).layout
 
 
 def historical_source_state_for_working_tree(
@@ -336,13 +580,14 @@ def historical_source_state_for_working_tree(
     """Return the strict current layout and its complete approved-source projection."""
 
     root = Path(project_root).resolve()
-    layout_path = root / "config/storage_layout.yaml"
+    state = _required_working_file(
+        root,
+        "config/storage_layout.yaml",
+        "STORAGE_LAYOUT",
+        label="working-tree storage layout",
+    )
     try:
-        data = layout_path.read_bytes()
-    except OSError as exc:
-        raise ValueError(f"working-tree storage layout cannot be read: {exc}") from exc
-    try:
-        layout = _strict_committed_storage_layout(root, data)
+        layout = _strict_committed_storage_layout(root, state.data)
     except ValueError as exc:
         raise ValueError(f"working-tree storage layout is invalid: {exc}") from exc
     return layout, _historical_records_for_working_tree(root, layout)
@@ -351,13 +596,13 @@ def historical_source_state_for_working_tree(
 def historical_source_layout_semantics(layout: StorageLayout) -> dict[str, Any]:
     """Return only layout values capable of changing historical source discovery."""
 
-    root = layout.project_root.resolve()
+    root = layout.project_root
 
     def relative(path: Path | None) -> str | None:
         if path is None:
             return None
         try:
-            return path.resolve().relative_to(root).as_posix()
+            return path.relative_to(root).as_posix()
         except ValueError as exc:
             raise ValueError("historical source layout path escapes the project root") from exc
 
@@ -369,6 +614,368 @@ def historical_source_layout_semantics(layout: StorageLayout) -> dict[str, Any]:
         "migration_manifest": relative(layout.migration_manifest),
         "legacy_prefixes": [list(item) for item in layout.legacy_prefixes],
     }
+
+
+def _repository_tree_entries(
+    root: Path,
+    commit: str,
+) -> dict[str, tuple[str, str, str]]:
+    entries: dict[str, tuple[str, str, str]] = {}
+    tree = _git(root, "ls-tree", "-r", "-z", "--full-tree", commit)
+    for raw in tree.split(b"\0"):
+        if not raw:
+            continue
+        metadata, raw_path = raw.split(b"\t", 1)
+        mode, object_type, object_id = metadata.decode("ascii").split()
+        try:
+            relative = raw_path.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("repository tree contains a non-UTF-8 path") from exc
+        _validate_repository_relative_path(relative)
+        if relative in entries:
+            raise ValueError(f"repository tree repeats path: {relative}")
+        entries[relative] = (mode, object_type, object_id)
+    return entries
+
+
+def _repository_path_entry(
+    root: Path,
+    commit: str,
+    relative: str,
+) -> tuple[str, str, str] | None:
+    data = _git(root, "ls-tree", "-z", commit, "--", relative)
+    rows = [row for row in data.split(b"\0") if row]
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise ValueError(f"repository commit repeats canonical path: {relative}")
+    metadata, raw_path = rows[0].split(b"\t", 1)
+    try:
+        actual_path = raw_path.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("repository commit contains a non-UTF-8 path") from exc
+    if actual_path != relative:
+        raise ValueError(f"repository tree returned a non-exact canonical path: {actual_path}")
+    mode, object_type, object_id = metadata.decode("ascii").split()
+    return mode, object_type, object_id
+
+
+def _repository_index_entries(root: Path) -> dict[str, tuple[tuple[str, str, int], ...]]:
+    grouped: dict[str, list[tuple[str, str, int]]] = {}
+    data = _git(root, "ls-files", "--stage", "-z")
+    for raw in data.split(b"\0"):
+        if not raw:
+            continue
+        metadata, raw_path = raw.split(b"\t", 1)
+        mode, object_id, raw_stage = metadata.decode("ascii").split()
+        try:
+            relative = raw_path.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("Git index contains a non-UTF-8 path") from exc
+        _validate_repository_relative_path(relative)
+        grouped.setdefault(relative, []).append((mode, object_id, int(raw_stage)))
+    return {
+        relative: tuple(sorted(entries, key=lambda item: item[2]))
+        for relative, entries in grouped.items()
+    }
+
+
+def _historical_discovery_prefixes(root: Path, layout: StorageLayout) -> tuple[str, ...]:
+    paths = [
+        layout.active_campaign_root,
+        *layout.archive_campaign_roots,
+        *(root / PurePosixPath(old.rstrip("/")) for old, _new in layout.legacy_prefixes),
+        root / "research/archived_generations",
+        root / "Start here",
+        layout.research_artifact_root / "governance",
+    ]
+    values: set[str] = set()
+    for path in paths:
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise ValueError("historical discovery root escapes the project root") from exc
+        _validate_repository_relative_path(relative)
+        values.add(relative)
+    return tuple(sorted(values))
+
+
+def _validate_git_discovery_nodes(
+    entries: Mapping[str, tuple[str, str, str]],
+    root: Path,
+    layout: StorageLayout,
+    *,
+    label: str,
+) -> None:
+    prefixes = _historical_discovery_prefixes(root, layout)
+    for relative, (mode, object_type, _object_id) in entries.items():
+        is_root_or_ancestor = any(
+            relative == prefix or prefix.startswith(relative + "/") for prefix in prefixes
+        )
+        is_within_root = any(relative.startswith(prefix + "/") for prefix in prefixes)
+        if is_root_or_ancestor:
+            raise ValueError(
+                f"{label} historical discovery root must be a Git tree, not an entry: {relative}"
+            )
+        if is_within_root and (mode in {"120000", "160000"} or object_type != "blob"):
+            raise ValueError(
+                f"{label} historical discovery storage contains a symlink or gitlink: {relative}"
+            )
+
+
+def _validate_index_discovery_nodes(
+    entries: Mapping[str, tuple[tuple[str, str, int], ...]],
+    root: Path,
+    layout: StorageLayout,
+) -> None:
+    flattened: dict[str, tuple[str, str, str]] = {}
+    for relative, staged in entries.items():
+        if len(staged) != 1 or staged[0][2] != 0:
+            prefixes = _historical_discovery_prefixes(root, layout)
+            if any(
+                relative == prefix
+                or relative.startswith(prefix + "/")
+                or prefix.startswith(relative + "/")
+                for prefix in prefixes
+            ):
+                raise ValueError(
+                    f"indexed historical discovery storage has unresolved stages: {relative}"
+                )
+            continue
+        mode, object_id, _stage = staged[0]
+        object_type = "commit" if mode == "160000" else "blob"
+        flattened[relative] = (mode, object_type, object_id)
+    _validate_git_discovery_nodes(flattened, root, layout, label="indexed")
+
+
+def _validate_working_discovery_nodes(root: Path, layout: StorageLayout) -> None:
+    for relative in _historical_discovery_prefixes(root, layout):
+        path = root / PurePosixPath(relative)
+        current = root
+        for part in PurePosixPath(relative).parts:
+            current /= part
+            if not os.path.lexists(current):
+                break
+            metadata = current.lstat()
+            if not stat.S_ISDIR(metadata.st_mode):
+                raise ValueError(
+                    f"working historical discovery root is not a plain directory: {relative}"
+                )
+        if not path.is_dir():
+            continue
+        for directory, directory_names, file_names in os.walk(path, followlinks=False):
+            directory_path = Path(directory)
+            for name in [*directory_names, *file_names]:
+                candidate = directory_path / name
+                if candidate.is_symlink():
+                    source = candidate.relative_to(root).as_posix()
+                    raise ValueError(
+                        f"working historical discovery storage contains a symlink: {source}"
+                    )
+
+
+def _required_repository_file(
+    root: Path,
+    entries: Mapping[str, tuple[str, str, str]],
+    relative: str,
+    *,
+    label: str,
+) -> HistoricalSourceFileState:
+    entry = entries.get(relative)
+    if entry is None:
+        raise ValueError(f"{label} is missing: {relative}")
+    mode, object_type, object_id = entry
+    if mode != "100644" or object_type != "blob":
+        raise ValueError(f"{label} must be one 100644 blob: {relative}")
+    return HistoricalSourceFileState(
+        path=relative,
+        source_kind="STORAGE_LAYOUT",
+        mode=mode,
+        data=_git(root, "cat-file", "blob", object_id),
+    )
+
+
+def _required_index_file(
+    root: Path,
+    entries: Mapping[str, tuple[tuple[str, str, int], ...]],
+    relative: str,
+    *,
+    label: str,
+) -> HistoricalSourceFileState:
+    staged = entries.get(relative, ())
+    if len(staged) != 1 or staged[0][2] != 0:
+        raise ValueError(f"{label} is missing or has unresolved index stages: {relative}")
+    mode, object_id, _stage = staged[0]
+    object_type = _git(root, "cat-file", "-t", object_id, text=True).strip()
+    if mode != "100644" or object_type != "blob":
+        raise ValueError(f"{label} must be one stage-zero 100644 blob: {relative}")
+    return HistoricalSourceFileState(
+        path=relative,
+        source_kind="STORAGE_LAYOUT",
+        mode=mode,
+        data=_git(root, "cat-file", "blob", object_id),
+    )
+
+
+def _required_working_file(
+    root: Path,
+    relative: str,
+    source_kind: str,
+    *,
+    label: str,
+) -> HistoricalSourceFileState:
+    _validate_repository_relative_path(relative)
+    path = root / PurePosixPath(relative)
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise ValueError(f"{label} cannot be read: {relative}: {exc}") from exc
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o111:
+        raise ValueError(f"{label} must be one non-executable regular file: {relative}")
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"{label} cannot be read: {relative}: {exc}") from exc
+    return HistoricalSourceFileState(relative, source_kind, "100644", data)
+
+
+def _historical_sources_from_index(
+    entries: Mapping[str, tuple[tuple[str, str, int], ...]],
+    root: Path,
+    layout: StorageLayout,
+    candidate_paths: set[str],
+) -> tuple[tuple[str, str, str, str], ...]:
+    sources: list[tuple[str, str, str, str]] = []
+    for relative in sorted(candidate_paths):
+        source_kind = _historical_source_kind_for_relative(relative, root, layout)
+        if source_kind is None:
+            continue
+        staged = entries.get(relative, ())
+        if not staged:
+            continue
+        if len(staged) != 1 or staged[0][2] != 0:
+            raise ValueError(f"approved historical source has unresolved index stages: {relative}")
+        mode, object_id, _stage = staged[0]
+        if mode != "100644":
+            raise ValueError(
+                f"approved indexed historical source must be one 100644 blob: {relative}"
+            )
+        sources.append((relative, source_kind, mode, object_id))
+    return tuple(sources)
+
+
+def _historical_sources_from_working_tree(
+    root: Path,
+    layout: StorageLayout,
+    candidate_paths: set[str],
+) -> tuple[HistoricalSourceFileState, ...]:
+    sources: list[HistoricalSourceFileState] = []
+    for relative in sorted(candidate_paths):
+        source_kind = _historical_source_kind_for_relative(relative, root, layout)
+        if source_kind is None:
+            continue
+        path = root / PurePosixPath(relative)
+        if not os.path.lexists(path):
+            continue
+        source = _required_working_file(
+            root,
+            relative,
+            source_kind,
+            label="approved working-tree historical source",
+        )
+        extract_historical_source_records(
+            root,
+            relative,
+            source_kind,
+            layout=layout,
+            source_bytes=source.data,
+        )
+        sources.append(source)
+    return tuple(sources)
+
+
+def _working_tree_historical_source_paths(root: Path, layout: StorageLayout) -> tuple[str, ...]:
+    candidates: set[str] = set()
+
+    def add(path: Path) -> None:
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise ValueError("approved historical source escapes the project root") from exc
+        _validate_repository_relative_path(relative)
+        candidates.add(relative)
+
+    campaign_roots = [layout.active_campaign_root, *layout.archive_campaign_roots]
+    campaign_roots.extend(root / PurePosixPath(old.rstrip("/")) for old, _new in layout.legacy_prefixes)
+    for campaign_root in campaign_roots:
+        for path in campaign_root.glob("*/campaign.yaml"):
+            add(path)
+    archived_root = root / "research" / "archived_generations"
+    for path in archived_root.glob("*/campaigns/*/*/campaign.yaml"):
+        add(path)
+    for path in (
+        root / "research_ledger.csv",
+        root / "Start here" / "research_ledger.csv",
+    ):
+        if os.path.lexists(path):
+            add(path)
+    for path in archived_root.glob("*/research_ledger.csv"):
+        add(path)
+    governance = layout.research_artifact_root / "governance"
+    experiment = governance / "experiment_registry.jsonl"
+    if os.path.lexists(experiment):
+        add(experiment)
+    for path in governance.glob("research_reset*.json"):
+        add(path)
+    for path in historical_source_inventory(root, layout=layout):
+        add(path)
+    return tuple(sorted(candidates))
+
+
+def _validate_repository_relative_path(value: str) -> None:
+    if not value or value.startswith("/") or "\\" in value or "\x00" in value:
+        raise ValueError(f"repository path is not canonical: {value!r}")
+    path = PurePosixPath(value)
+    if path.as_posix() != value or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError(f"repository path is not canonical: {value!r}")
+
+
+def _historical_source_path(root: Path, value: str | Path, *, commit_bound: bool) -> Path:
+    path = Path(value)
+    if commit_bound:
+        if path.is_absolute():
+            try:
+                relative = path.relative_to(root).as_posix()
+            except ValueError as exc:
+                raise ValueError("commit-bound historical source path escapes the project root") from exc
+        else:
+            relative = path.as_posix()
+        _validate_repository_relative_path(relative)
+        return root / PurePosixPath(relative)
+    resolved = path.resolve()
+    if not _is_relative_to(resolved, root):
+        raise ValueError("historical source path escapes the project root")
+    return resolved
+
+
+def _historical_source_relative(root: Path, path: Path) -> str:
+    try:
+        relative = path.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise ValueError("historical source path escapes the project root") from exc
+    _validate_repository_relative_path(relative)
+    return relative
+
+
+def _historical_record_sort_key(
+    item: HistoricalEdgeIndexRecordV1,
+) -> tuple[str, int, str, str]:
+    return (
+        item.source_path,
+        item.source_row_number or 0,
+        item.source_kind,
+        item.record_id,
+    )
 
 
 def _historical_records_for_working_tree(
@@ -388,14 +995,7 @@ def _historical_records_for_working_tree(
                 layout=layout,
             )
         )
-    records.sort(
-        key=lambda item: (
-            item.source_path,
-            item.source_row_number or 0,
-            item.source_kind,
-            item.record_id,
-        )
-    )
+    records.sort(key=_historical_record_sort_key)
     return records
 
 
@@ -546,18 +1146,6 @@ def _layout_paths_overlap(first: str, second: str) -> bool:
     return first_path == second_path or first_path in second_path.parents or second_path in first_path.parents
 
 
-def repository_commit_recorded_at(project_root: str | Path, commit: str) -> datetime:
-    root = Path(project_root).resolve()
-    value = _git(root, "show", "-s", "--format=%cI", commit, text=True).strip()
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError("historical source commit has an invalid immutable timestamp") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ValueError("historical source commit timestamp must be timezone-aware")
-    return parsed
-
-
 def build_historical_edge_index(
     project_root: str | Path = ".",
     *,
@@ -622,19 +1210,21 @@ def _campaign_record(
     path: Path,
     layout: StorageLayout,
     source_bytes: bytes | None = None,
-) -> HistoricalEdgeIndexRecordV1 | None:
+) -> HistoricalEdgeIndexRecordV1:
     try:
         data = path.read_bytes() if source_bytes is None else source_bytes
-        payload = yaml.safe_load(data.decode("utf-8")) or {}
-    except (OSError, UnicodeDecodeError, yaml.YAMLError):
-        return None
+        if not data.strip():
+            raise ValueError("campaign definition is blank")
+        payload = yaml.safe_load(data.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError, ValueError) as exc:
+        raise ValueError(f"invalid historical campaign definition {path}: {exc}") from exc
     if not isinstance(payload, dict):
-        return None
+        raise ValueError(f"historical campaign definition must be a mapping: {path}")
     result = payload.get("result_summary") if isinstance(payload.get("result_summary"), dict) else {}
     fingerprint = payload.get("economic_edge_fingerprint")
     raw = {
         "source_kind": "CAMPAIGN_DEFINITION",
-        "source_path": display_path(path, root),
+        "source_path": _historical_source_relative(root, path),
         "source_sha256": hashlib.sha256(data).hexdigest(),
         "source_row_number": None,
         **_generation(path, root, layout),
@@ -685,7 +1275,7 @@ def _ledger_records(
             for row_number, row in enumerate(csv.DictReader(handle), start=2):
                 raw = {
                     "source_kind": "RESEARCH_LEDGER_ROW",
-                    "source_path": display_path(path, root),
+                    "source_path": _historical_source_relative(root, path),
                     "source_sha256": source_sha256,
                     "source_row_number": row_number,
                     **_generation(path, root, layout),
@@ -738,10 +1328,10 @@ def _experiment_records(
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid experiment registry JSON at {path}:{row_number}: {exc}") from exc
         if not isinstance(row, dict):
-            continue
+            raise ValueError(f"experiment registry row must be an object at {path}:{row_number}")
         raw = {
             "source_kind": "EXPERIMENT_REGISTRY_EVENT",
-            "source_path": display_path(path, root),
+            "source_path": _historical_source_relative(root, path),
             "source_sha256": source_sha256,
             "source_row_number": row_number,
             **_generation(path, root, layout),
@@ -774,15 +1364,19 @@ def _reset_record(
     path: Path,
     layout: StorageLayout,
     source_bytes: bytes | None = None,
-) -> HistoricalEdgeIndexRecordV1 | None:
+) -> HistoricalEdgeIndexRecordV1:
     try:
         data = path.read_bytes() if source_bytes is None else source_bytes
+        if not data.strip():
+            raise ValueError("reset manifest is blank")
         payload = json.loads(data.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"invalid historical reset manifest {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"historical reset manifest must be an object: {path}")
     raw = {
         "source_kind": "RESEARCH_RESET_MANIFEST",
-        "source_path": display_path(path, root),
+        "source_path": _historical_source_relative(root, path),
         "source_sha256": hashlib.sha256(data).hexdigest(),
         "source_row_number": None,
         **_generation(path, root, layout),
@@ -801,9 +1395,9 @@ def _reset_record(
         "raw_config_path": None,
         "raw_report_path": None,
         "legacy_fingerprint": None,
-        "raw_outcome": _optional(payload.get("status") if isinstance(payload, dict) else None),
+        "raw_outcome": _optional(payload.get("status")),
         "raw_scientific_verdict": None,
-        "raw_disposition": _optional(payload.get("status") if isinstance(payload, dict) else None),
+        "raw_disposition": _optional(payload.get("status")),
         "raw_failure_reason": None,
     }
     return _seal_history(raw)
@@ -851,15 +1445,15 @@ def _seal_history(raw: Mapping[str, Any]) -> HistoricalEdgeIndexRecordV1:
 
 def _generation(path: Path, root: Path, layout: StorageLayout) -> dict[str, str]:
     for archive_root in layout.archive_campaign_roots:
-        if _is_relative_to(path.resolve(), archive_root.resolve()):
+        if _is_relative_to(path, archive_root):
             return {
                 "source_generation": "CONFIGURED_ARCHIVE",
-                "archive_generation": display_path(archive_root, root),
+                "archive_generation": _historical_source_relative(root, archive_root),
                 "p1_evidence_eligibility": "NOT_CURRENT_P1_EVIDENCE",
                 "derived_index_use": "DUPLICATE_RECALL_ONLY",
             }
     try:
-        relative = path.resolve().relative_to(root)
+        relative = path.relative_to(root)
     except ValueError:
         relative = path
     parts = relative.parts
@@ -921,11 +1515,31 @@ def _assert_replaceable_derived_index(path: Path) -> None:
     try:
         validate_historical_edge_index(path)
     except (OSError, ValueError) as exc:
-        if _is_valid_prior_history_index_v1(path):
+        if _is_valid_prior_history_index_v1(path) or _is_valid_reachable_history_index(path):
             return
         raise ValueError(
             "existing derived history index target is not a valid derived index and will not be replaced"
         ) from exc
+
+
+def _is_valid_reachable_history_index(path: Path) -> bool:
+    """Permit replacement only for an exact projection of a reachable Git commit."""
+
+    try:
+        root = _infer_project_root(path)
+        records = load_historical_edge_index_records(path)
+        commits = str(_git(root, "rev-list", "HEAD", text=True)).splitlines()
+    except (OSError, ValueError):
+        return False
+    actual = [item.model_dump(mode="json", by_alias=True) for item in records]
+    for commit in commits:
+        try:
+            expected = historical_repository_state(root, commit).records
+        except (OSError, ValueError):
+            continue
+        if actual == [item.model_dump(mode="json", by_alias=True) for item in expected]:
+            return True
+    return False
 
 
 def _is_valid_prior_history_index_v1(path: Path) -> bool:
@@ -1074,7 +1688,7 @@ def _is_direct_campaign_definition(path: Path, source_root: Path) -> bool:
 
 def _relative_to_root(path: Path, root: Path) -> Path | None:
     try:
-        return path.resolve().relative_to(root)
+        return path.relative_to(root)
     except ValueError:
         return None
 
@@ -1101,6 +1715,39 @@ def _git(root: Path, *arguments: str, text: bool = False) -> bytes | str:
     except (OSError, subprocess.CalledProcessError) as exc:
         detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
         raise ValueError(f"could not resolve immutable historical source commit: {detail}") from exc
+    return result.stdout
+
+
+def _git_optional(root: Path, *arguments: str, text: bool = False) -> bytes | str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *arguments],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=text,
+        )
+    except OSError:
+        raise
+    if result.returncode == 0:
+        return result.stdout
+    return None
+
+
+def _git_with_input(root: Path, data: bytes, *arguments: str) -> bytes:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *arguments],
+            check=True,
+            input=data,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = exc.stderr.decode("utf-8", errors="replace").strip() if isinstance(
+            exc, subprocess.CalledProcessError
+        ) else str(exc)
+        raise ValueError(f"could not inspect immutable Git object: {detail}") from exc
     return result.stdout
 
 
@@ -1150,12 +1797,21 @@ def _atomic_replace(path: Path, data: bytes) -> None:
 __all__ = [
     "HISTORY_INDEX_SCHEMA",
     "HistoricalEdgeIndexRecordV1",
+    "HistoricalRepositoryState",
+    "HistoricalSourceFileState",
+    "RepositoryFileAnchor",
     "build_historical_edge_index",
     "historical_records_for_repository_commit",
+    "historical_records_for_current_review",
+    "historical_repository_state",
     "historical_source_layout_for_repository_commit",
     "historical_source_layout_semantics",
     "historical_source_state_for_working_tree",
     "historical_source_inventory",
+    "repository_commit_is_ancestor",
+    "repository_file_anchor",
+    "repository_head",
+    "repository_path_inventory",
     "validate_historical_edge_index",
     "validate_historical_index_records",
     "validate_historical_record_provenance",

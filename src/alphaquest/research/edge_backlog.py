@@ -491,14 +491,19 @@ class EdgeBacklogDecisionV1(HashedRecord):
                     self.duplicate_resolution is not None,
                     bool(self.candidate_snapshot),
                     self.candidate_snapshot_sha256 is not None,
-                    self.historical_source_commit is not None,
-                    self.historical_universe_sha256 is not None,
                     self.canonical_entry_id is not None,
                     bool(self.related_edge_family_ids),
                     bool(self.revisit_conditions),
                 )
             ):
                 raise ValueError("RESUMED records cannot carry duplicate or revisit fields")
+            if self.historical_universe_sha256 is None:
+                raise ValueError("RESUMED records require an exact historical source binding")
+            if (
+                self.historical_universe_sha256 != _EMPTY_HISTORICAL_UNIVERSE_SHA256
+                and self.historical_source_commit is None
+            ):
+                raise ValueError("a nonempty historical universe requires an immutable source commit")
             return self
         if (
             self.duplicate_resolution is None
@@ -891,6 +896,7 @@ class EdgeBacklogStore:
         history = self.decisions(entry_id)
         if not history or history[-1].disposition != "SUSPENDED":
             raise EdgeBacklogConflictError(f"entry {entry_id!r} is not currently suspended")
+        _records, source_commit, universe_sha256 = self._historical_snapshot_universe()
         return self._append_decision(
             entry,
             history,
@@ -898,8 +904,8 @@ class EdgeBacklogStore:
             duplicate_resolution=None,
             candidate_snapshot=(),
             candidate_snapshot_sha256=None,
-            historical_source_commit=None,
-            historical_universe_sha256=None,
+            historical_source_commit=source_commit,
+            historical_universe_sha256=universe_sha256,
             canonical_entry_id=None,
             related_edge_family_ids=(),
             reason_codes=reason_codes,
@@ -1244,14 +1250,22 @@ class EdgeBacklogStore:
     @_transactional(exclusive=False)
     def validate(self) -> dict[str, Any]:
         self._taxonomy_catalog()
-        self._historical_snapshot_universe()
+        self._validate_git_decision_inventory()
         observations = self._validate_observations()
         entries = self._validate_entries()
         decision_count = 0
+        anchored_decision_count = 0
+        provisional_decision_count = 0
         link_count = 0
         for entry in entries.values():
             decisions = self.decisions(entry.entry_id)
             self._validate_decision_history(entry, decisions)
+            for decision in decisions:
+                anchor_status = self._validate_decision_git_anchor(decision)
+                if anchor_status is True:
+                    anchored_decision_count += 1
+                elif anchor_status is False:
+                    provisional_decision_count += 1
             decision_count += len(decisions)
             links = self.links(entry.entry_id)
             self._validate_link_history(entry, links)
@@ -1262,12 +1276,58 @@ class EdgeBacklogStore:
         self._validate_append_order()
         return {
             "schema": "alphaquest.edge-backlog-validation/v1",
-            "status": "PASS",
+            "status": "PROVISIONAL" if provisional_decision_count else "PASS",
             "observations": len(observations),
             "entries": len(entries),
             "decisions": decision_count,
+            "git_anchored_decisions": anchored_decision_count,
+            "provisional_decisions": provisional_decision_count,
             "links": link_count,
         }
+
+    def _validate_git_decision_inventory(self) -> None:
+        """Reject removal or relocation of any reachable committed decision path."""
+
+        from alphaquest.research.edge_backlog_bootstrap import repository_path_inventory
+
+        try:
+            relative_root = self.root.relative_to(self.project_root).as_posix()
+        except ValueError as exc:
+            raise EdgeBacklogIntegrityError("edge backlog root escapes the Git project root") from exc
+        prefix = f"{relative_root}/entries"
+        try:
+            head_paths, historical_paths = repository_path_inventory(self.project_root, prefix)
+        except (OSError, ValueError) as exc:
+            raise EdgeBacklogIntegrityError(f"could not inspect committed decision inventory: {exc}") from exc
+
+        def decisions_only(paths: set[str]) -> set[str]:
+            selected: set[str] = set()
+            for value in paths:
+                remainder = value.removeprefix(prefix + "/")
+                parts = remainder.split("/")
+                if (
+                    len(parts) == 3
+                    and parts[1] == "decisions"
+                    and re.fullmatch(r"[0-9]{6}\.json", parts[2])
+                ):
+                    selected.add(value)
+            return selected
+
+        head_decisions = decisions_only(head_paths)
+        historical_decisions = decisions_only(historical_paths)
+        if historical_decisions - head_decisions:
+            raise EdgeBacklogIntegrityError(
+                "a reachable committed decision was removed or relocated after its first Git anchor"
+            )
+        working_decisions = {
+            path.relative_to(self.project_root).as_posix()
+            for path in self.root.glob("entries/*/decisions/*.json")
+            if path.is_file()
+        }
+        if head_decisions - working_decisions:
+            raise EdgeBacklogIntegrityError(
+                "a committed decision is missing from the current canonical backlog"
+            )
 
     def _append_observation(
         self,
@@ -1630,6 +1690,8 @@ class EdgeBacklogStore:
                     reviewing_links=link_history[:link_prefix],
                     reviewing_decision=decision,
                 )
+            else:
+                self._historical_records_for_decision(decision)
             if previous:
                 if previous.disposition in _TERMINAL_DISPOSITIONS:
                     raise EdgeBacklogIntegrityError("terminal decision has later history")
@@ -1664,6 +1726,96 @@ class EdgeBacklogStore:
                 if previous_link_prefix != len(link_history):
                     raise EdgeBacklogIntegrityError("entry received a link without a human resume")
 
+    def _historical_records_for_decision(
+        self,
+        decision: EdgeBacklogDecisionV1,
+    ) -> list[HistoricalEdgeIndexRecordV1]:
+        if decision.historical_source_commit is None:
+            historical_records: list[HistoricalEdgeIndexRecordV1] = []
+        else:
+            from alphaquest.research.edge_backlog_bootstrap import (
+                historical_records_for_repository_commit,
+            )
+
+            try:
+                commit, historical_records = historical_records_for_repository_commit(
+                    self.project_root,
+                    decision.historical_source_commit,
+                )
+            except (OSError, ValueError) as exc:
+                raise EdgeBacklogIntegrityError(
+                    f"historical matcher universe cannot be replayed from its bound commit: {exc}"
+                ) from exc
+            if commit != decision.historical_source_commit:
+                raise EdgeBacklogIntegrityError("historical source commit did not resolve exactly")
+        actual_universe_sha256 = _historical_universe_sha256(historical_records)
+        if actual_universe_sha256 != decision.historical_universe_sha256:
+            raise EdgeBacklogIntegrityError(
+                "historical matcher universe does not match its immutable source commit"
+            )
+        return historical_records
+
+    def _validate_decision_git_anchor(self, decision: EdgeBacklogDecisionV1) -> bool | None:
+        """Validate durable ordering using Git ancestry and immutable blobs only."""
+
+        from alphaquest.research.edge_backlog_bootstrap import (
+            historical_repository_state,
+            repository_commit_is_ancestor,
+            repository_file_anchor,
+            repository_head,
+        )
+
+        try:
+            if repository_head(self.project_root) is None:
+                return None
+            if decision.historical_source_commit is None:
+                raise ValueError("a Git-backed decision must bind exact clean HEAD")
+            path = (
+                self.root
+                / "entries"
+                / decision.entry_id
+                / "decisions"
+                / f"{decision.sequence:06d}.json"
+            )
+            try:
+                relative = path.relative_to(self.project_root).as_posix()
+            except ValueError as exc:
+                raise ValueError("canonical decision path escapes the Git project root") from exc
+            anchor = repository_file_anchor(
+                self.project_root,
+                relative,
+                canonical_json_bytes(decision) + b"\n",
+            )
+            if anchor is None:
+                return False
+            if not repository_commit_is_ancestor(
+                self.project_root,
+                decision.historical_source_commit,
+                anchor.introduction_commit,
+            ):
+                raise ValueError(
+                    "bound historical source commit is not an ancestor of decision introduction"
+                )
+            bound = historical_repository_state(
+                self.project_root,
+                decision.historical_source_commit,
+            )
+            preceding = historical_repository_state(
+                self.project_root,
+                anchor.preceding_commit,
+            )
+            if (
+                bound.layout_file != preceding.layout_file
+                or bound.sources != preceding.sources
+                or bound.records != preceding.records
+            ):
+                raise ValueError(
+                    "historical layout/universe preceding decision introduction differs from its binding"
+                )
+            return True
+        except (OSError, ValueError) as exc:
+            raise EdgeBacklogIntegrityError(f"invalid Git-anchored decision: {exc}") from exc
+
     def _validate_persisted_candidate_snapshot(
         self,
         *,
@@ -1671,29 +1823,7 @@ class EdgeBacklogStore:
         reviewing_links: Sequence[EdgeBacklogLinkV1],
         reviewing_decision: EdgeBacklogDecisionV1,
     ) -> None:
-        if reviewing_decision.historical_source_commit is None:
-            historical_records: list[HistoricalEdgeIndexRecordV1] = []
-        else:
-            from alphaquest.research.edge_backlog_bootstrap import (
-                historical_records_for_repository_commit,
-                repository_commit_recorded_at,
-            )
-
-            commit, historical_records = historical_records_for_repository_commit(
-                self.project_root,
-                reviewing_decision.historical_source_commit,
-            )
-            if commit != reviewing_decision.historical_source_commit:
-                raise EdgeBacklogIntegrityError("historical source commit did not resolve exactly")
-            if repository_commit_recorded_at(self.project_root, commit) > reviewing_decision.recorded_at:
-                raise EdgeBacklogIntegrityError(
-                    "historical matcher universe commit is later than the reviewing decision"
-                )
-        actual_universe_sha256 = _historical_universe_sha256(historical_records)
-        if actual_universe_sha256 != reviewing_decision.historical_universe_sha256:
-            raise EdgeBacklogIntegrityError(
-                "historical matcher universe does not match its immutable source commit"
-            )
+        historical_records = self._historical_records_for_decision(reviewing_decision)
         expected = [
             DuplicateCandidateV1.model_validate(item).model_dump(mode="json", by_alias=True)
             for item in self._duplicate_candidates(
@@ -1939,41 +2069,16 @@ class EdgeBacklogStore:
             "historical_record": record,
         }
 
-    def _historical_index_records(
-        self,
-        *,
-        layout: StorageLayout | None = None,
-    ) -> list[HistoricalEdgeIndexRecordV1]:
-        current_layout = layout or self.layout
-        path = current_layout.edge_backlog_history_index
-        if not path.is_file():
-            return []
-        try:
-            records = load_historical_edge_index_records(path)
-            from alphaquest.research.edge_backlog_bootstrap import validate_historical_index_records
-
-            validate_historical_index_records(
-                records,
-                project_root=self.project_root,
-                layout=current_layout,
-            )
-            return records
-        except (OSError, ValueError) as exc:
-            raise EdgeBacklogIntegrityError(f"invalid configured historical backlog index {path}: {exc}") from exc
-
     def _historical_snapshot_universe(
         self,
     ) -> tuple[list[HistoricalEdgeIndexRecordV1], str | None, str]:
         from alphaquest.research.edge_backlog_bootstrap import (
-            historical_records_for_repository_commit,
-            historical_source_layout_for_repository_commit,
-            historical_source_layout_semantics,
-            historical_source_state_for_working_tree,
+            historical_records_for_current_review,
             historical_source_inventory,
         )
 
         try:
-            commit, committed_records = historical_records_for_repository_commit(self.project_root)
+            commit, committed_records = historical_records_for_current_review(self.project_root)
         except (OSError, ValueError) as exc:
             try:
                 source_inventory = historical_source_inventory(
@@ -1984,47 +2089,13 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError(
                     "historical matcher universe source inventory cannot be established"
                 ) from inventory_exc
-            if not (self.project_root / ".git").exists() and not source_inventory and not (
-                self.layout.edge_backlog_history_index.exists()
-            ):
+            if not (self.project_root / ".git").exists() and not source_inventory:
                 return [], None, _EMPTY_HISTORICAL_UNIVERSE_SHA256
             raise EdgeBacklogIntegrityError(
-                f"historical matcher universe is not bound to an immutable repository source state: {exc}"
+                "current historical matcher sources cannot be bound to exact clean HEAD; "
+                "commit or revert the historical-source/layout changes before review: "
+                f"{exc}"
             ) from exc
-        try:
-            committed_layout = historical_source_layout_for_repository_commit(
-                self.project_root,
-                commit,
-            )
-            working_layout, working_records = historical_source_state_for_working_tree(
-                self.project_root
-            )
-            committed_semantics = historical_source_layout_semantics(committed_layout)
-            working_semantics = historical_source_layout_semantics(working_layout)
-        except (OSError, ValueError) as exc:
-            raise EdgeBacklogIntegrityError(
-                "current historical matcher sources cannot be compared with HEAD; "
-                f"commit or revert the historical-source/layout changes: {exc}"
-            ) from exc
-        committed_payloads = [
-            item.model_dump(mode="json", by_alias=True) for item in committed_records
-        ]
-        working_payloads = [
-            item.model_dump(mode="json", by_alias=True) for item in working_records
-        ]
-        if committed_semantics != working_semantics or committed_payloads != working_payloads:
-            raise EdgeBacklogIntegrityError(
-                "current historical matcher sources or storage layout differ from HEAD; "
-                "commit or revert the historical-source/layout changes before review"
-            )
-        if working_layout.edge_backlog_history_index.is_file():
-            records = self._historical_index_records(layout=working_layout)
-            if [item.model_dump(mode="json", by_alias=True) for item in records] != [
-                item.model_dump(mode="json", by_alias=True) for item in committed_records
-            ]:
-                raise EdgeBacklogIntegrityError(
-                    "configured historical index does not equal the complete repository-bound source extraction"
-                )
         return committed_records, commit, _historical_universe_sha256(committed_records)
 
     def _taxonomy_catalog(self) -> dict[int, EconomicEdgeTaxonomyV1]:
@@ -2137,10 +2208,19 @@ class EdgeBacklogStore:
     def _exclusive_write(self, path: Path, record: HashedRecord) -> None:
         if not bool(getattr(self._transaction_state, "exclusive", False)):
             raise EdgeBacklogIntegrityError("canonical backlog writes require an exclusive transaction")
-        # Re-read and revalidate every existing canonical and configured index
-        # record while the cross-process lock is still held, immediately before
-        # allocating the exclusive append target.
+        # Re-read and revalidate every existing canonical record while the
+        # cross-process lock is still held, immediately before allocating the
+        # exclusive append target. The optional derived cache is not authority.
         self.validate()
+        if isinstance(record, EdgeBacklogDecisionV1):
+            _records, commit, universe_sha256 = self._historical_snapshot_universe()
+            if (
+                commit != record.historical_source_commit
+                or universe_sha256 != record.historical_universe_sha256
+            ):
+                raise EdgeBacklogConflictError(
+                    "decision historical source binding became stale before exclusive write"
+                )
         expected_append_sequence = self._next_append_sequence()
         if record.append_sequence != expected_append_sequence:
             raise EdgeBacklogConflictError(
@@ -2158,6 +2238,13 @@ class EdgeBacklogStore:
                 handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
+            if isinstance(record, EdgeBacklogDecisionV1) and record.historical_source_commit is not None:
+                from alphaquest.research.edge_backlog_bootstrap import repository_head
+
+                if repository_head(self.project_root) != record.historical_source_commit:
+                    raise EdgeBacklogConflictError(
+                        "repository HEAD changed during decision persistence"
+                    )
             _fsync_directory(path.parent)
         except Exception:
             # A failed first write is not a valid canonical record.  Removing

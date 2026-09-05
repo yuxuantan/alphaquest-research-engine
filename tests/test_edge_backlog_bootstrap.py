@@ -263,6 +263,10 @@ def _commit_paths(root: Path, message: str, *paths: str) -> str:
     ).stdout.strip()
 
 
+def _commit_backlog(root: Path, store: EdgeBacklogStore, message: str) -> str:
+    return _commit_paths(root, message, store.root.relative_to(root).as_posix())
+
+
 def _apply_dirty_historical_change(root: Path, change: str) -> tuple[str, ...]:
     current = root / "research/campaigns/active/current_auction_edge/campaign.yaml"
     if change == "new":
@@ -575,7 +579,7 @@ def test_historical_provenance_fails_closed_against_actual_sources(
         validate_historical_edge_index(index, project_root=tmp_path)
 
 
-def test_configured_history_is_strictly_validated_before_every_store_consumer(tmp_path: Path) -> None:
+def test_malformed_derived_cache_is_non_authoritative_for_every_store_consumer(tmp_path: Path) -> None:
     _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
     entry = _canonical_entry(store)
@@ -586,27 +590,25 @@ def test_configured_history_is_strictly_validated_before_every_store_consumer(tm
     rows[0]["forged_semantic_promotion"] = "PASS"
     _reseal_index_row(rows[0])
     _write_index_rows(index, rows)
+    forged_cache = index.read_bytes()
 
-    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
-        store.search("auction")
-    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
-        store.duplicate_snapshot(entry.entry_id)
-    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
-        store.validate()
-    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
-        store.record_human_decision(
-            entry.entry_id,
-            disposition="REVIEWED_CONTINUE",
-            duplicate_resolution="DISTINCT_EDGE",
-            candidate_snapshot_sha256=snapshot["snapshot_sha256"],
-            reason_codes=["OTHER"],
-            rationale="A malformed configured history index must block decision persistence.",
-            reviewer_id="owner",
-        )
-    assert not (store.root / f"entries/{entry.entry_id}/decisions/000001.json").exists()
+    assert store.search("auction")
+    assert store.duplicate_snapshot(entry.entry_id) == snapshot
+    assert store.validate()["status"] == "PASS"
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="The optional malformed cache is not review authority.",
+        reviewer_id="owner",
+    )
+    assert store.validate()["status"] == "PROVISIONAL"
+    assert index.read_bytes() == forged_cache
 
 
-def test_forged_source_provenance_is_rejected_before_every_store_consumer(tmp_path: Path) -> None:
+def test_forged_cache_provenance_is_non_authoritative_for_every_store_consumer(tmp_path: Path) -> None:
     _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
     entry = _canonical_entry(store)
@@ -617,24 +619,21 @@ def test_forged_source_provenance_is_rejected_before_every_store_consumer(tmp_pa
     rows[0]["raw_hypothesis"] = "A fabricated projection absent from the immutable source file."
     _reseal_index_row(rows[0])
     _write_index_rows(index, rows)
+    forged_cache = index.read_bytes()
 
-    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
-        store.search("auction")
-    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
-        store.duplicate_snapshot(entry.entry_id)
-    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
-        store.validate()
-    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
-        store.record_human_decision(
-            entry.entry_id,
-            disposition="REVIEWED_CONTINUE",
-            duplicate_resolution="DISTINCT_EDGE",
-            candidate_snapshot_sha256=snapshot["snapshot_sha256"],
-            reason_codes=["OTHER"],
-            rationale="Fabricated source provenance must block persistence.",
-            reviewer_id="owner",
-        )
-    assert not (store.root / f"entries/{entry.entry_id}/decisions/000001.json").exists()
+    assert store.search("auction")
+    assert store.duplicate_snapshot(entry.entry_id) == snapshot
+    assert store.validate()["status"] == "PASS"
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="Fabricated cache provenance cannot affect Git-derived review.",
+        reviewer_id="owner",
+    )
+    assert index.read_bytes() == forged_cache
 
 
 def test_historical_duplicate_candidate_contract_is_literal_and_cross_field_bound(tmp_path: Path) -> None:
@@ -687,7 +686,13 @@ def test_persisted_historical_candidate_is_self_contained_after_index_rebuild(tm
     )
 
     (tmp_path / "catalogs/edge_backlog_history.jsonl").unlink()
-    assert store.validate()["status"] == "PASS"
+    provisional = store.validate()
+    assert provisional["status"] == "PROVISIONAL"
+    assert provisional["provisional_decisions"] == 1
+    _commit_backlog(tmp_path, store, "anchor historical candidate decision")
+    anchored = store.validate()
+    assert anchored["status"] == "PASS"
+    assert anchored["git_anchored_decisions"] == 1
 
 
 def test_full_validation_rejects_resealed_omitted_historical_candidate(tmp_path: Path) -> None:
@@ -719,21 +724,12 @@ def test_full_validation_rejects_resealed_omitted_historical_candidate(tmp_path:
         store.validate()
 
 
-def test_future_historical_source_commit_cannot_be_spliced_into_earlier_decision(tmp_path: Path) -> None:
+def test_backdated_descendant_commit_cannot_rewrite_git_anchored_decision(tmp_path: Path) -> None:
     _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
     entry = _canonical_entry(store)
     build_historical_edge_index(tmp_path)
     snapshot = store.duplicate_snapshot(entry.entry_id)
-    initial_commit_time = datetime.fromisoformat(
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "show", "-s", "--format=%cI", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    )
-    review_time = initial_commit_time + timedelta(seconds=10)
     store.record_human_decision(
         entry.entry_id,
         disposition="REVIEWED_CONTINUE",
@@ -742,8 +738,9 @@ def test_future_historical_source_commit_cannot_be_spliced_into_earlier_decision
         reason_codes=["OTHER"],
         rationale="The decision is bound to the then-current immutable historical source tree.",
         reviewer_id="owner",
-        recorded_at=review_time,
     )
+    _commit_backlog(tmp_path, store, "anchor original decision")
+    assert store.validate()["status"] == "PASS"
 
     future = tmp_path / "research/campaigns/active/future_auction_edge/campaign.yaml"
     future.parent.mkdir(parents=True)
@@ -756,8 +753,8 @@ def test_future_historical_source_commit_cannot_be_spliced_into_earlier_decision
         encoding="utf-8",
     )
     subprocess.run(["git", "-C", str(tmp_path), "add", str(future.relative_to(tmp_path))], check=True)
-    future_time = (review_time + timedelta(seconds=10)).isoformat()
-    environment = {**os.environ, "GIT_AUTHOR_DATE": future_time, "GIT_COMMITTER_DATE": future_time}
+    backdated = "2000-01-01T00:00:00+00:00"
+    environment = {**os.environ, "GIT_AUTHOR_DATE": backdated, "GIT_COMMITTER_DATE": backdated}
     subprocess.run(
         [
             "git",
@@ -770,7 +767,7 @@ def test_future_historical_source_commit_cannot_be_spliced_into_earlier_decision
             "commit",
             "-q",
             "-m",
-            "future source",
+            "backdated descendant source",
         ],
         check=True,
         env=environment,
@@ -785,8 +782,13 @@ def test_future_historical_source_commit_cannot_be_spliced_into_earlier_decision
     payload["historical_universe_sha256"] = future_snapshot["historical_universe_sha256"]
     _reseal_decision_snapshot(payload)
     decision_path.write_bytes(canonical_json_bytes(payload) + b"\n")
+    _commit_paths(
+        tmp_path,
+        "attempt to rewrite anchored decision from a backdated descendant",
+        decision_path.relative_to(tmp_path).as_posix(),
+    )
 
-    with pytest.raises(EdgeBacklogIntegrityError, match="commit is later than the reviewing decision"):
+    with pytest.raises(EdgeBacklogIntegrityError, match="Git-anchored decision"):
         store.validate()
 
 
@@ -1048,6 +1050,183 @@ def test_dirty_historical_working_tree_fails_all_current_review_paths_identicall
         assert index.read_bytes() == expected_cache
 
 
+@pytest.mark.parametrize("cache_present", [False, True], ids=["cache-absent", "cache-present"])
+def test_staged_only_historical_change_with_restored_worktree_fails_closed(
+    tmp_path: Path,
+    cache_present: bool,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    if cache_present:
+        build_historical_edge_index(tmp_path)
+        cache_bytes = index.read_bytes()
+    else:
+        cache_bytes = None
+    source = tmp_path / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    relative = source.relative_to(tmp_path).as_posix()
+    head_bytes = subprocess.run(
+        ["git", "-C", str(tmp_path), "show", f"HEAD:{relative}"],
+        check=True,
+        capture_output=True,
+    ).stdout
+    source.write_bytes(head_bytes + b"staged_only: true\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    source.write_bytes(head_bytes)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_snapshot(entry.entry_id)
+    if cache_bytes is None:
+        assert not index.exists()
+    else:
+        assert index.read_bytes() == cache_bytes
+
+
+@pytest.mark.parametrize("cache_present", [False, True], ids=["cache-absent", "cache-present"])
+@pytest.mark.parametrize("defect", ["blank", "malformed", "zero-row"])
+def test_untracked_invalid_approved_source_fails_closed_with_cache_parity(
+    tmp_path: Path,
+    cache_present: bool,
+    defect: str,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    if cache_present:
+        build_historical_edge_index(tmp_path)
+        cache_bytes = index.read_bytes()
+    else:
+        cache_bytes = None
+    clean_snapshot = store.duplicate_snapshot(entry.entry_id)
+    if defect == "zero-row":
+        source = tmp_path / "Start here/research_ledger.csv"
+        source.parent.mkdir(parents=True)
+        source.write_text("campaign_id,variant_id,result\n", encoding="utf-8")
+    else:
+        source = tmp_path / "research/campaigns/active/untracked_invalid/campaign.yaml"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"" if defect == "blank" else b"campaign_id: [\n")
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_candidates(entry.entry_id)
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_snapshot(entry.entry_id)
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.record_human_decision(
+            entry.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=clean_snapshot["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="Invalid untracked historical sources cannot be ignored.",
+            reviewer_id="owner",
+        )
+    assert not (store.root / f"entries/{entry.entry_id}/decisions/000001.json").exists()
+    if cache_bytes is None:
+        assert not index.exists()
+    else:
+        assert index.read_bytes() == cache_bytes
+
+
+@pytest.mark.parametrize("cache_present", [False, True], ids=["cache-absent", "cache-present"])
+@pytest.mark.parametrize(
+    "defect",
+    ["conflict", "rename", "delete", "symlink", "source-root-symlink", "executable"],
+)
+def test_index_path_and_mode_integrity_fail_closed_with_cache_parity(
+    tmp_path: Path,
+    cache_present: bool,
+    defect: str,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    if cache_present:
+        build_historical_edge_index(tmp_path)
+        cache_bytes = index.read_bytes()
+    else:
+        cache_bytes = None
+    source = tmp_path / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    relative = source.relative_to(tmp_path).as_posix()
+    if defect == "conflict":
+        base = subprocess.run(
+            ["git", "-C", str(tmp_path), "rev-parse", f"HEAD:{relative}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        ours = subprocess.run(
+            ["git", "-C", str(tmp_path), "hash-object", "-w", "--stdin"],
+            check=True,
+            input=source.read_bytes() + b"ours: true\n",
+            capture_output=True,
+        ).stdout.decode("ascii").strip()
+        theirs = subprocess.run(
+            ["git", "-C", str(tmp_path), "hash-object", "-w", "--stdin"],
+            check=True,
+            input=source.read_bytes() + b"theirs: true\n",
+            capture_output=True,
+        ).stdout.decode("ascii").strip()
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "update-index", "--force-remove", "--", relative],
+            check=True,
+        )
+        conflict = (
+            f"100644 {base} 1\t{relative}\n"
+            f"100644 {ours} 2\t{relative}\n"
+            f"100644 {theirs} 3\t{relative}\n"
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "update-index", "--index-info"],
+            check=True,
+            input=conflict,
+            text=True,
+        )
+    elif defect == "rename":
+        target = tmp_path / "research/campaigns/active/renamed_index_source/campaign.yaml"
+        target.parent.mkdir(parents=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "mv", "--", relative, target.relative_to(tmp_path).as_posix()],
+            check=True,
+        )
+    elif defect == "delete":
+        subprocess.run(["git", "-C", str(tmp_path), "rm", "--", relative], check=True)
+    elif defect == "symlink":
+        target = tmp_path / "symlink-target.yaml"
+        target.write_bytes(source.read_bytes())
+        source.unlink()
+        source.symlink_to(target)
+        subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    elif defect == "source-root-symlink":
+        source_root = tmp_path / "research/campaigns/active"
+        target = tmp_path / "symlink-campaign-root"
+        target.mkdir()
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "rm", "-r", "--", source_root.relative_to(tmp_path)],
+            check=True,
+        )
+        source_root.symlink_to(target, target_is_directory=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "--", source_root.relative_to(tmp_path)],
+            check=True,
+        )
+    elif defect == "executable":
+        source.chmod(0o755)
+        subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(defect)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_snapshot(entry.entry_id)
+    if cache_bytes is None:
+        assert not index.exists()
+    else:
+        assert index.read_bytes() == cache_bytes
+
+
 def test_committing_and_reverting_historical_source_restores_exact_universe(tmp_path: Path) -> None:
     _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
@@ -1114,6 +1293,8 @@ def test_old_decision_replays_after_later_committed_historical_addition(tmp_path
         rationale="The decision remains bound to its exact historical source commit.",
         reviewer_id="owner",
     )
+    _commit_backlog(tmp_path, store, "anchor historical decision")
+    assert store.validate()["status"] == "PASS"
 
     changed_paths = _apply_dirty_historical_change(tmp_path, "new")
     later_commit = _commit_paths(tmp_path, "later approved historical source", *changed_paths)
@@ -1121,6 +1302,208 @@ def test_old_decision_replays_after_later_committed_historical_addition(tmp_path
     assert later_commit != decision.historical_source_commit
     assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
     assert not (tmp_path / "catalogs/edge_backlog_history.jsonl").exists()
+
+
+def test_uncommitted_git_decision_is_explicitly_provisional(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="The decision is provisional until its canonical blob is committed.",
+        reviewer_id="owner",
+    )
+
+    result = store.validate()
+
+    assert result["status"] == "PROVISIONAL"
+    assert result["git_anchored_decisions"] == 0
+    assert result["provisional_decisions"] == 1
+
+
+@pytest.mark.parametrize("cache_present", [False, True], ids=["cache-absent", "cache-present"])
+def test_anchored_decision_replay_ignores_current_source_dirt_and_cache(
+    tmp_path: Path,
+    cache_present: bool,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    if cache_present:
+        build_historical_edge_index(tmp_path)
+        cache_bytes = index.read_bytes()
+    else:
+        cache_bytes = None
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="Replay is isolated from later current-source dirt.",
+        reviewer_id="owner",
+    )
+    _commit_backlog(tmp_path, store, "anchor decision before source dirt")
+    source = tmp_path / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    source.write_bytes(source.read_bytes() + b"dirty_current_source: true\n")
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_snapshot(entry.entry_id)
+    if cache_bytes is None:
+        assert not index.exists()
+    else:
+        assert index.read_bytes() == cache_bytes
+
+
+def test_fixed_commit_replay_ignores_hostile_current_source_symlink(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="Replay consumes only the bound Git tree.",
+        reviewer_id="owner",
+    )
+    _commit_backlog(tmp_path, store, "anchor before hostile source symlink")
+    source = tmp_path / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    target = tmp_path / "hostile-outside-source.yaml"
+    target.write_text("campaign_id: hostile\nedge: fabricated\n", encoding="utf-8")
+    source.unlink()
+    source.symlink_to(target)
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_snapshot(entry.entry_id)
+
+
+def test_stale_cache_presence_absence_parity_and_safe_refresh(tmp_path: Path, capsys) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    build_historical_edge_index(tmp_path)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    old_cache = index.read_bytes()
+    source = tmp_path / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    source.write_bytes(source.read_bytes() + b"owner_note: committed projection change\n")
+    changed_commit = _commit_paths(
+        tmp_path,
+        "change approved historical projection",
+        source.relative_to(tmp_path).as_posix(),
+    )
+
+    with_stale_cache = store.duplicate_snapshot(entry.entry_id)
+    assert with_stale_cache["historical_source_commit"] == changed_commit
+    assert index.read_bytes() == old_cache
+    assert main(["edge-backlog", "validate", "--project-root", str(tmp_path)]) == 0
+    cli_validation = json.loads(capsys.readouterr().out)
+    assert cli_validation["status"] == "PASS"
+    assert cli_validation["historical_index"]["status"] == "PRESENT_NON_AUTHORITATIVE"
+    index.unlink()
+    without_cache = store.duplicate_snapshot(entry.entry_id)
+    assert without_cache == with_stale_cache
+    assert not index.exists()
+
+    index.write_bytes(old_cache)
+    result = build_historical_edge_index(tmp_path)
+    assert result["status"] == "PASS"
+    assert index.read_bytes() != old_cache
+    refreshed = store.duplicate_snapshot(entry.entry_id)
+    assert refreshed == with_stale_cache
+    assert validate_historical_edge_index(index, project_root=tmp_path)["status"] == "PASS"
+
+
+def test_removed_git_anchored_decision_fails_closed(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="A committed decision cannot later disappear.",
+        reviewer_id="owner",
+    )
+    _commit_backlog(tmp_path, store, "anchor decision before removal")
+    decision_path = store.root / f"entries/{entry.entry_id}/decisions/000001.json"
+    decision_path.unlink()
+    _commit_paths(
+        tmp_path,
+        "remove anchored decision",
+        decision_path.relative_to(tmp_path).as_posix(),
+    )
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="removed or relocated"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+def test_ambiguous_merge_decision_introduction_fails_closed(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="The same provisional blob will be introduced on two branches.",
+        reviewer_id="owner",
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "switch", "-q", "-c", "decision-a"], check=True)
+    _commit_backlog(tmp_path, store, "introduce decision on branch A")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "switch", "-q", "-c", "decision-b", base],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "checkout", "decision-a", "--", store.root.relative_to(tmp_path)],
+        check=True,
+    )
+    _commit_backlog(tmp_path, store, "introduce decision on branch B")
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.name=AlphaQuest Test",
+            "-c",
+            "user.email=alphaquest.test@example.invalid",
+            "merge",
+            "-q",
+            "--no-ff",
+            "-m",
+            "merge ambiguous introductions",
+            "decision-a",
+        ],
+        check=True,
+    )
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="ambiguous Git introduction"):
+        EdgeBacklogStore(tmp_path).validate()
 
 
 def test_source_empty_git_repository_binds_canonical_empty_universe(tmp_path: Path) -> None:
@@ -1163,6 +1546,8 @@ def test_source_empty_git_repository_binds_canonical_empty_universe(tmp_path: Pa
         reviewer_id="owner",
     )
     assert decision.historical_source_commit == snapshot["historical_source_commit"]
+    assert store.validate()["status"] == "PROVISIONAL"
+    _commit_backlog(tmp_path, store, "anchor empty-universe decision")
     assert store.validate()["status"] == "PASS"
     assert not (tmp_path / "catalogs/edge_backlog_history.jsonl").exists()
 
@@ -1177,7 +1562,7 @@ def test_source_bearing_non_git_repository_fails_closed_without_cache(tmp_path: 
         encoding="utf-8",
     )
 
-    with pytest.raises(EdgeBacklogIntegrityError, match="immutable repository source state"):
+    with pytest.raises(EdgeBacklogIntegrityError, match="exact clean HEAD"):
         store.duplicate_snapshot(entry.entry_id)
     assert not (tmp_path / "catalogs/edge_backlog_history.jsonl").exists()
 
@@ -1197,6 +1582,7 @@ def test_bound_commit_replay_uses_its_own_layout_after_head_layout_change(tmp_pa
         rationale="The review is bound to layout L1 in its immutable source commit.",
         reviewer_id="owner",
     )
+    _commit_backlog(tmp_path, store, "anchor layout L1 decision")
     config = tmp_path / "config/storage_layout.yaml"
     config.write_text(
         _STORAGE_LAYOUT.replace(
@@ -1340,6 +1726,136 @@ def test_committed_storage_layout_defects_fail_closed(tmp_path: Path, defect: st
     )
 
     with pytest.raises(ValueError, match="storage layout"):
+        historical_records_for_repository_commit(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "defect",
+    ["blank", "malformed", "zero-row", "symlink", "source-root-symlink", "executable", "gitlink"],
+)
+def test_commit_bound_historical_source_blob_contract_fails_closed(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    _fixture(tmp_path)
+    source = tmp_path / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    relative = source.relative_to(tmp_path).as_posix()
+    if defect == "blank":
+        source.write_bytes(b"")
+        subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    elif defect == "malformed":
+        source.write_bytes(b"campaign_id: [\n")
+        subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    elif defect == "zero-row":
+        source = tmp_path / "research_ledger.csv"
+        relative = source.relative_to(tmp_path).as_posix()
+        source.write_text("campaign_id,variant_id,result\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    elif defect == "symlink":
+        target = tmp_path / "committed-symlink-target.yaml"
+        target.write_text("campaign_id: target\nedge: target\n", encoding="utf-8")
+        source.unlink()
+        source.symlink_to(target)
+        subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    elif defect == "source-root-symlink":
+        source_root = tmp_path / "research/campaigns/active"
+        target = tmp_path / "committed-symlink-campaign-root"
+        target.mkdir()
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "rm", "-r", "--", source_root.relative_to(tmp_path)],
+            check=True,
+        )
+        source_root.symlink_to(target, target_is_directory=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "--", source_root.relative_to(tmp_path)],
+            check=True,
+        )
+    elif defect == "executable":
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "update-index", "--chmod=+x", "--", relative],
+            check=True,
+        )
+    elif defect == "gitlink":
+        head = subprocess.run(
+            ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                "160000",
+                head,
+                relative,
+            ],
+            check=True,
+        )
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(defect)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.name=AlphaQuest Test",
+            "-c",
+            "user.email=alphaquest.test@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            f"commit {defect} historical source",
+        ],
+        check=True,
+    )
+
+    with pytest.raises(ValueError, match="100644|invalid|zero-row|discovery root|symlink|gitlink"):
+        historical_records_for_repository_commit(tmp_path)
+
+
+@pytest.mark.parametrize("defect", ["symlink", "executable"])
+def test_commit_bound_storage_layout_requires_plain_100644_blob(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    _fixture(tmp_path)
+    config = tmp_path / "config/storage_layout.yaml"
+    relative = config.relative_to(tmp_path).as_posix()
+    if defect == "executable":
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "update-index", "--chmod=+x", "--", relative],
+            check=True,
+        )
+    else:
+        target = tmp_path / "layout-target.yaml"
+        target.write_text(_STORAGE_LAYOUT, encoding="utf-8")
+        config.unlink()
+        config.symlink_to(target)
+        subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.name=AlphaQuest Test",
+            "-c",
+            "user.email=alphaquest.test@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            f"commit {defect} layout",
+        ],
+        check=True,
+    )
+
+    with pytest.raises(ValueError, match="100644 blob"):
         historical_records_for_repository_commit(tmp_path)
 
 

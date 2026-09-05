@@ -1306,14 +1306,11 @@ def _edge_resume(args: argparse.Namespace) -> int:
 
 def _edge_validate(args: argparse.Namespace) -> int:
     from alphaquest.research.edge_backlog import EdgeBacklogStore
-    from alphaquest.research.edge_backlog_bootstrap import validate_historical_edge_index
 
     store = EdgeBacklogStore(args.project_root)
     payload = store.validate()
     if store.layout.edge_backlog_history_index.is_file():
-        payload["historical_index"] = validate_historical_edge_index(
-            store.layout.edge_backlog_history_index
-        )
+        payload["historical_index"] = {"status": "PRESENT_NON_AUTHORITATIVE"}
     else:
         payload["historical_index"] = {"status": "NOT_BUILT"}
     _edge_json(payload)

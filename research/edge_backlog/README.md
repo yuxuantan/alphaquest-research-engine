@@ -24,9 +24,19 @@ candidates are regenerated as the complete ranked universe at the reviewing
 decision's append sequence. Historical input is re-extracted from the exact
 immutable repository commit bound by the decision, and each historical
 candidate embeds its strict derived record, so later index rebuilds do not
-erase the review binding. Current and prior derived rows must also match an
-existing approved source path, actual file-byte hash, source kind/row, and the
-shared source-specific extraction.
+erase the review binding. Review reads the immutable Git tree directly and
+ignores the optional derived cache. Explicit cache validation and replacement
+still require every current or prior derived row to match an approved source,
+actual file-byte hash, source kind/row, and the shared source-specific
+extraction.
+
+In Git repositories a newly appended decision is provisional until its path
+and exact canonical blob are committed. Full validation then requires one
+unambiguous introduction commit, source-commit ancestry, an equal historical
+universe in the introduction parent, and an unchanged decision blob in every
+reachable descendant. Commit timestamps grant no ordering authority. A
+wholesale rewrite before that first Git anchor cannot be detected
+cryptographically.
 
 Observation statements and conflicts are unrestricted, source-bound memory and
 grant no P1 or strategy authority. Canonical entry identity is instead limited
