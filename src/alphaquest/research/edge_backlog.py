@@ -1939,8 +1939,13 @@ class EdgeBacklogStore:
             "historical_record": record,
         }
 
-    def _historical_index_records(self) -> list[HistoricalEdgeIndexRecordV1]:
-        path = self.layout.edge_backlog_history_index
+    def _historical_index_records(
+        self,
+        *,
+        layout: StorageLayout | None = None,
+    ) -> list[HistoricalEdgeIndexRecordV1]:
+        current_layout = layout or self.layout
+        path = current_layout.edge_backlog_history_index
         if not path.is_file():
             return []
         try:
@@ -1950,7 +1955,7 @@ class EdgeBacklogStore:
             validate_historical_index_records(
                 records,
                 project_root=self.project_root,
-                layout=self.layout,
+                layout=current_layout,
             )
             return records
         except (OSError, ValueError) as exc:
@@ -1961,6 +1966,9 @@ class EdgeBacklogStore:
     ) -> tuple[list[HistoricalEdgeIndexRecordV1], str | None, str]:
         from alphaquest.research.edge_backlog_bootstrap import (
             historical_records_for_repository_commit,
+            historical_source_layout_for_repository_commit,
+            historical_source_layout_semantics,
+            historical_source_state_for_working_tree,
             historical_source_inventory,
         )
 
@@ -1983,8 +1991,34 @@ class EdgeBacklogStore:
             raise EdgeBacklogIntegrityError(
                 f"historical matcher universe is not bound to an immutable repository source state: {exc}"
             ) from exc
-        if self.layout.edge_backlog_history_index.is_file():
-            records = self._historical_index_records()
+        try:
+            committed_layout = historical_source_layout_for_repository_commit(
+                self.project_root,
+                commit,
+            )
+            working_layout, working_records = historical_source_state_for_working_tree(
+                self.project_root
+            )
+            committed_semantics = historical_source_layout_semantics(committed_layout)
+            working_semantics = historical_source_layout_semantics(working_layout)
+        except (OSError, ValueError) as exc:
+            raise EdgeBacklogIntegrityError(
+                "current historical matcher sources cannot be compared with HEAD; "
+                f"commit or revert the historical-source/layout changes: {exc}"
+            ) from exc
+        committed_payloads = [
+            item.model_dump(mode="json", by_alias=True) for item in committed_records
+        ]
+        working_payloads = [
+            item.model_dump(mode="json", by_alias=True) for item in working_records
+        ]
+        if committed_semantics != working_semantics or committed_payloads != working_payloads:
+            raise EdgeBacklogIntegrityError(
+                "current historical matcher sources or storage layout differ from HEAD; "
+                "commit or revert the historical-source/layout changes before review"
+            )
+        if working_layout.edge_backlog_history_index.is_file():
+            records = self._historical_index_records(layout=working_layout)
             if [item.model_dump(mode="json", by_alias=True) for item in records] != [
                 item.model_dump(mode="json", by_alias=True) for item in committed_records
             ]:

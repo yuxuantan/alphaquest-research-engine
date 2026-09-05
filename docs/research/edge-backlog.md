@@ -360,11 +360,19 @@ resolves an immutable Git commit, loads the strict
 `config/storage_layout.yaml` blob from that same commit, and reconstructs the
 complete universe from source blobs in that tree through the shared source
 parsers. Missing, malformed, unsupported, or noncanonical committed layouts
-fail closed. A present cache must equal both the complete current working-tree
-projection and the reconstructed commit projection. If the cache is absent,
-review uses the Git-derived universe without creating it. Only a source-empty
-state may use the canonical empty-universe digest; unresolved source-bearing
-history never silently becomes empty.
+fail closed. Before current candidates, snapshots, or decisions are returned,
+the strict working-tree layout semantics and complete ordered source projection
+must equal that committed state. An uncommitted approved-source addition,
+modification, deletion, rename, or discovery-layout change therefore fails with
+an instruction to commit or revert, while unrelated dirty files do not block
+review. A present cache must also equal that same clean committed projection.
+If the cache is absent, review uses the Git-derived universe without creating
+it, so cache presence cannot alter the integrity result. Persisted decision
+replay remains bound only to that decision's exact commit, layout blob, source
+blobs, universe hash, and append-order prefix; later clean committed history
+does not invalidate the earlier decision. Only a source-empty state may use the
+canonical empty-universe digest; unresolved source-bearing history never
+silently becomes empty.
 
 Legacy scientific verdict and lifecycle/disposition text are retained in
 separate fields when both exist; the derived index does not collapse those

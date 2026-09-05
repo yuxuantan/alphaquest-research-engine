@@ -320,6 +320,57 @@ def historical_records_for_repository_commit(
     return resolved, records
 
 
+def historical_source_layout_for_repository_commit(
+    project_root: str | Path,
+    commit: str,
+) -> StorageLayout:
+    """Load the strict storage layout from one already-resolved repository commit."""
+
+    root = Path(project_root).resolve()
+    return _storage_layout_for_repository_commit(root, commit)
+
+
+def historical_source_state_for_working_tree(
+    project_root: str | Path,
+) -> tuple[StorageLayout, list[HistoricalEdgeIndexRecordV1]]:
+    """Return the strict current layout and its complete approved-source projection."""
+
+    root = Path(project_root).resolve()
+    layout_path = root / "config/storage_layout.yaml"
+    try:
+        data = layout_path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"working-tree storage layout cannot be read: {exc}") from exc
+    try:
+        layout = _strict_committed_storage_layout(root, data)
+    except ValueError as exc:
+        raise ValueError(f"working-tree storage layout is invalid: {exc}") from exc
+    return layout, _historical_records_for_working_tree(root, layout)
+
+
+def historical_source_layout_semantics(layout: StorageLayout) -> dict[str, Any]:
+    """Return only layout values capable of changing historical source discovery."""
+
+    root = layout.project_root.resolve()
+
+    def relative(path: Path | None) -> str | None:
+        if path is None:
+            return None
+        try:
+            return path.resolve().relative_to(root).as_posix()
+        except ValueError as exc:
+            raise ValueError("historical source layout path escapes the project root") from exc
+
+    return {
+        "active_campaign_root": relative(layout.active_campaign_root),
+        "archive_campaign_roots": [relative(path) for path in layout.archive_campaign_roots],
+        "evidence_roots": [relative(path) for path in layout.evidence_roots],
+        "research_artifact_root": relative(layout.research_artifact_root),
+        "migration_manifest": relative(layout.migration_manifest),
+        "legacy_prefixes": [list(item) for item in layout.legacy_prefixes],
+    }
+
+
 def _historical_records_for_working_tree(
     root: Path,
     layout: StorageLayout,
@@ -1101,6 +1152,9 @@ __all__ = [
     "HistoricalEdgeIndexRecordV1",
     "build_historical_edge_index",
     "historical_records_for_repository_commit",
+    "historical_source_layout_for_repository_commit",
+    "historical_source_layout_semantics",
+    "historical_source_state_for_working_tree",
     "historical_source_inventory",
     "validate_historical_edge_index",
     "validate_historical_index_records",

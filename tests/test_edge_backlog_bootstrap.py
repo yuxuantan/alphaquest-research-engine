@@ -237,6 +237,75 @@ def _canonical_entry(store: EdgeBacklogStore):
     )
 
 
+def _commit_paths(root: Path, message: str, *paths: str) -> str:
+    subprocess.run(["git", "-C", str(root), "add", "-A", "--", *paths], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=AlphaQuest Test",
+            "-c",
+            "user.email=alphaquest.test@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            message,
+        ],
+        check=True,
+    )
+    return subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _apply_dirty_historical_change(root: Path, change: str) -> tuple[str, ...]:
+    current = root / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    if change == "new":
+        source = root / "research/campaigns/active/uncommitted_edge/campaign.yaml"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            "campaign_id: uncommitted_edge\n"
+            "title: Uncommitted edge\n"
+            "edge: Inventory transfer persists after a delayed response\n",
+            encoding="utf-8",
+        )
+        return (str(source.relative_to(root)),)
+    if change == "modify":
+        current.write_text(
+            current.read_text(encoding="utf-8")
+            + "owner_review_note: uncommitted matcher-universe change\n",
+            encoding="utf-8",
+        )
+        return (str(current.relative_to(root)),)
+    if change == "delete":
+        current.unlink()
+        return (str(current.relative_to(root)),)
+    if change == "rename":
+        renamed = root / "research/campaigns/active/renamed_auction_edge/campaign.yaml"
+        renamed.parent.mkdir(parents=True)
+        current.rename(renamed)
+        return (
+            str(current.relative_to(root)),
+            str(renamed.relative_to(root)),
+        )
+    if change == "layout":
+        config = root / "config/storage_layout.yaml"
+        config.write_text(
+            _STORAGE_LAYOUT.replace(
+                "active_campaign_root: research/campaigns/active",
+                "active_campaign_root: research/campaigns/review-next",
+            ),
+            encoding="utf-8",
+        )
+        return (str(config.relative_to(root)),)
+    raise AssertionError(f"unsupported dirty historical change: {change}")
+
+
 def _index_rows(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
@@ -935,6 +1004,123 @@ def test_deleting_derived_index_does_not_change_historical_recall_or_recreate_ca
 
     assert reconstructed == cached
     assert not index.exists()
+
+
+@pytest.mark.parametrize("cache_present", [False, True], ids=["cache-absent", "cache-present"])
+@pytest.mark.parametrize("change", ["new", "modify", "delete", "rename", "layout"])
+def test_dirty_historical_working_tree_fails_all_current_review_paths_identically(
+    tmp_path: Path,
+    cache_present: bool,
+    change: str,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    if cache_present:
+        build_historical_edge_index(tmp_path)
+        expected_cache = index.read_bytes()
+    else:
+        expected_cache = None
+    clean_snapshot = store.duplicate_snapshot(entry.entry_id)
+
+    _apply_dirty_historical_change(tmp_path, change)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_candidates(entry.entry_id)
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_snapshot(entry.entry_id)
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.record_human_decision(
+            entry.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=clean_snapshot["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="Dirty historical matcher sources cannot be silently omitted.",
+            reviewer_id="owner",
+        )
+
+    assert not (store.root / f"entries/{entry.entry_id}/decisions/000001.json").exists()
+    if expected_cache is None:
+        assert not index.exists()
+    else:
+        assert index.read_bytes() == expected_cache
+
+
+def test_committing_and_reverting_historical_source_restores_exact_universe(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    original = store.duplicate_snapshot(entry.entry_id)
+
+    changed_paths = _apply_dirty_historical_change(tmp_path, "new")
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_snapshot(entry.entry_id)
+
+    added_commit = _commit_paths(tmp_path, "add approved historical source", *changed_paths)
+    added = store.duplicate_snapshot(entry.entry_id)
+    assert added["historical_source_commit"] == added_commit
+    assert added["historical_source_commit"] != original["historical_source_commit"]
+    assert added["historical_universe_sha256"] != original["historical_universe_sha256"]
+
+    added_source = tmp_path / changed_paths[0]
+    added_source.unlink()
+    with pytest.raises(EdgeBacklogIntegrityError, match="commit or revert"):
+        store.duplicate_snapshot(entry.entry_id)
+    reverted_commit = _commit_paths(tmp_path, "revert approved historical source", *changed_paths)
+    restored = store.duplicate_snapshot(entry.entry_id)
+
+    assert restored["historical_source_commit"] == reverted_commit
+    assert restored["historical_universe_sha256"] == original["historical_universe_sha256"]
+    assert restored["candidates"] == original["candidates"]
+    assert not index.exists()
+
+
+@pytest.mark.parametrize("change", ["add", "modify"])
+def test_unrelated_dirty_file_does_not_change_current_historical_review(
+    tmp_path: Path,
+    change: str,
+) -> None:
+    _fixture(tmp_path)
+    unrelated = tmp_path / "notes/unrelated.txt"
+    if change == "modify":
+        unrelated.parent.mkdir(parents=True)
+        unrelated.write_text("committed unrelated content\n", encoding="utf-8")
+        _commit_paths(tmp_path, "add unrelated file", str(unrelated.relative_to(tmp_path)))
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    original = store.duplicate_snapshot(entry.entry_id)
+
+    unrelated.parent.mkdir(parents=True, exist_ok=True)
+    unrelated.write_text("dirty unrelated content\n", encoding="utf-8")
+
+    assert store.duplicate_snapshot(entry.entry_id) == original
+    assert not (tmp_path / "catalogs/edge_backlog_history.jsonl").exists()
+
+
+def test_old_decision_replays_after_later_committed_historical_addition(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    decision = store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="The decision remains bound to its exact historical source commit.",
+        reviewer_id="owner",
+    )
+
+    changed_paths = _apply_dirty_historical_change(tmp_path, "new")
+    later_commit = _commit_paths(tmp_path, "later approved historical source", *changed_paths)
+
+    assert later_commit != decision.historical_source_commit
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    assert not (tmp_path / "catalogs/edge_backlog_history.jsonl").exists()
 
 
 def test_source_empty_git_repository_binds_canonical_empty_universe(tmp_path: Path) -> None:
