@@ -7,6 +7,7 @@ import json
 import multiprocessing
 from pathlib import Path
 import re
+import subprocess
 
 import pytest
 from pydantic import ValidationError
@@ -46,6 +47,24 @@ from alphaquest.studio.duplicates import duplicate_matches, edge_fingerprint
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
 TAXONOMY_REF = bundled_taxonomy_ref().model_dump(mode="json")
+
+
+def _ensure_standard_git_repository(root: Path) -> None:
+    if (root / ".git").is_dir():
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    layout_source = Path(__file__).parents[1] / "config/storage_layout.yaml"
+    layout_target = root / "config/storage_layout.yaml"
+    layout_target.parent.mkdir(parents=True, exist_ok=True)
+    layout_target.write_bytes(layout_source.read_bytes())
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "Edge Test"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "edge-test@example.test"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(root), "add", "config/storage_layout.yaml"], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "initial layout"], check=True)
 
 
 def _canonical_raw_json_file_bytes(payload: dict) -> bytes:
@@ -174,6 +193,7 @@ def _entry_payload(
 
 
 def _capture(store: EdgeBacklogStore, observation_id: str, **overrides: object) -> ObservationRevisionV1:
+    _ensure_standard_git_repository(store.project_root)
     return store.capture_observation(
         _observation_payload(observation_id, **overrides),
         actor_id="codex-task-runner",
@@ -1188,7 +1208,7 @@ def test_duplicate_canonical_target_accepts_only_a_direct_live_entry(tmp_path: P
     with pytest.raises(EdgeBacklogConflictError, match="terminally rejected"):
         _record_duplicate(store, new_source.entry_id, rejected.entry_id)
     assert not (store.root / f"entries/{new_source.entry_id}/decisions/000001.json").exists()
-    assert store.validate()["status"] == "PASS"
+    assert store.validate()["status"] == "PROVISIONAL"
 
 
 def test_duplicate_canonicalization_rejects_multi_hop_and_cycle_appends(tmp_path: Path) -> None:
@@ -1209,7 +1229,7 @@ def test_duplicate_canonicalization_rejects_multi_hop_and_cycle_appends(tmp_path
         _record_duplicate(store, second.entry_id, third.entry_id)
     with pytest.raises(EdgeBacklogConflictError, match="canonicalization cycle"):
         _record_duplicate(store, second.entry_id, first.entry_id)
-    assert store.validate()["status"] == "PASS"
+    assert store.validate()["status"] == "PROVISIONAL"
 
 
 def test_full_validation_rejects_forged_duplicate_multi_hop_and_cycle(tmp_path: Path) -> None:
@@ -1263,7 +1283,7 @@ def test_rejecting_an_in_use_duplicate_target_fails_atomically(tmp_path: Path) -
         path.relative_to(store.root).as_posix(): path.read_bytes()
         for path in store.root.rglob("*.json")
     }
-    assert store.validate()["status"] == "PASS"
+    assert store.validate()["status"] == "PROVISIONAL"
 
 
 def test_candidate_snapshot_staleness_and_unresolved_continue_fail_closed(tmp_path: Path) -> None:
@@ -1463,7 +1483,7 @@ def test_candidate_snapshot_allows_later_activity_but_rejects_a_future_bound_pre
         actor_id="codex",
         recorded_at=NOW + timedelta(minutes=4),
     )
-    assert store.validate()["status"] == "PASS"
+    assert store.validate()["status"] == "PROVISIONAL"
 
     _rewrite_decision_candidate(
         decision_path,
@@ -1531,7 +1551,7 @@ def test_equal_time_candidate_activity_uses_append_sequence_for_snapshot_prefix(
         recorded_at=NOW,
     )
     assert candidate.append_sequence < decision.append_sequence < later.append_sequence
-    assert store.validate()["status"] == "PASS"
+    assert store.validate()["status"] == "PROVISIONAL"
 
     decision_path = store.root / f"entries/{query.entry_id}/decisions/000001.json"
     _rewrite_decision_candidate(
@@ -1575,7 +1595,7 @@ def test_later_candidate_activity_and_new_entries_preserve_earlier_snapshot(tmp_
     )
     new_observation = _capture(store, "obs.snapshot.future-entry")
     new_entry = _create(store, "edge.snapshot.future-entry", new_observation)
-    assert store.validate()["status"] == "PASS"
+    assert store.validate()["status"] == "PROVISIONAL"
 
     future_snapshot = store.duplicate_snapshot(query.entry_id)
     assert any(item["candidate_id"] == new_entry.entry_id for item in future_snapshot["candidates"])
@@ -1865,7 +1885,7 @@ def test_suspend_resume_is_append_only_and_allows_later_revision(tmp_path: Path)
     assert revised.revision == 2
     assert store.entry_state(entry.entry_id) == "UNREVIEWED"
     assert suspension_path.read_bytes() == suspension_bytes
-    assert store.validate()["status"] == "PASS"
+    assert store.validate()["status"] == "PROVISIONAL"
 
 
 @pytest.mark.parametrize("disposition", ["REJECTED", "DUPLICATE"])
@@ -2007,7 +2027,7 @@ def test_suspended_source_accepts_only_resume_until_resume_is_persisted(tmp_path
     )
     assert resumed.previous_decision_sha256 == suspension.record_sha256
     assert suspension_path.read_bytes() == suspension_bytes
-    assert store.validate()["status"] == "PASS"
+    assert store.validate()["status"] == "PROVISIONAL"
 
 
 def test_full_validation_rejects_entry_and_link_changes_inside_suspended_interval(tmp_path: Path) -> None:
@@ -2213,7 +2233,7 @@ def test_decision_binds_an_exact_historical_link_chain_prefix(tmp_path: Path) ->
         canonical_json_bytes([first_link.record_sha256])
     ).hexdigest()
     assert first_link.append_sequence < decision.append_sequence < later_link.append_sequence
-    assert store.validate()["status"] == "PASS"
+    assert store.validate()["status"] == "PROVISIONAL"
 
     decision_path = store.root / f"entries/{entry.entry_id}/decisions/000001.json"
     forged = json.loads(decision_path.read_text(encoding="utf-8"))

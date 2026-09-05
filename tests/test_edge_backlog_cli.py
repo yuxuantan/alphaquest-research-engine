@@ -2,11 +2,27 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
 from alphaquest.cli import main
 from alphaquest.research.edge_backlog_taxonomy import bundled_taxonomy_ref
+
+
+def _ensure_standard_git_repository(root: Path) -> None:
+    layout_source = Path(__file__).parents[1] / "config/storage_layout.yaml"
+    layout_target = root / "config/storage_layout.yaml"
+    layout_target.parent.mkdir(parents=True, exist_ok=True)
+    layout_target.write_bytes(layout_source.read_bytes())
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "Edge CLI Test"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "edge-cli@example.test"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(root), "add", "config/storage_layout.yaml"], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "initial layout"], check=True)
 
 
 def _write(path: Path, payload: dict) -> Path:
@@ -65,6 +81,7 @@ def _entry(observation_sha256: str) -> dict:
 
 
 def test_cli_end_to_end_capture_search_review_and_validate(tmp_path: Path, capsys) -> None:
+    _ensure_standard_git_repository(tmp_path)
     observation_input = _write(tmp_path / "observation.json", _observation())
     assert (
         main(
@@ -167,7 +184,7 @@ def test_cli_end_to_end_capture_search_review_and_validate(tmp_path: Path, capsy
     assert "Inventory imbalance" in plain
 
     assert main(["edge-backlog", "validate", "--project-root", str(tmp_path)]) == 0
-    assert json.loads(capsys.readouterr().out)["status"] == "PASS"
+    assert json.loads(capsys.readouterr().out)["status"] == "PROVISIONAL"
 
 
 def test_cli_plain_show_uses_derived_unclassified_label(tmp_path: Path, capsys) -> None:
@@ -217,6 +234,7 @@ def test_cli_plain_show_uses_derived_unclassified_label(tmp_path: Path, capsys) 
 
 
 def test_cli_suspension_requires_explicit_human_resume(tmp_path: Path, capsys) -> None:
+    _ensure_standard_git_repository(tmp_path)
     observation_input = _write(tmp_path / "observation.json", _observation())
     main(
         [

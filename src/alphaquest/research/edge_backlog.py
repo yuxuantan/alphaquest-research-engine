@@ -10,11 +10,9 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
-import fcntl
 from functools import wraps
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import secrets
@@ -41,7 +39,16 @@ from alphaquest.research.edge_backlog_taxonomy import (
     taxonomy_ref as build_taxonomy_ref,
     validate_concepts,
 )
-from alphaquest.research.storage import StorageLayout, display_path, load_storage_layout
+from alphaquest.research.edge_backlog_io import (
+    CANONICAL_EDGE_BACKLOG_RELATIVE,
+    exclusive_write_repository_file,
+    read_repository_file,
+    repository_file_lock as backlog_file_lock,
+    unlink_repository_file,
+    validate_repository_path_chain,
+    validated_p2_repository_paths,
+)
+from alphaquest.research.storage import StorageLayout, display_path
 
 
 OBSERVATION_SCHEMA = "alphaquest.edge-backlog-observation-revision/v1"
@@ -651,6 +658,12 @@ def load_historical_edge_index_records(path: str | Path) -> list[HistoricalEdgeI
         data = source.read_bytes()
     except OSError as exc:
         raise ValueError(f"could not read historical edge index: {exc}") from exc
+    return load_historical_edge_index_records_bytes(data)
+
+
+def load_historical_edge_index_records_bytes(data: bytes) -> list[HistoricalEdgeIndexRecordV1]:
+    """Validate canonical historical-index bytes without reopening a path."""
+
     if data and not data.endswith(b"\n"):
         raise ValueError("historical edge index must end with a canonical newline")
     records: list[HistoricalEdgeIndexRecordV1] = []
@@ -703,13 +716,17 @@ class EdgeBacklogStore:
         taxonomy_root: str | Path | None = None,
     ) -> None:
         self.project_root = Path(project_root).resolve()
-        self.layout = layout or load_storage_layout(self.project_root)
-        self.root = self.layout.edge_backlog_root
+        try:
+            paths = validated_p2_repository_paths(self.project_root, layout=layout)
+        except (OSError, ValueError) as exc:
+            raise EdgeBacklogIntegrityError(f"invalid P2 repository storage boundary: {exc}") from exc
+        self.layout = paths.layout
+        self.root = paths.backlog_root
         configured_taxonomy_root = self.root / "contracts"
         self.taxonomy_root = Path(taxonomy_root).resolve() if taxonomy_root else (
             configured_taxonomy_root if configured_taxonomy_root.is_dir() else bundled_taxonomy_root()
         )
-        self._lock_path = self.layout.studio_runtime_root / "edge-backlog.lock"
+        self._lock_relative = paths.lock_relative
         self._thread_lock = threading.RLock()
         self._transaction_state = threading.local()
 
@@ -727,7 +744,22 @@ class EdgeBacklogStore:
                 self._transaction_state.depth -= 1
             return
         with self._thread_lock:
-            with backlog_file_lock(self._lock_path, exclusive=exclusive):
+            try:
+                validate_repository_path_chain(
+                    self.project_root,
+                    CANONICAL_EDGE_BACKLOG_RELATIVE,
+                    target_kind="directory",
+                    allow_missing=True,
+                )
+            except (OSError, ValueError) as exc:
+                raise EdgeBacklogIntegrityError(
+                    f"invalid P2 canonical storage boundary: {exc}"
+                ) from exc
+            with backlog_file_lock(
+                self.project_root,
+                self._lock_relative,
+                exclusive=exclusive,
+            ):
                 self._transaction_state.depth = 1
                 self._transaction_state.exclusive = exclusive
                 try:
@@ -1274,6 +1306,10 @@ class EdgeBacklogStore:
         self._validate_revisit_cycles()
         self._validate_duplicate_state()
         self._validate_append_order()
+        if decision_count != anchored_decision_count + provisional_decision_count:
+            raise EdgeBacklogIntegrityError(
+                "every human decision must be either Git-anchored or provisional"
+            )
         return {
             "schema": "alphaquest.edge-backlog-validation/v1",
             "status": "PROVISIONAL" if provisional_decision_count else "PASS",
@@ -1290,11 +1326,7 @@ class EdgeBacklogStore:
 
         from alphaquest.research.edge_backlog_bootstrap import repository_path_inventory
 
-        try:
-            relative_root = self.root.relative_to(self.project_root).as_posix()
-        except ValueError as exc:
-            raise EdgeBacklogIntegrityError("edge backlog root escapes the Git project root") from exc
-        prefix = f"{relative_root}/entries"
+        prefix = f"{CANONICAL_EDGE_BACKLOG_RELATIVE}/entries"
         try:
             head_paths, historical_paths = repository_path_inventory(self.project_root, prefix)
         except (OSError, ValueError) as exc:
@@ -1456,6 +1488,10 @@ class EdgeBacklogStore:
         decision_id: str | None,
         recorded_at: datetime | None,
     ) -> EdgeBacklogDecisionV1:
+        if historical_source_commit is None:
+            raise EdgeBacklogAuthorityError(
+                "human decisions require a valid standard Git-backed repository"
+            )
         sequence = len(history) + 1
         identifier = decision_id or _generated_id("decision", entry.entry_id, sequence, recorded_at)
         material = {
@@ -1755,7 +1791,7 @@ class EdgeBacklogStore:
             )
         return historical_records
 
-    def _validate_decision_git_anchor(self, decision: EdgeBacklogDecisionV1) -> bool | None:
+    def _validate_decision_git_anchor(self, decision: EdgeBacklogDecisionV1) -> bool:
         """Validate durable ordering using Git ancestry and immutable blobs only."""
 
         from alphaquest.research.edge_backlog_bootstrap import (
@@ -1767,7 +1803,7 @@ class EdgeBacklogStore:
 
         try:
             if repository_head(self.project_root) is None:
-                return None
+                raise ValueError("human decisions require a valid standard Git-backed repository")
             if decision.historical_source_commit is None:
                 raise ValueError("a Git-backed decision must bind exact clean HEAD")
             path = (
@@ -2075,6 +2111,7 @@ class EdgeBacklogStore:
         from alphaquest.research.edge_backlog_bootstrap import (
             historical_records_for_current_review,
             historical_source_inventory,
+            repository_head,
         )
 
         try:
@@ -2089,7 +2126,13 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError(
                     "historical matcher universe source inventory cannot be established"
                 ) from inventory_exc
-            if not (self.project_root / ".git").exists() and not source_inventory:
+            try:
+                head = repository_head(self.project_root)
+            except (OSError, ValueError) as repository_exc:
+                raise EdgeBacklogIntegrityError(
+                    "historical matcher Git authority cannot be established"
+                ) from repository_exc
+            if head is None and not source_inventory:
                 return [], None, _EMPTY_HISTORICAL_UNIVERSE_SHA256
             raise EdgeBacklogIntegrityError(
                 "current historical matcher sources cannot be bound to exact clean HEAD; "
@@ -2183,7 +2226,8 @@ class EdgeBacklogStore:
 
     def _load_record(self, path: Path, model: type[RecordType]) -> RecordType:
         try:
-            data = path.read_bytes()
+            relative = path.relative_to(self.project_root).as_posix()
+            data = read_repository_file(self.project_root, relative)
             record = model.model_validate_json(data)
         except (OSError, ValueError) as exc:
             raise EdgeBacklogIntegrityError(f"invalid canonical backlog record {path}: {exc}") from exc
@@ -2226,18 +2270,13 @@ class EdgeBacklogStore:
             raise EdgeBacklogConflictError(
                 "canonical append sequence became stale before exclusive write"
             )
-        path.parent.mkdir(parents=True, exist_ok=True)
         data = canonical_json_bytes(record) + b"\n"
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         try:
-            descriptor = os.open(path, flags, 0o644)
+            relative = path.relative_to(self.project_root).as_posix()
+            exclusive_write_repository_file(self.project_root, relative, data)
         except FileExistsError as exc:
             raise EdgeBacklogConflictError(f"canonical record already exists: {path}") from exc
         try:
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
             if isinstance(record, EdgeBacklogDecisionV1) and record.historical_source_commit is not None:
                 from alphaquest.research.edge_backlog_bootstrap import repository_head
 
@@ -2245,12 +2284,14 @@ class EdgeBacklogStore:
                     raise EdgeBacklogConflictError(
                         "repository HEAD changed during decision persistence"
                     )
-            _fsync_directory(path.parent)
         except Exception:
             # A failed first write is not a valid canonical record.  Removing
             # only the file created by this operation is transaction cleanup,
             # not a public deletion facility.
-            path.unlink(missing_ok=True)
+            try:
+                unlink_repository_file(self.project_root, relative)
+            except (FileNotFoundError, OSError, ValueError):
+                pass
             raise
 
     def _canonical_records(self) -> list[HashedRecord]:
@@ -2473,14 +2514,6 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
 def _backlog_dimension_tokens(_field: str, value: Any) -> set[str]:
     if isinstance(value, (list, tuple, set)):
         text = " ".join(str(item) for item in value)
@@ -2519,20 +2552,6 @@ def _historical_universe_sha256(records: Sequence[HistoricalEdgeIndexRecordV1]) 
             [item.model_dump(mode="json", by_alias=True) for item in records]
         )
     ).hexdigest()
-
-
-@contextmanager
-def backlog_file_lock(path: str | Path, *, exclusive: bool) -> Iterator[None]:
-    """Hold the repository backlog lock across processes."""
-
-    lock_path = Path(path)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+b") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _shared_link_targets(left: Sequence[EdgeBacklogLinkV1], right: Sequence[EdgeBacklogLinkV1]) -> list[str]:
@@ -2621,5 +2640,6 @@ __all__ = [
     "backlog_fingerprint",
     "canonical_json_bytes",
     "load_historical_edge_index_records",
+    "load_historical_edge_index_records_bytes",
     "record_sha256",
 ]

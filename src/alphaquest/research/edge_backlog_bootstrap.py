@@ -9,9 +9,9 @@ import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import shutil
 import stat
 import subprocess
-from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import Field, model_validator
@@ -22,10 +22,17 @@ from alphaquest.research.edge_backlog import (
     HistoricalEdgeIndexRecordV1,
     Sha256,
     StrictBacklogModel,
-    backlog_file_lock,
     canonical_json_bytes,
-    load_historical_edge_index_records,
+    load_historical_edge_index_records_bytes,
     record_sha256,
+)
+from alphaquest.research.edge_backlog_io import (
+    CANONICAL_EDGE_BACKLOG_RELATIVE,
+    atomic_replace_repository_file,
+    read_repository_file,
+    read_repository_file_optional,
+    repository_file_lock,
+    validated_p2_repository_paths,
 )
 from alphaquest.research.storage import StorageLayout, campaign_definition_paths, display_path, load_storage_layout
 
@@ -63,6 +70,14 @@ _COMMITTED_LAYOUT_PATH_FIELDS = (
     "edge_backlog_root",
     "edge_backlog_history_index",
     "migration_manifest",
+)
+_GIT_EXECUTABLE = next(
+    (
+        candidate
+        for candidate in ("/usr/bin/git", "/usr/local/bin/git", shutil.which("git"))
+        if candidate is not None and Path(candidate).is_absolute() and os.access(candidate, os.X_OK)
+    ),
+    None,
 )
 
 
@@ -175,7 +190,7 @@ def historical_source_inventory(
     """Return the complete approved source-file set used by bootstrap and verification."""
 
     root = Path(project_root).resolve()
-    layout = layout or load_storage_layout(root)
+    layout = layout or validated_p2_repository_paths(root).layout
     inventory: dict[Path, str] = {}
     definitions = set(campaign_definition_paths(project_root=root, layout=layout, include_ledger=True))
     archived_root = root / "research" / "archived_generations"
@@ -323,6 +338,16 @@ def historical_repository_state(
     """Reconstruct one universe exclusively from lexical Git paths and blobs."""
 
     root = Path(project_root).resolve()
+    _assert_repository_git_authority(root)
+    return _historical_repository_state(root, commit)
+
+
+def _historical_repository_state(
+    root: Path,
+    commit: str | None,
+) -> HistoricalRepositoryState:
+    """Reconstruct after the caller has established hardened Git authority."""
+
     repository_root = Path(_git(root, "rev-parse", "--show-toplevel", text=True).strip())
     if repository_root != root:
         raise ValueError("historical source Git root does not equal the configured project root")
@@ -431,6 +456,7 @@ def repository_head(project_root: str | Path) -> str | None:
     repository_root = Path(str(top_level).strip())
     if repository_root != root:
         raise ValueError("Git root does not equal the configured project root")
+    _assert_repository_git_authority(root)
     return str(_git(root, "rev-parse", "HEAD^{commit}", text=True)).strip()
 
 
@@ -442,11 +468,21 @@ def repository_commit_is_ancestor(
     """Use the commit graph, never commit timestamps, to establish ordering."""
 
     root = Path(project_root).resolve()
-    result = subprocess.run(
-        ["git", "-C", str(root), "merge-base", "--is-ancestor", ancestor, descendant],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+    _assert_repository_git_authority(root)
+    return _repository_commit_is_ancestor(root, ancestor, descendant)
+
+
+def _repository_commit_is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
+    """Compare commits after the caller has established hardened Git authority."""
+
+    result = _run_hardened_git(
+        root,
+        "merge-base",
+        "--is-ancestor",
+        ancestor,
+        descendant,
         text=True,
+        check=False,
     )
     if result.returncode == 0:
         return True
@@ -513,7 +549,7 @@ def repository_file_anchor(
         )
 
     for commit, entry in entries.items():
-        if repository_commit_is_ancestor(root, introduction, commit) and entry != expected_entry:
+        if _repository_commit_is_ancestor(root, introduction, commit) and entry != expected_entry:
             raise ValueError("committed canonical decision was changed or removed after introduction")
     return RepositoryFileAnchor(
         introduction_commit=introduction,
@@ -1034,6 +1070,11 @@ def _strict_committed_storage_layout(root: Path, data: bytes) -> StorageLayout:
         )
     if document["schema"] != "alphaquest.storage-layout/v1":
         raise ValueError(f"unsupported committed storage layout schema: {document['schema']!r}")
+    if document["edge_backlog_root"] != CANONICAL_EDGE_BACKLOG_RELATIVE:
+        raise ValueError(
+            "committed edge_backlog_root must remain fixed at "
+            f"{CANONICAL_EDGE_BACKLOG_RELATIVE!r}"
+        )
 
     paths = {
         field: _canonical_layout_path(document[field], field=field)
@@ -1152,8 +1193,9 @@ def build_historical_edge_index(
     """Build a byte-stable index without writing any canonical research object."""
 
     root = Path(project_root).resolve()
-    layout = load_storage_layout(root)
-    output = _validated_output_path(root, layout, output_path)
+    paths = validated_p2_repository_paths(root)
+    layout = paths.layout
+    output = _validated_output_path(root, layout, paths.cache_relative, output_path)
 
     source_inventory = historical_source_inventory(root, layout=layout)
     source_paths = set(source_inventory)
@@ -1161,10 +1203,10 @@ def build_historical_edge_index(
         raise ValueError("derived history index target cannot replace a bootstrap source file")
     records = _historical_records_for_working_tree(root, layout, inventory=source_inventory)
     data = b"".join(canonical_json_bytes(item) + b"\n" for item in records)
-    lock_path = layout.studio_runtime_root / "edge-backlog.lock"
-    with backlog_file_lock(lock_path, exclusive=True):
-        _assert_replaceable_derived_index(output)
-        _atomic_replace(output, data)
+    with repository_file_lock(root, paths.lock_relative, exclusive=True):
+        existing = read_repository_file_optional(root, paths.cache_relative)
+        _assert_replaceable_derived_index(root, existing)
+        atomic_replace_repository_file(root, paths.cache_relative, data)
     counts: dict[str, int] = {}
     for record in records:
         counts[record.source_kind] = counts.get(record.source_kind, 0) + 1
@@ -1192,14 +1234,21 @@ def validate_historical_edge_index(
     project_root: str | Path | None = None,
 ) -> dict[str, Any]:
     source = Path(path)
-    records = load_historical_edge_index_records(source)
     root = Path(project_root).resolve() if project_root is not None else _infer_project_root(source)
+    paths = validated_p2_repository_paths(root)
+    expected = paths.cache_path
+    if (source.is_absolute() and source != expected) or (
+        not source.is_absolute() and source.as_posix() != paths.cache_relative
+    ):
+        raise ValueError("historical edge index path is not the configured P2 derived cache")
+    data = read_repository_file(root, paths.cache_relative)
+    records = load_historical_edge_index_records_bytes(data)
     validate_historical_index_records(records, project_root=root)
     return {
         "schema": "alphaquest.edge-backlog-history-index-validation/v1",
         "status": "PASS",
         "records": len(records),
-        "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "sha256": hashlib.sha256(data).hexdigest(),
     }
 
 
@@ -1476,14 +1525,22 @@ def _generation(path: Path, root: Path, layout: StorageLayout) -> dict[str, str]
 def _validated_output_path(
     root: Path,
     layout: StorageLayout,
+    configured_relative: str,
     output_path: str | Path | None,
 ) -> Path:
-    configured = layout.edge_backlog_history_index.resolve()
-    requested = Path(output_path) if output_path is not None else configured
-    requested = requested.resolve() if requested.is_absolute() else (root / requested).resolve()
-    if requested != configured:
+    configured = root / PurePosixPath(configured_relative)
+    if output_path is None:
+        requested = configured
+    else:
+        raw_requested = Path(output_path)
+        if raw_requested.is_absolute() or raw_requested.as_posix() != configured_relative:
+            raise ValueError(
+                "derived history index output must equal the configured edge_backlog_history_index"
+            )
+        requested = root / PurePosixPath(configured_relative)
+    if requested != layout.edge_backlog_history_index:
         raise ValueError("derived history index output must equal the configured edge_backlog_history_index")
-    catalog_root = layout.catalog_root.resolve()
+    catalog_root = layout.catalog_root
     if requested == catalog_root or not _is_relative_to(requested, catalog_root):
         raise ValueError("derived history index must be a file beneath the configured catalog_root")
     protected_roots = (
@@ -1493,46 +1550,47 @@ def _validated_output_path(
         *layout.evidence_roots,
         *(root / name for name in ("config", "docs", "src", "tests", "tools", "apps", "execution_system")),
     )
-    if any(_is_relative_to(requested, protected.resolve()) for protected in protected_roots):
+    if any(_is_relative_to(requested, protected) for protected in protected_roots):
         raise ValueError("derived history index target overlaps protected canonical or research storage")
     protected_files = (
         root / "config/research_operating_model.yaml",
         root / "docs/research/research-operating-model.md",
         root / "src/alphaquest/research/operating_model.py",
     )
-    if requested in {path.resolve() for path in protected_files}:
+    if requested in set(protected_files):
         raise ValueError("derived history index target overlaps canonical P1 policy storage")
     return requested
 
 
-def _assert_replaceable_derived_index(path: Path) -> None:
-    if not path.exists():
+def _assert_replaceable_derived_index(root: Path, data: bytes | None) -> None:
+    if data is None:
         return
-    if not path.is_file():
-        raise ValueError("derived history index target is not a regular file")
     try:
-        validate_historical_edge_index(path)
+        records = load_historical_edge_index_records_bytes(data)
+        validate_historical_index_records(records, project_root=root)
     except (OSError, ValueError) as exc:
-        if _is_valid_prior_history_index_v1(path) or _is_valid_reachable_history_index(path):
+        if _is_valid_prior_history_index_v1(root, data) or _is_valid_reachable_history_index(
+            root, data
+        ):
             return
         raise ValueError(
             "existing derived history index target is not a valid derived index and will not be replaced"
         ) from exc
 
 
-def _is_valid_reachable_history_index(path: Path) -> bool:
+def _is_valid_reachable_history_index(root: Path, data: bytes) -> bool:
     """Permit replacement only for an exact projection of a reachable Git commit."""
 
     try:
-        root = _infer_project_root(path)
-        records = load_historical_edge_index_records(path)
+        _assert_repository_git_authority(root)
+        records = load_historical_edge_index_records_bytes(data)
         commits = str(_git(root, "rev-list", "HEAD", text=True)).splitlines()
     except (OSError, ValueError):
         return False
     actual = [item.model_dump(mode="json", by_alias=True) for item in records]
     for commit in commits:
         try:
-            expected = historical_repository_state(root, commit).records
+            expected = _historical_repository_state(root, commit).records
         except (OSError, ValueError):
             continue
         if actual == [item.model_dump(mode="json", by_alias=True) for item in expected]:
@@ -1540,12 +1598,11 @@ def _is_valid_reachable_history_index(path: Path) -> bool:
     return False
 
 
-def _is_valid_prior_history_index_v1(path: Path) -> bool:
+def _is_valid_prior_history_index_v1(root: Path, data: bytes) -> bool:
     """Accept only the exact prior-v1 projection of one reachable Git tree."""
 
     try:
-        data = path.read_bytes()
-        root = _infer_project_root(path)
+        _assert_repository_git_authority(root)
         commits = str(_git(root, "rev-list", "HEAD", text=True)).splitlines()
     except (OSError, ValueError):
         return False
@@ -1586,7 +1643,7 @@ def _is_valid_prior_history_index_v1(path: Path) -> bool:
     for commit in commits:
         try:
             expected = _prior_history_index_v1_projection(
-                historical_repository_state(root, commit).records
+                _historical_repository_state(root, commit).records
             )
         except (OSError, ValueError):
             continue
@@ -1692,7 +1749,7 @@ def _relative_to_root(path: Path, root: Path) -> Path | None:
 
 
 def _infer_project_root(index_path: Path) -> Path:
-    source = index_path.resolve()
+    source = Path(os.path.abspath(index_path))
     for parent in source.parents:
         if (parent / "config/storage_layout.yaml").is_file():
             return parent
@@ -1702,51 +1759,206 @@ def _infer_project_root(index_path: Path) -> Path:
 
 
 def _git(root: Path, *arguments: str, text: bool = False) -> bytes | str:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(root), *arguments],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=text,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
-        raise ValueError(f"could not resolve immutable historical source commit: {detail}") from exc
+    result = _run_hardened_git(root, *arguments, text=text)
     return result.stdout
 
 
 def _git_optional(root: Path, *arguments: str, text: bool = False) -> bytes | str | None:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(root), *arguments],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=text,
-        )
-    except OSError:
-        raise
+    result = _run_hardened_git(root, *arguments, text=text, check=False)
     if result.returncode == 0:
         return result.stdout
     return None
 
 
 def _git_with_input(root: Path, data: bytes, *arguments: str) -> bytes:
+    result = _run_hardened_git(root, *arguments, input_data=data)
+    return result.stdout
+
+
+_REDIRECTING_GIT_ENVIRONMENT = frozenset(
+    {
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_CEILING_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_NOSYSTEM",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_CONFIG_SYSTEM",
+        "GIT_DIR",
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+        "GIT_GRAFT_FILE",
+        "GIT_INDEX_FILE",
+        "GIT_NAMESPACE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_QUARANTINE_PATH",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SHALLOW_FILE",
+        "GIT_WORK_TREE",
+    }
+)
+
+
+def _run_hardened_git(
+    root: Path,
+    *arguments: str,
+    text: bool = False,
+    input_data: bytes | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[Any]:
+    """Run every authoritative P2 Git command in one sanitized context."""
+
+    hostile = sorted(
+        name
+        for name in os.environ
+        if name in _REDIRECTING_GIT_ENVIRONMENT
+        or name.startswith("GIT_CONFIG_KEY_")
+        or name.startswith("GIT_CONFIG_VALUE_")
+    )
+    if hostile:
+        raise ValueError(
+            "redirecting Git environment variables are prohibited for P2 authority: "
+            + ", ".join(hostile)
+        )
+    if _GIT_EXECUTABLE is None:
+        raise ValueError("an absolute trusted Git executable is unavailable for P2 authority")
+    environment = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+    environment.update(
+        {
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_SYSTEM": os.devnull,
+            "GIT_NO_LAZY_FETCH": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_TERMINAL_PROMPT": "0",
+            "LC_ALL": "C",
+        }
+    )
+    command = [
+        _GIT_EXECUTABLE,
+        "-c",
+        "core.useReplaceRefs=false",
+        "-c",
+        "credential.interactive=false",
+        "-C",
+        str(root),
+        *arguments,
+    ]
     try:
         result = subprocess.run(
-            ["git", "-C", str(root), *arguments],
-            check=True,
-            input=data,
+            command,
+            check=False,
+            input=input_data,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            text=text,
+            env=environment,
         )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        detail = exc.stderr.decode("utf-8", errors="replace").strip() if isinstance(
-            exc, subprocess.CalledProcessError
-        ) else str(exc)
-        raise ValueError(f"could not inspect immutable Git object: {detail}") from exc
-    return result.stdout
+    except OSError as exc:
+        raise ValueError(f"could not execute hardened Git command: {exc}") from exc
+    if check and result.returncode != 0:
+        detail = result.stderr.strip()
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        raise ValueError(f"hardened Git command failed without fetching: {detail}")
+    return result
+
+
+def _assert_repository_git_authority(root: Path) -> None:
+    """Reject Git metadata that can rewrite or incompletely expose history."""
+
+    top_level = _run_hardened_git(
+        root,
+        "rev-parse",
+        "--show-toplevel",
+        text=True,
+    ).stdout.strip()
+    if Path(top_level).resolve() != root:
+        raise ValueError("Git root does not equal the configured project root")
+    git_dir = Path(
+        _run_hardened_git(root, "rev-parse", "--absolute-git-dir", text=True).stdout.strip()
+    ).resolve()
+    common_value = _run_hardened_git(
+        root,
+        "rev-parse",
+        "--git-common-dir",
+        text=True,
+    ).stdout.strip()
+    common_dir = Path(common_value)
+    if not common_dir.is_absolute():
+        common_dir = root / common_dir
+    common_dir = common_dir.resolve()
+
+    replace_refs = _run_hardened_git(
+        root,
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/replace",
+        text=True,
+    ).stdout.strip()
+    if replace_refs:
+        raise ValueError("Git replacement refs are prohibited for P2 authority")
+
+    for graft in {git_dir / "info/grafts", common_dir / "info/grafts"}:
+        if graft.is_symlink() or (graft.exists() and graft.stat().st_size):
+            raise ValueError("legacy Git grafts are prohibited for P2 authority")
+    for alternates in {
+        git_dir / "objects/info/alternates",
+        common_dir / "objects/info/alternates",
+    }:
+        if alternates.is_symlink() or (alternates.exists() and alternates.stat().st_size):
+            raise ValueError("alternate Git object databases are prohibited for P2 authority")
+
+    shallow = _run_hardened_git(
+        root,
+        "rev-parse",
+        "--is-shallow-repository",
+        text=True,
+    ).stdout.strip()
+    shallow_path_value = _run_hardened_git(
+        root,
+        "rev-parse",
+        "--git-path",
+        "shallow",
+        text=True,
+    ).stdout.strip()
+    shallow_path = Path(shallow_path_value)
+    if not shallow_path.is_absolute():
+        shallow_path = root / shallow_path
+    if shallow != "false" or shallow_path.is_symlink() or (
+        shallow_path.exists() and shallow_path.stat().st_size
+    ):
+        raise ValueError("shallow Git history is prohibited for P2 authority")
+
+    partial = _run_hardened_git(
+        root,
+        "config",
+        "--local",
+        "--get-regexp",
+        r"^(extensions\.partial[cC]lone|remote\..*\.promisor)$",
+        text=True,
+        check=False,
+    )
+    if partial.returncode not in {0, 1}:
+        raise ValueError("could not inspect local Git partial-clone configuration")
+    if partial.returncode == 0 and partial.stdout.strip():
+        raise ValueError("partial Git history is prohibited for P2 authority")
+
+    connectivity = _run_hardened_git(
+        root,
+        "rev-list",
+        "--objects",
+        "--missing=print",
+        "HEAD",
+        text=True,
+        check=False,
+    )
+    missing = [line for line in connectivity.stdout.splitlines() if line.startswith("?")]
+    if connectivity.returncode != 0 or missing:
+        detail = connectivity.stderr.strip() or connectivity.stdout.strip()
+        raise ValueError(f"Git history is incomplete or has unavailable objects: {detail}")
 
 
 def _optional(value: Any) -> str | None:
@@ -1764,32 +1976,6 @@ def _present(value: Any) -> bool:
 
 def _json_safe(value: Any) -> Any:
     return json.loads(json.dumps(value, default=str, allow_nan=False))
-
-
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _atomic_replace(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as handle:
-        temporary = Path(handle.name)
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
-    try:
-        os.replace(temporary, path)
-        descriptor = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 __all__ = [

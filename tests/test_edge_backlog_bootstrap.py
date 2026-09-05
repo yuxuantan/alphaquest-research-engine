@@ -2043,3 +2043,213 @@ def test_truncated_genuine_prior_v1_index_cannot_authorize_replacement(tmp_path:
     with pytest.raises(ValueError, match="not a valid derived index"):
         build_historical_edge_index(tmp_path)
     assert index.read_bytes() == original
+
+
+@pytest.mark.parametrize("readd", ["original", "resealed-later"])
+def test_git_replace_cannot_conceal_anchored_decision_deletion_and_readdition(
+    tmp_path: Path,
+    readd: str,
+) -> None:
+    store, entry, decision_path, original = _commit_then_delete_decision(tmp_path)
+    deletion_commit = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    deletion_parent = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD^"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    replacement = original
+    if readd == "resealed-later":
+        source = tmp_path / "research/campaigns/active/replacement_attack/campaign.yaml"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            "campaign_id: replacement_attack\n"
+            "title: Replacement attack\n"
+            "instrument: ES\n"
+            "edge: Delayed inventory adjustment persists\n",
+            encoding="utf-8",
+        )
+        _commit_paths(
+            tmp_path,
+            "commit later replacement-attack universe",
+            source.relative_to(tmp_path).as_posix(),
+        )
+        snapshot = store.duplicate_snapshot(entry.entry_id)
+        payload = json.loads(original)
+        payload["historical_source_commit"] = snapshot["historical_source_commit"]
+        payload["historical_universe_sha256"] = snapshot["historical_universe_sha256"]
+        payload["candidate_snapshot"] = snapshot["candidates"]
+        payload["rationale"] = "Resealed decision B attempts to hide the anchored deletion."
+        _reseal_decision_snapshot(payload)
+        replacement = canonical_json_bytes(payload) + b"\n"
+    decision_path.parent.mkdir(parents=True, exist_ok=True)
+    decision_path.write_bytes(replacement)
+    _commit_paths(
+        tmp_path,
+        f"re-add {readd} decision after deletion",
+        decision_path.relative_to(tmp_path).as_posix(),
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "replace", deletion_commit, deletion_parent],
+        check=True,
+    )
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="replacement refs"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.parametrize("cache_format", ["current", "prior-v1"])
+def test_git_replace_cannot_authorize_reachable_cache_replacement(
+    tmp_path: Path,
+    cache_format: str,
+) -> None:
+    _fixture(tmp_path)
+    build_historical_edge_index(tmp_path)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    if cache_format == "prior-v1":
+        prior = [_prior_v1_row(row) for row in _index_rows(index)]
+        index.write_bytes(b"".join(canonical_json_bytes(row) + b"\n" for row in prior))
+    protected = index.read_bytes()
+    source = tmp_path / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    source.write_bytes(source.read_bytes() + b"owner_note: later cache projection\n")
+    head = _commit_paths(
+        tmp_path,
+        "commit later cache projection",
+        source.relative_to(tmp_path).as_posix(),
+    )
+    parent = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", f"{head}^"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(tmp_path), "replace", head, parent], check=True)
+
+    with pytest.raises(ValueError, match="not a valid derived index"):
+        build_historical_edge_index(tmp_path)
+    assert index.read_bytes() == protected
+
+
+@pytest.mark.parametrize(
+    "authority_defect",
+    ["graft", "shallow", "partial-clone", "missing-object", "alternate-objects"],
+)
+def test_historical_git_authority_rejects_rewritten_or_incomplete_history(
+    tmp_path: Path,
+    authority_defect: str,
+) -> None:
+    _fixture(tmp_path)
+    git_dir = tmp_path / ".git"
+    head = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if authority_defect == "graft":
+        grafts = git_dir / "info/grafts"
+        grafts.parent.mkdir(parents=True, exist_ok=True)
+        grafts.write_text(head + "\n", encoding="ascii")
+    elif authority_defect == "shallow":
+        (git_dir / "shallow").write_text(head + "\n", encoding="ascii")
+    elif authority_defect == "partial-clone":
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "config", "extensions.partialClone", "origin"],
+            check=True,
+        )
+    elif authority_defect == "missing-object":
+        relative = "research/campaigns/active/current_auction_edge/campaign.yaml"
+        object_id = subprocess.run(
+            ["git", "-C", str(tmp_path), "rev-parse", f"HEAD:{relative}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        (git_dir / "objects" / object_id[:2] / object_id[2:]).unlink()
+    else:
+        alternates = git_dir / "objects/info/alternates"
+        alternates.parent.mkdir(parents=True, exist_ok=True)
+        alternates.write_text(str(tmp_path / "untrusted-objects") + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="graft|shallow|partial|incomplete|unavailable|alternate"):
+        historical_records_for_repository_commit(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [
+        "GIT_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SHALLOW_FILE",
+        "GIT_NAMESPACE",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_KEY_0",
+    ],
+)
+def test_historical_git_authority_rejects_redirecting_ambient_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    variable: str,
+) -> None:
+    _fixture(tmp_path)
+    monkeypatch.setenv(variable, str(tmp_path / "hostile"))
+
+    with pytest.raises(ValueError, match="environment variables"):
+        historical_records_for_repository_commit(tmp_path)
+
+
+def test_relocating_fixed_canonical_root_and_updating_layout_fails_validation(
+    tmp_path: Path,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="This decision is anchored at the fixed canonical P2 path.",
+        reviewer_id="owner",
+    )
+    _commit_backlog(tmp_path, store, "anchor decision at fixed P2 root")
+    relocated = tmp_path / "research/relocated-edge-backlog"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "mv",
+            "research/edge_backlog",
+            relocated.relative_to(tmp_path).as_posix(),
+        ],
+        check=True,
+    )
+    layout = tmp_path / "config/storage_layout.yaml"
+    layout.write_text(
+        layout.read_text(encoding="utf-8").replace(
+            "edge_backlog_root: research/edge_backlog",
+            "edge_backlog_root: research/relocated-edge-backlog",
+        ),
+        encoding="utf-8",
+    )
+    _commit_paths(
+        tmp_path,
+        "attempt canonical P2 root relocation",
+        relocated.relative_to(tmp_path).as_posix(),
+        "config/storage_layout.yaml",
+    )
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="removed or relocated"):
+        store.validate()
+    with pytest.raises(EdgeBacklogIntegrityError, match="must be exactly"):
+        EdgeBacklogStore(tmp_path)

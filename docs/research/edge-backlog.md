@@ -210,6 +210,14 @@ cannot reveal a wholesale rewrite that occurs before the
 provisional file receives its first Git anchor, so that pre-anchor interval is
 not cryptographically detectable.
 
+All authoritative P2 Git reads use one non-fetching wrapper with replacement
+objects disabled and a sanitized Git environment. Replacement refs, legacy
+grafts, alternate object databases, shallow history, partial-clone metadata,
+and missing reachable objects fail closed before Git may establish readiness,
+replay, ancestry, decision anchoring, path inventory, or cache reachability.
+Ambient repository, worktree, index, object, config, namespace, shallow-file,
+and replacement-ref redirects are prohibited.
+
 - `REVIEWED_CONTINUE` is optional curation. It is not scientific approval and
   is not required before a later P4 hypothesis proposal.
 - `REJECTED` is terminal.
@@ -399,6 +407,16 @@ committed sources cannot invalidate it. Only a source-empty state may use the
 canonical empty-universe digest; unresolved source-bearing history never
 silently becomes empty. `edge-backlog validate` reports cache presence only;
 explicit bootstrap validation/replacement remains the cache-integrity path.
+
+P2 canonical storage is pinned to `research/edge_backlog`; a layout cannot
+relocate it. The configured cache and lock locations must be canonical lexical
+repository-relative paths. Canonical creation, lock opening, and cache
+replacement walk real directories from a repository descriptor, reject
+symlinked parents and targets, and use no-follow, exclusive, descriptor-relative
+operations so a path substitution cannot redirect a write outside the
+repository. Human decisions require a standard complete Git repository;
+source-empty non-Git storage remains supported only while it contains no human
+decision records.
 
 Legacy scientific verdict and lifecycle/disposition text are retained in
 separate fields when both exist; the derived index does not collapse those
