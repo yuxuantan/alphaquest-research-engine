@@ -7,9 +7,11 @@ from dataclasses import dataclass
 import errno
 import os
 from pathlib import Path, PurePosixPath
+import re
 import secrets
 import stat
-from typing import Callable, Iterator
+from types import MappingProxyType
+from typing import Callable, Iterator, Mapping
 
 import yaml
 
@@ -24,6 +26,16 @@ _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _DIRECTORY = getattr(os, "O_DIRECTORY", 0)
 _CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _TEST_AFTER_PARENT_OPEN: Callable[[str, str], None] | None = None
+_TEST_AFTER_DIRECTORY_ENUMERATION: Callable[[str, str], None] | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalBacklogTree:
+    """One descriptor-rooted immutable view of the canonical P2 record tree."""
+
+    observation_ids: tuple[str, ...]
+    entry_ids: tuple[str, ...]
+    files: Mapping[str, bytes]
 
 
 @dataclass(frozen=True)
@@ -213,6 +225,189 @@ def read_repository_file_optional(
         raise ValueError(f"unsafe repository file path for {relative}: {exc}") from exc
 
 
+def read_canonical_backlog_tree(project_root: str | Path) -> CanonicalBacklogTree:
+    """Read the complete canonical record tree without following any path.
+
+    Every directory remains descriptor-bound while its children are enumerated
+    and opened.  Consequently a rename or symlink substitution cannot redirect
+    a read to a different tree between discovery and record opening.
+    """
+
+    root = Path(project_root).resolve()
+    files: dict[str, bytes] = {}
+    try:
+        with repository_directory_fd(
+            root,
+            CANONICAL_EDGE_BACKLOG_RELATIVE,
+            allow_missing=True,
+        ) as backlog_fd:
+            if backlog_fd is None:
+                return CanonicalBacklogTree((), (), MappingProxyType(files))
+            backlog_names = frozenset(os.listdir(backlog_fd))
+            _run_test_directory_enumeration_hook(
+                "canonical-root",
+                CANONICAL_EDGE_BACKLOG_RELATIVE,
+            )
+            observation_ids = _read_canonical_collection(
+                backlog_fd,
+                collection="observations",
+                present="observations" in backlog_names,
+                allowed_children=("revisions",),
+                required_children=("revisions",),
+                files=files,
+            )
+            entry_ids = _read_canonical_collection(
+                backlog_fd,
+                collection="entries",
+                present="entries" in backlog_names,
+                allowed_children=("revisions", "decisions", "links"),
+                required_children=("revisions",),
+                files=files,
+            )
+    except OSError as exc:
+        raise ValueError(f"unsafe canonical backlog topology: {exc}") from exc
+    return CanonicalBacklogTree(
+        observation_ids,
+        entry_ids,
+        MappingProxyType(files),
+    )
+
+
+@contextmanager
+def repository_directory_fd(
+    project_root: str | Path,
+    relative_path: str,
+    *,
+    allow_missing: bool,
+) -> Iterator[int | None]:
+    """Open a repository directory component-by-component without following links."""
+
+    root = Path(project_root).resolve()
+    relative = _canonical_repository_relative(relative_path, label="repository directory")
+    current_fd = os.open(root, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC)
+    missing = False
+    try:
+        for component in PurePosixPath(relative).parts:
+            try:
+                next_fd = _open_directory_at(current_fd, component)
+            except FileNotFoundError:
+                if not allow_missing:
+                    raise
+                missing = True
+                break
+            os.close(current_fd)
+            current_fd = next_fd
+        yield None if missing else current_fd
+    finally:
+        os.close(current_fd)
+
+
+def _read_canonical_collection(
+    backlog_fd: int,
+    *,
+    collection: str,
+    present: bool,
+    allowed_children: tuple[str, ...],
+    required_children: tuple[str, ...],
+    files: dict[str, bytes],
+) -> tuple[str, ...]:
+    if not present:
+        return ()
+    collection_fd = _open_directory_at(backlog_fd, collection)
+    relative = f"{CANONICAL_EDGE_BACKLOG_RELATIVE}/{collection}"
+    try:
+        object_ids = tuple(sorted(os.listdir(collection_fd)))
+        _run_test_directory_enumeration_hook("canonical-collection", relative)
+        for object_id in object_ids:
+            object_fd = _open_directory_at(collection_fd, object_id)
+            try:
+                _read_canonical_object(
+                    object_fd,
+                    relative=f"{relative}/{object_id}",
+                    allowed_children=allowed_children,
+                    required_children=required_children,
+                    files=files,
+                )
+            finally:
+                os.close(object_fd)
+        return object_ids
+    finally:
+        os.close(collection_fd)
+
+
+def _read_canonical_object(
+    object_fd: int,
+    *,
+    relative: str,
+    allowed_children: tuple[str, ...],
+    required_children: tuple[str, ...],
+    files: dict[str, bytes],
+) -> None:
+    children = tuple(sorted(os.listdir(object_fd)))
+    _run_test_directory_enumeration_hook("canonical-object", relative)
+    unexpected = sorted(set(children) - set(allowed_children))
+    if unexpected:
+        raise ValueError(
+            f"unexpected canonical object component at {relative}: {unexpected[0]}"
+        )
+    missing = sorted(set(required_children) - set(children))
+    if missing:
+        raise ValueError(f"missing canonical object directory at {relative}: {missing[0]}")
+    for child in children:
+        child_fd = _open_directory_at(object_fd, child)
+        try:
+            _read_canonical_record_directory(
+                child_fd,
+                relative=f"{relative}/{child}",
+                files=files,
+            )
+        finally:
+            os.close(child_fd)
+
+
+def _read_canonical_record_directory(
+    directory_fd: int,
+    *,
+    relative: str,
+    files: dict[str, bytes],
+) -> None:
+    names = tuple(sorted(os.listdir(directory_fd)))
+    _run_test_directory_enumeration_hook("canonical-records", relative)
+    for name in names:
+        if re.fullmatch(r"[0-9]{6}\.json", name) is None:
+            raise ValueError(f"unexpected canonical record name at {relative}: {name}")
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | os.O_NONBLOCK | _NOFOLLOW | _CLOEXEC,
+            dir_fd=directory_fd,
+        )
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError(f"canonical record is not a regular file: {relative}/{name}")
+            if metadata.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+                raise ValueError(f"canonical record must not be executable: {relative}/{name}")
+            with os.fdopen(descriptor, "rb", closefd=False) as handle:
+                files[f"{relative}/{name}"] = handle.read()
+        finally:
+            os.close(descriptor)
+
+
+def _open_directory_at(parent_fd: int, name: str) -> int:
+    descriptor = os.open(
+        name,
+        os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC,
+        dir_fd=parent_fd,
+    )
+    try:
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise ValueError(f"canonical component is not a directory: {name}")
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
 def exclusive_write_repository_file(
     project_root: str | Path,
     relative_path: str,
@@ -359,13 +554,24 @@ def _run_test_parent_open_hook(operation: str, relative_path: str) -> None:
         hook(operation, relative_path)
 
 
+def _run_test_directory_enumeration_hook(operation: str, relative_path: str) -> None:
+    """Test-only deterministic read-race hook; production leaves it unset."""
+
+    hook = _TEST_AFTER_DIRECTORY_ENUMERATION
+    if hook is not None:
+        hook(operation, relative_path)
+
+
 __all__ = [
     "CANONICAL_EDGE_BACKLOG_RELATIVE",
+    "CanonicalBacklogTree",
     "P2RepositoryPaths",
     "atomic_replace_repository_file",
     "exclusive_write_repository_file",
     "read_repository_file",
     "read_repository_file_optional",
+    "read_canonical_backlog_tree",
+    "repository_directory_fd",
     "repository_file_lock",
     "unlink_repository_file",
     "validate_repository_path_chain",

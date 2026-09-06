@@ -414,7 +414,13 @@ repository-relative paths. Canonical creation, lock opening, and cache
 replacement walk real directories from a repository descriptor, reject
 symlinked parents and targets, and use no-follow, exclusive, descriptor-relative
 operations so a path substitution cannot redirect a write outside the
-repository. Human decisions require a standard complete Git repository;
+repository. Canonical observation, entry, decision, and link discovery uses a
+single transaction-scoped repository-descriptor snapshot. Every directory is
+opened with directory and no-follow semantics; every record is opened relative
+to its held directory descriptor and must be a regular, non-executable file.
+Symlinks, special files, unexpected topology, and substitution between
+enumeration and opening fail closed before any canonical state is returned.
+Human decisions require a standard complete Git repository;
 source-empty non-Git storage remains supported only while it contains no human
 decision records.
 

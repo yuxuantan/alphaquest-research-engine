@@ -41,8 +41,9 @@ from alphaquest.research.edge_backlog_taxonomy import (
 )
 from alphaquest.research.edge_backlog_io import (
     CANONICAL_EDGE_BACKLOG_RELATIVE,
+    CanonicalBacklogTree,
     exclusive_write_repository_file,
-    read_repository_file,
+    read_canonical_backlog_tree,
     repository_file_lock as backlog_file_lock,
     unlink_repository_file,
     validate_repository_path_chain,
@@ -760,13 +761,16 @@ class EdgeBacklogStore:
                 self._lock_relative,
                 exclusive=exclusive,
             ):
+                canonical_tree = self._read_canonical_tree()
                 self._transaction_state.depth = 1
                 self._transaction_state.exclusive = exclusive
+                self._transaction_state.canonical_tree = canonical_tree
                 try:
                     yield
                 finally:
                     self._transaction_state.depth = 0
                     self._transaction_state.exclusive = False
+                    self._transaction_state.canonical_tree = None
 
     @_transactional(exclusive=True)
     def capture_observation(
@@ -1043,9 +1047,8 @@ class EdgeBacklogStore:
     @_transactional(exclusive=False)
     def decisions(self, entry_id: str) -> list[EdgeBacklogDecisionV1]:
         _require_identifier(entry_id, "entry_id")
-        directory = self.root / "entries" / entry_id / "decisions"
         records = []
-        for path in sorted(directory.glob("*.json")):
+        for path in self._entry_record_paths(entry_id, "decisions"):
             record = self._load_record(path, EdgeBacklogDecisionV1)
             if path.name != f"{record.sequence:06d}.json":
                 raise EdgeBacklogIntegrityError(f"decision filename does not match sequence: {path}")
@@ -1062,9 +1065,8 @@ class EdgeBacklogStore:
     @_transactional(exclusive=False)
     def links(self, entry_id: str) -> list[EdgeBacklogLinkV1]:
         _require_identifier(entry_id, "entry_id")
-        directory = self.root / "entries" / entry_id / "links"
         records = []
-        for path in sorted(directory.glob("*.json")):
+        for path in self._entry_record_paths(entry_id, "links"):
             record = self._load_record(path, EdgeBacklogLinkV1)
             if path.name != f"{record.sequence:06d}.json":
                 raise EdgeBacklogIntegrityError(f"link filename does not match sequence: {path}")
@@ -1082,11 +1084,8 @@ class EdgeBacklogStore:
     @_transactional(exclusive=False)
     def list_entries(self) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
-        directory = self.root / "entries"
-        if not directory.is_dir():
-            return entries
-        for path in sorted(item for item in directory.iterdir() if item.is_dir()):
-            entry = self.latest_entry(path.name)
+        for entry_id in self._canonical_tree().entry_ids:
+            entry = self.latest_entry(entry_id)
             links = self.links(entry.entry_id)
             entries.append(
                 {
@@ -1352,9 +1351,12 @@ class EdgeBacklogStore:
                 "a reachable committed decision was removed or relocated after its first Git anchor"
             )
         working_decisions = {
-            path.relative_to(self.project_root).as_posix()
-            for path in self.root.glob("entries/*/decisions/*.json")
-            if path.is_file()
+            relative
+            for relative in self._canonical_tree().files
+            if re.fullmatch(
+                rf"{re.escape(prefix)}/[^/]+/decisions/[0-9]{{6}}\.json",
+                relative,
+            )
         }
         if head_decisions - working_decisions:
             raise EdgeBacklogIntegrityError(
@@ -1589,17 +1591,14 @@ class EdgeBacklogStore:
 
     def _validate_observations(self) -> dict[str, ObservationRevisionV1]:
         latest: dict[str, ObservationRevisionV1] = {}
-        directory = self.root / "observations"
-        if not directory.is_dir():
-            return latest
-        for observation_dir in sorted(item for item in directory.iterdir() if item.is_dir()):
+        for observation_id in self._canonical_tree().observation_ids:
             previous: ObservationRevisionV1 | None = None
-            paths = self._observation_paths(observation_dir.name)
+            paths = self._observation_paths(observation_id)
             for expected_revision, path in enumerate(paths, start=1):
                 record = self._load_record(path, ObservationRevisionV1)
                 if (
                     path.name != f"{expected_revision:06d}.json"
-                    or record.observation_id != observation_dir.name
+                    or record.observation_id != observation_id
                     or record.revision != expected_revision
                 ):
                     raise EdgeBacklogIntegrityError(f"observation path identity mismatch: {path}")
@@ -1618,18 +1617,15 @@ class EdgeBacklogStore:
 
     def _validate_entries(self) -> dict[str, EdgeBacklogEntryRevisionV1]:
         latest: dict[str, EdgeBacklogEntryRevisionV1] = {}
-        directory = self.root / "entries"
-        if not directory.is_dir():
-            return latest
-        for entry_dir in sorted(item for item in directory.iterdir() if item.is_dir()):
+        for entry_id in self._canonical_tree().entry_ids:
             previous: EdgeBacklogEntryRevisionV1 | None = None
-            paths = self._entry_paths(entry_dir.name)
+            paths = self._entry_paths(entry_id)
             for expected_revision, path in enumerate(paths, start=1):
                 record = self._load_record(path, EdgeBacklogEntryRevisionV1)
                 self._validate_entry_taxonomy(record)
                 if (
                     path.name != f"{expected_revision:06d}.json"
-                    or record.entry_id != entry_dir.name
+                    or record.entry_id != entry_id
                     or record.revision != expected_revision
                 ):
                     raise EdgeBacklogIntegrityError(f"entry path identity mismatch: {path}")
@@ -1985,7 +1981,7 @@ class EdgeBacklogStore:
         events: list[tuple[datetime, EvidenceReferenceV1]] = []
         identifiers = observation_ids
         if identifiers is None:
-            identifiers = tuple(item.name for item in sorted((self.root / "observations").glob("*")) if item.is_dir())
+            identifiers = self._canonical_tree().observation_ids
         for observation_id in identifiers:
             for revision in self._all_observation_revisions(observation_id):
                 for source in revision.evidence_refs:
@@ -2017,9 +2013,8 @@ class EdgeBacklogStore:
         append_sequence: int,
     ) -> None:
         for ref in refs:
-            path = self.root / "observations" / ref.observation_id / "revisions"
             found: ObservationRevisionV1 | None = None
-            for candidate in sorted(path.glob("*.json")):
+            for candidate in self._observation_paths(ref.observation_id):
                 observation = self._load_record(candidate, ObservationRevisionV1)
                 if observation.record_sha256 == ref.observation_revision_sha256:
                     found = observation
@@ -2212,11 +2207,45 @@ class EdgeBacklogStore:
     def _all_entry_revisions(self, entry_id: str) -> list[EdgeBacklogEntryRevisionV1]:
         return [self._load_record(path, EdgeBacklogEntryRevisionV1) for path in self._entry_paths(entry_id)]
 
+    def _read_canonical_tree(self) -> CanonicalBacklogTree:
+        try:
+            tree = read_canonical_backlog_tree(self.project_root)
+            for observation_id in tree.observation_ids:
+                _require_identifier(observation_id, "observation_id")
+            for entry_id in tree.entry_ids:
+                _require_identifier(entry_id, "entry_id")
+            return tree
+        except (OSError, ValueError) as exc:
+            raise EdgeBacklogIntegrityError(
+                f"invalid canonical backlog filesystem topology: {exc}"
+            ) from exc
+
+    def _canonical_tree(self) -> CanonicalBacklogTree:
+        tree = getattr(self._transaction_state, "canonical_tree", None)
+        return tree if tree is not None else self._read_canonical_tree()
+
     def _observation_paths(self, observation_id: str) -> list[Path]:
-        return sorted((self.root / "observations" / observation_id / "revisions").glob("*.json"))
+        _require_identifier(observation_id, "observation_id")
+        prefix = f"{CANONICAL_EDGE_BACKLOG_RELATIVE}/observations/{observation_id}/revisions/"
+        return [
+            self.project_root / relative
+            for relative in sorted(self._canonical_tree().files)
+            if relative.startswith(prefix)
+        ]
 
     def _entry_paths(self, entry_id: str) -> list[Path]:
-        return sorted((self.root / "entries" / entry_id / "revisions").glob("*.json"))
+        return self._entry_record_paths(entry_id, "revisions")
+
+    def _entry_record_paths(self, entry_id: str, collection: str) -> list[Path]:
+        _require_identifier(entry_id, "entry_id")
+        if collection not in {"revisions", "decisions", "links"}:
+            raise EdgeBacklogIntegrityError(f"unsupported canonical entry collection: {collection}")
+        prefix = f"{CANONICAL_EDGE_BACKLOG_RELATIVE}/entries/{entry_id}/{collection}/"
+        return [
+            self.project_root / relative
+            for relative in sorted(self._canonical_tree().files)
+            if relative.startswith(prefix)
+        ]
 
     def _observation_path(self, observation_id: str, revision: int) -> Path:
         return self.root / "observations" / observation_id / "revisions" / f"{revision:06d}.json"
@@ -2227,8 +2256,10 @@ class EdgeBacklogStore:
     def _load_record(self, path: Path, model: type[RecordType]) -> RecordType:
         try:
             relative = path.relative_to(self.project_root).as_posix()
-            data = read_repository_file(self.project_root, relative)
+            data = self._canonical_tree().files[relative]
             record = model.model_validate_json(data)
+        except KeyError as exc:
+            raise FileNotFoundError(f"canonical backlog record not found: {path}") from exc
         except (OSError, ValueError) as exc:
             raise EdgeBacklogIntegrityError(f"invalid canonical backlog record {path}: {exc}") from exc
         expected = canonical_json_bytes(record) + b"\n"
@@ -2296,16 +2327,13 @@ class EdgeBacklogStore:
 
     def _canonical_records(self) -> list[HashedRecord]:
         records: list[HashedRecord] = []
-        observations = self.root / "observations"
-        if observations.is_dir():
-            for object_dir in sorted(item for item in observations.iterdir() if item.is_dir()):
-                records.extend(self._all_observation_revisions(object_dir.name))
-        entries = self.root / "entries"
-        if entries.is_dir():
-            for object_dir in sorted(item for item in entries.iterdir() if item.is_dir()):
-                records.extend(self._all_entry_revisions(object_dir.name))
-                records.extend(self.decisions(object_dir.name))
-                records.extend(self.links(object_dir.name))
+        tree = self._canonical_tree()
+        for observation_id in tree.observation_ids:
+            records.extend(self._all_observation_revisions(observation_id))
+        for entry_id in tree.entry_ids:
+            records.extend(self._all_entry_revisions(entry_id))
+            records.extend(self.decisions(entry_id))
+            records.extend(self.links(entry_id))
         return records
 
     def _next_append_sequence(self) -> int:
@@ -2333,12 +2361,10 @@ class EdgeBacklogStore:
         """Validate one complete current/prospective canonicalization graph."""
 
         latest_decisions: dict[str, EdgeBacklogDecisionV1] = {}
-        directory = self.root / "entries"
-        if directory.is_dir():
-            for entry_dir in sorted(item for item in directory.iterdir() if item.is_dir()):
-                history = self.decisions(entry_dir.name)
-                if history:
-                    latest_decisions[entry_dir.name] = history[-1]
+        for entry_id in self._canonical_tree().entry_ids:
+            history = self.decisions(entry_id)
+            if history:
+                latest_decisions[entry_id] = history[-1]
         if pending is not None:
             latest_decisions[pending.entry_id] = pending
         graph: dict[str, str] = {}

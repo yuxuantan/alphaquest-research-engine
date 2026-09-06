@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import multiprocessing
+import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 
 import pytest
@@ -267,3 +269,209 @@ def test_source_empty_non_git_repository_remains_supported_without_decisions(tmp
     assert report["decisions"] == 0
     assert report["git_anchored_decisions"] == 0
     assert report["provisional_decisions"] == 0
+
+
+def _outside_target(root: Path, label: str) -> Path:
+    target = root.parent / f"{root.name}-external-{label}"
+    if target.exists() or target.is_symlink():
+        if target.is_dir() and not target.is_symlink():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+    return target
+
+
+def _path_bytes(path: Path) -> dict[str, bytes]:
+    if path.is_file():
+        return {path.name: path.read_bytes()}
+    return {
+        item.relative_to(path).as_posix(): item.read_bytes()
+        for item in sorted(path.rglob("*"))
+        if item.is_file()
+    }
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    [
+        "observations",
+        "entries",
+        "observation-object",
+        "entry-object",
+        "revisions",
+        "decisions",
+        "links",
+        "record",
+    ],
+)
+def test_canonical_reads_reject_external_symlinks_at_every_topology_boundary(
+    tmp_path: Path,
+    boundary: str,
+) -> None:
+    _write_layout(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _capture_entry(store)
+    observation_record = (
+        store.root / "observations/obs.security/revisions/000001.json"
+    )
+    entry_object = store.root / "entries" / entry.entry_id
+    (entry_object / "decisions").mkdir()
+    (entry_object / "links").mkdir()
+    targets = {
+        "observations": store.root / "observations",
+        "entries": store.root / "entries",
+        "observation-object": store.root / "observations/obs.security",
+        "entry-object": entry_object,
+        "revisions": entry_object / "revisions",
+        "decisions": entry_object / "decisions",
+        "links": entry_object / "links",
+        "record": observation_record,
+    }
+    target = targets[boundary]
+    target_is_directory = target.is_dir()
+    external = _outside_target(tmp_path, boundary)
+    if target_is_directory:
+        shutil.copytree(target, external)
+    else:
+        external.write_bytes(target.read_bytes())
+    external_before = _path_bytes(external)
+    held = target.with_name(target.name + ".held")
+    target.rename(held)
+    target.symlink_to(external, target_is_directory=target_is_directory)
+    try:
+        operations = (
+            store.validate,
+            store.list_entries,
+            lambda: store.entry_state(entry.entry_id),
+            lambda: store.search("inventory"),
+            lambda: store.duplicate_candidates(entry.entry_id),
+            lambda: store.duplicate_snapshot(entry.entry_id),
+            store._next_append_sequence,
+        )
+        for operation in operations:
+            with pytest.raises(EdgeBacklogIntegrityError, match="filesystem topology"):
+                operation()
+        assert _path_bytes(external) == external_before
+    finally:
+        target.unlink()
+        held.rename(target)
+        if external.is_dir():
+            shutil.rmtree(external)
+        else:
+            external.unlink()
+
+
+@pytest.mark.parametrize("node_kind", ["fifo", "socket", "executable"])
+def test_canonical_record_reader_rejects_nonregular_and_executable_nodes(
+    tmp_path: Path,
+    node_kind: str,
+) -> None:
+    _write_layout(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    _capture_entry(store)
+    record = store.root / "observations/obs.security/revisions/000001.json"
+    held = record.with_name("000001.held")
+    record.rename(held)
+    unix_socket: socket.socket | None = None
+    socket_alias: Path | None = None
+    try:
+        if node_kind == "fifo":
+            os.mkfifo(record)
+        elif node_kind == "socket":
+            unix_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            socket_alias = Path("/tmp") / f"aq-p2-socket-{os.getpid()}-{tmp_path.name[-8:]}"
+            socket_alias.symlink_to(record.parent, target_is_directory=True)
+            unix_socket.bind(str(socket_alias / record.name))
+        else:
+            shutil.copy2(held, record)
+            record.chmod(0o755)
+        with pytest.raises(EdgeBacklogIntegrityError, match="filesystem topology"):
+            store.validate()
+    finally:
+        if unix_socket is not None:
+            unix_socket.close()
+        record.unlink(missing_ok=True)
+        if socket_alias is not None:
+            socket_alias.unlink(missing_ok=True)
+        held.rename(record)
+
+
+def _canonical_read_race_worker(
+    root: str,
+    operation: str,
+    relative: str,
+    barrier,
+    results,
+) -> None:
+    from alphaquest.research import edge_backlog_io
+
+    triggered = False
+
+    def pause(selected: str, selected_relative: str) -> None:
+        nonlocal triggered
+        if not triggered and selected == operation and selected_relative == relative:
+            triggered = True
+            barrier.wait(timeout=20)
+            barrier.wait(timeout=20)
+
+    edge_backlog_io._TEST_AFTER_DIRECTORY_ENUMERATION = pause
+    try:
+        EdgeBacklogStore(root).validate()
+        results.put(("PASS", ""))
+    except Exception as exc:  # pragma: no cover - asserted in the parent
+        results.put(("ERROR", f"{type(exc).__name__}: {exc}"))
+    finally:
+        edge_backlog_io._TEST_AFTER_DIRECTORY_ENUMERATION = None
+
+
+@pytest.mark.parametrize("substitution", ["entry-object", "observation-record"])
+def test_descriptor_snapshot_rejects_symlink_substitution_between_enumeration_and_open(
+    tmp_path: Path,
+    substitution: str,
+) -> None:
+    _write_layout(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _capture_entry(store)
+    if substitution == "entry-object":
+        operation = "canonical-collection"
+        relative = "research/edge_backlog/entries"
+        target = store.root / "entries" / entry.entry_id
+    else:
+        operation = "canonical-records"
+        relative = "research/edge_backlog/observations/obs.security/revisions"
+        target = store.root / "observations/obs.security/revisions/000001.json"
+
+    target_is_directory = target.is_dir()
+    external = _outside_target(tmp_path, f"race-{substitution}")
+    if target_is_directory:
+        shutil.copytree(target, external)
+    else:
+        external.write_bytes(target.read_bytes())
+    external_before = _path_bytes(external)
+    context = multiprocessing.get_context("fork")
+    barrier = context.Barrier(2)
+    results = context.Queue()
+    process = context.Process(
+        target=_canonical_read_race_worker,
+        args=(str(tmp_path), operation, relative, barrier, results),
+    )
+    process.start()
+    barrier.wait(timeout=20)
+    held = target.with_name(target.name + ".held")
+    target.rename(held)
+    target.symlink_to(external, target_is_directory=target_is_directory)
+    barrier.wait(timeout=20)
+    process.join(timeout=20)
+    try:
+        assert process.exitcode == 0
+        status, detail = results.get(timeout=5)
+        assert status == "ERROR"
+        assert "EdgeBacklogIntegrityError" in detail
+        assert _path_bytes(external) == external_before
+    finally:
+        target.unlink()
+        held.rename(target)
+        if external.is_dir():
+            shutil.rmtree(external)
+        else:
+            external.unlink()
