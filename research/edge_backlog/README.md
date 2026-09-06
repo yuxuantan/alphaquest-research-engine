@@ -64,7 +64,12 @@ representation: compact UTF-8 JSON,
 sorted object keys, declared array order, and exactly one final LF. Taxonomy
 references hash that complete file byte sequence; fingerprint hashes remain
 newline-free. Additive versions cannot introduce invariants triggered by old
-codes or remove any prohibited category.
+codes or remove any prohibited category. Once a version first appears as a
+valid final taxonomy contract in Git, that exact path, `100644` blob, and bytes
+must survive every reachable descendant. HEAD, index, and the descriptor-read
+transaction snapshot must agree; deletion, rename, redefinition, or re-addition
+cannot establish a fresh publication anchor. A valid additive version may be
+authored provisionally, but becomes immutable at its first valid Git anchor.
 
 The backlog is not a strategy list and cannot create a scientific verdict,
 admit a hypothesis, create an edge family or campaign, promote a candidate, or

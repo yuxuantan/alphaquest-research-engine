@@ -37,6 +37,7 @@ from alphaquest.research.edge_backlog_taxonomy import (
     matcher_dimensions,
     resolve_taxonomy,
     taxonomy_ref as build_taxonomy_ref,
+    validate_taxonomy_contract_file_bytes,
     validate_concepts,
 )
 from alphaquest.research.edge_backlog_io import (
@@ -118,6 +119,10 @@ _CANONICAL_RECORD_PATH = re.compile(
     r"observations/[^/]+/revisions|"
     r"entries/[^/]+/(?:revisions|decisions|links)"
     r")/[0-9]{6}\.json"
+)
+_CANONICAL_TAXONOMY_PATH = re.compile(
+    rf"{re.escape(CANONICAL_TAXONOMY_RELATIVE)}/"
+    r"economic-edge-taxonomy-v[1-9][0-9]*\.json"
 )
 _EMPTY_RECORD_CHAIN_SHA256 = hashlib.sha256(b"[]").hexdigest()
 _EMPTY_HISTORICAL_UNIVERSE_SHA256 = hashlib.sha256(b"[]").hexdigest()
@@ -767,7 +772,7 @@ class EdgeBacklogStore:
             ):
                 canonical_tree = self._read_canonical_tree()
                 try:
-                    taxonomy_catalog = self._read_taxonomy_catalog_snapshot()
+                    taxonomy_files, taxonomy_catalog = self._read_taxonomy_snapshot()
                 except EdgeBacklogIntegrityError:
                     raise
                 except (OSError, ValueError) as exc:
@@ -777,6 +782,7 @@ class EdgeBacklogStore:
                 self._transaction_state.depth = 1
                 self._transaction_state.exclusive = exclusive
                 self._transaction_state.canonical_tree = canonical_tree
+                self._transaction_state.taxonomy_files = taxonomy_files
                 self._transaction_state.taxonomy_catalog = taxonomy_catalog
                 try:
                     yield
@@ -784,6 +790,7 @@ class EdgeBacklogStore:
                     self._transaction_state.depth = 0
                     self._transaction_state.exclusive = False
                     self._transaction_state.canonical_tree = None
+                    self._transaction_state.taxonomy_files = None
                     self._transaction_state.taxonomy_catalog = None
 
     @_transactional(exclusive=True)
@@ -1335,7 +1342,7 @@ class EdgeBacklogStore:
         }
 
     def _validate_git_canonical_inventory(self) -> None:
-        """Require every reachable committed canonical record to remain exact."""
+        """Require committed canonical records and published taxonomy to remain exact."""
 
         from alphaquest.research.edge_backlog_bootstrap import (
             repository_files_anchors,
@@ -1350,50 +1357,72 @@ class EdgeBacklogStore:
                 f"could not inspect committed canonical record inventory: {exc}"
             ) from exc
 
-        head_records = {
-            path: entry
-            for path, entry in inventory.head_entries.items()
-            if _CANONICAL_RECORD_PATH.fullmatch(path)
+        taxonomy_files = {
+            f"{CANONICAL_TAXONOMY_RELATIVE}/{name}": data
+            for name, data in self._taxonomy_files().items()
         }
-        historical_records = {
-            path for path in inventory.historical_paths if _CANONICAL_RECORD_PATH.fullmatch(path)
-        }
-        if historical_records - set(head_records):
-            raise EdgeBacklogIntegrityError(
-                "a reachable committed canonical record was removed or relocated after its first Git anchor"
-            )
-        working_records = {
-            relative
-            for relative in self._canonical_tree().files
-            if _CANONICAL_RECORD_PATH.fullmatch(relative)
-        }
-        if set(head_records) - working_records:
-            raise EdgeBacklogIntegrityError(
-                "a committed canonical record is missing from the current canonical backlog"
-            )
-        for relative, head_entry in sorted(head_records.items()):
-            indexed = inventory.index_entries.get(relative)
-            if indexed != ((head_entry[0], head_entry[2], 0),):
+        path_classes = (
+            ("canonical record", _CANONICAL_RECORD_PATH, self._canonical_tree().files),
+            ("published taxonomy contract", _CANONICAL_TAXONOMY_PATH, taxonomy_files),
+        )
+        expected_by_class: dict[str, dict[str, bytes]] = {}
+        for label, pattern, working_files in path_classes:
+            head_files = {
+                path: entry
+                for path, entry in inventory.head_entries.items()
+                if pattern.fullmatch(path)
+            }
+            historical_files = {
+                path for path in inventory.historical_paths if pattern.fullmatch(path)
+            }
+            if historical_files - set(head_files):
                 raise EdgeBacklogIntegrityError(
-                    "a committed canonical record differs between HEAD and the Git index: "
-                    f"{relative}"
+                    f"a reachable committed {label} was removed or relocated after its first Git anchor"
                 )
+            if set(head_files) - set(working_files):
+                location = (
+                    "current canonical backlog"
+                    if label == "canonical record"
+                    else "current repository taxonomy snapshot"
+                )
+                raise EdgeBacklogIntegrityError(
+                    f"a committed {label} is missing from the {location}"
+                )
+            expected_files: dict[str, bytes] = {}
+            for relative, head_entry in sorted(head_files.items()):
+                indexed = inventory.index_entries.get(relative)
+                if indexed != ((head_entry[0], head_entry[2], 0),):
+                    raise EdgeBacklogIntegrityError(
+                        f"a committed {label} differs between HEAD and the Git index: {relative}"
+                    )
+                expected_files[relative] = working_files[relative]
+            expected_by_class[label] = expected_files
         try:
             anchors = repository_files_anchors(
                 self.project_root,
-                {
-                    relative: self._canonical_tree().files[relative]
-                    for relative in sorted(head_records)
-                },
+                expected_by_class["canonical record"],
+            )
+            anchors.update(
+                repository_files_anchors(
+                    self.project_root,
+                    expected_by_class["published taxonomy contract"],
+                    first_anchor_validator=lambda relative, data: bool(
+                        validate_taxonomy_contract_file_bytes(
+                            relative.rsplit("/", 1)[-1],
+                            data,
+                        )
+                    ),
+                    require_preceding_commit=False,
+                )
             )
         except (OSError, ValueError) as exc:
             raise EdgeBacklogIntegrityError(
-                f"Git-anchored decision or canonical record is invalid: {exc}"
+                f"Git-anchored decision, canonical record, or taxonomy contract is invalid: {exc}"
             ) from exc
         for relative, anchor in anchors.items():
             if anchor is None:  # pragma: no cover - path was read from HEAD
                 raise EdgeBacklogIntegrityError(
-                    f"committed canonical record has no Git anchor: {relative}"
+                    f"committed canonical record or taxonomy contract has no Git anchor: {relative}"
                 )
 
     def _append_observation(
@@ -2173,17 +2202,26 @@ class EdgeBacklogStore:
         catalog = getattr(self._transaction_state, "taxonomy_catalog", None)
         if catalog is not None:
             return catalog
-        return self._read_taxonomy_catalog_snapshot()
+        return self._read_taxonomy_snapshot()[1]
 
-    def _read_taxonomy_catalog_snapshot(self) -> Mapping[int, EconomicEdgeTaxonomyV1]:
+    def _taxonomy_files(self) -> Mapping[str, bytes]:
+        files = getattr(self._transaction_state, "taxonomy_files", None)
+        if files is not None:
+            return files
+        return self._read_taxonomy_snapshot()[0]
+
+    def _read_taxonomy_snapshot(
+        self,
+    ) -> tuple[Mapping[str, bytes], Mapping[int, EconomicEdgeTaxonomyV1]]:
         try:
             files = read_taxonomy_contract_files(self.project_root)
-            return MappingProxyType(
+            catalog = MappingProxyType(
                 load_taxonomy_catalog_bytes(
                     files,
                     source_label=CANONICAL_TAXONOMY_RELATIVE,
                 )
             )
+            return files, catalog
         except (OSError, ValueError) as exc:
             raise EdgeBacklogIntegrityError(
                 f"invalid canonical economic-edge taxonomy under {self.taxonomy_root}: {exc}"

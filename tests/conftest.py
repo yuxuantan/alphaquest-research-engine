@@ -24,7 +24,7 @@ def _isolated_edge_backlog_taxonomy_injection(request, monkeypatch):
     if request.node.get_closest_marker("production_taxonomy") is None:
         monkeypatch.setattr(
             EdgeBacklogStore,
-            "_read_taxonomy_catalog_snapshot",
-            lambda _self: _TEST_TAXONOMY_CATALOG,
+            "_read_taxonomy_snapshot",
+            lambda _self: (MappingProxyType({}), _TEST_TAXONOMY_CATALOG),
         )
     yield

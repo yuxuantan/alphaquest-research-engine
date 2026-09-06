@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import pytest
 import yaml
@@ -19,6 +20,7 @@ from alphaquest.research.edge_backlog import (
     EdgeBacklogIntegrityError,
     EdgeBacklogStore,
     canonical_json_bytes,
+    load_historical_edge_index_records_bytes,
     record_sha256,
 )
 from alphaquest.research.edge_backlog_taxonomy import bundled_taxonomy_ref
@@ -28,6 +30,9 @@ from alphaquest.research.edge_backlog_bootstrap import (
     historical_records_for_repository_commit,
     validate_historical_edge_index,
 )
+
+
+_PROJECT_ROOT = Path(__file__).parents[1]
 
 
 _STORAGE_LAYOUT = """schema: alphaquest.storage-layout/v1
@@ -2556,3 +2561,174 @@ def test_relocating_fixed_canonical_root_and_updating_layout_fails_validation(
         store.validate()
     with pytest.raises(EdgeBacklogIntegrityError, match="must be exactly"):
         EdgeBacklogStore(tmp_path)
+
+
+def _replace_fixture_campaign(root: Path, source: bytes) -> Path:
+    campaign = root / "research/campaigns/active/current_auction_edge/campaign.yaml"
+    campaign.write_bytes(source)
+    return campaign
+
+
+def _bootstrap_subprocess(root: Path, hash_seed: str) -> subprocess.CompletedProcess[str]:
+    code = (
+        "from alphaquest.research.edge_backlog_bootstrap import build_historical_edge_index; "
+        "import pathlib, sys; build_historical_edge_index(pathlib.Path(sys.argv[1]))"
+    )
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(_PROJECT_ROOT / "src")
+    environment["PYTHONHASHSEED"] = hash_seed
+    return subprocess.run(
+        [sys.executable, "-c", code, str(root)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+
+def test_yaml_set_projection_is_rejected_identically_across_hash_seeds_without_cache(
+    tmp_path: Path,
+) -> None:
+    source = (
+        b"campaign_id: unordered-set\n"
+        b"title: Unordered set\n"
+        b"instrument: ES\n"
+        b"economic_edge_fingerprint: !!set\n"
+        b"  ? market_behavior\n"
+        b"  ? causal_mechanism\n"
+        b"decision: ARCHIVED\n"
+    )
+    failures: list[str] = []
+    for seed in ("1", "2"):
+        root = tmp_path / f"seed-{seed}"
+        _fixture(root)
+        _replace_fixture_campaign(root, source)
+        cache = root / "catalogs/edge_backlog_history.jsonl"
+        if seed == "2":
+            cache.parent.mkdir(parents=True)
+            cache.write_bytes(b"existing cache sentinel\n")
+
+        result = _bootstrap_subprocess(root, seed)
+
+        assert result.returncode != 0
+        assert "legacy_fingerprint must be a string or JSON-domain dictionary" in result.stderr
+        if seed == "1":
+            assert not cache.exists()
+        else:
+            assert cache.read_bytes() == b"existing cache sentinel\n"
+        failures.append(result.stderr.replace(str(root), "<root>").rsplit("ValueError:", 1)[-1].strip())
+    assert failures[0] == failures[1]
+
+
+@pytest.mark.parametrize(
+    ("case", "source"),
+    [
+        (
+            "nested-set",
+            b"economic_edge_fingerprint:\n  market_context: !!set\n    ? open\n    ? close\n",
+        ),
+        ("fingerprint-list", b"economic_edge_fingerprint: [first, second]\n"),
+        ("scalar-set", b"title: !!set\n  ? first\n  ? second\n"),
+        ("implicit-date", b"title: 2026-09-06\n"),
+        ("implicit-datetime", b"title: 2026-09-06T12:30:00Z\n"),
+        ("binary", b"title: !!binary aGVsbG8=\n"),
+        ("non-string-key", b"1: numeric key\n"),
+        ("non-finite", b"title: .nan\n"),
+        ("optional-collection", b"title: [first, second]\n"),
+        ("python-tag", b"title: !!python/tuple [first, second]\n"),
+    ],
+)
+def test_historical_yaml_rejects_values_outside_closed_json_domain(
+    tmp_path: Path,
+    case: str,
+    source: bytes,
+) -> None:
+    _fixture(tmp_path)
+    campaign = _replace_fixture_campaign(
+        tmp_path,
+        b"campaign_id: invalid-domain\ninstrument: ES\n" + source,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "invalid historical campaign definition|historical campaign|historical input|"
+            "projected scalar|legacy_fingerprint"
+        ),
+    ):
+        build_historical_edge_index(tmp_path)
+
+    assert campaign.exists()
+    assert not (tmp_path / "catalogs/edge_backlog_history.jsonl").exists(), case
+
+
+def test_historical_yaml_accepts_nested_json_domain_fingerprint_without_coercion(
+    tmp_path: Path,
+) -> None:
+    _fixture(tmp_path)
+    campaign = _replace_fixture_campaign(
+        tmp_path,
+        b"campaign_id: json-domain\n"
+        b"title: JSON domain\n"
+        b"instrument: ES\n"
+        b"economic_edge_fingerprint:\n"
+        b"  market_context: regular session\n"
+        b"  signal_inputs:\n"
+        b"    - price\n"
+        b"    - null\n"
+        b"    - true\n"
+        b"    - 7\n"
+        b"    - 1.25\n"
+        b"    - nested:\n"
+        b"        key: value\n",
+    )
+
+    result = build_historical_edge_index(tmp_path)
+    records = load_historical_edge_index_records_bytes(
+        (tmp_path / "catalogs/edge_backlog_history.jsonl").read_bytes()
+    )
+    record = next(item for item in records if item.source_path == str(campaign.relative_to(tmp_path)))
+
+    assert result["status"] == "PASS"
+    assert record.legacy_fingerprint == {
+        "market_context": "regular session",
+        "signal_inputs": ["price", None, True, 7, 1.25, {"nested": {"key": "value"}}],
+    }
+
+
+def test_existing_repository_projection_is_hash_seed_independent() -> None:
+    commit = subprocess.run(
+        ["git", "-C", str(_PROJECT_ROOT), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    code = (
+        "import hashlib, json, pathlib, sys; "
+        "from alphaquest.research.edge_backlog import canonical_json_bytes; "
+        "from alphaquest.research.edge_backlog_bootstrap import historical_records_for_repository_commit; "
+        "root=pathlib.Path(sys.argv[1]); commit=sys.argv[2]; "
+        "resolved,records=historical_records_for_repository_commit(root,commit); "
+        "data=b''.join(canonical_json_bytes(item)+b'\\n' for item in records); "
+        "print(json.dumps([resolved,len(records),hashlib.sha256(data).hexdigest()]))"
+    )
+    outputs: list[list[object]] = []
+    for seed in ("1", "987654"):
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = str(_PROJECT_ROOT / "src")
+        environment["PYTHONHASHSEED"] = seed
+        completed = subprocess.run(
+            [sys.executable, "-c", code, str(_PROJECT_ROOT), commit],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        outputs.append(json.loads(completed.stdout))
+
+    assert outputs[0] == outputs[1]
+    assert outputs[0] == [
+        commit,
+        4008,
+        "79129d712f4fcf684095bd217b659a91b494e0551ce470d21dc4587891fd2303",
+    ]

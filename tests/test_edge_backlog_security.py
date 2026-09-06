@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import multiprocessing
 import os
@@ -20,8 +21,12 @@ from alphaquest.research.edge_backlog_io import (
     exclusive_write_repository_file,
     repository_file_lock,
 )
-from alphaquest.research.edge_backlog_taxonomy import bundled_taxonomy_ref
-from alphaquest.research.edge_backlog_taxonomy import bundled_taxonomy_root
+from alphaquest.research.edge_backlog_taxonomy import (
+    EconomicEdgeTaxonomyV1,
+    bundled_taxonomy_ref,
+    bundled_taxonomy_root,
+    canonical_taxonomy_file_bytes,
+)
 
 
 def _write_layout(root: Path) -> None:
@@ -46,6 +51,38 @@ def _initialize_git(root: Path) -> None:
     )
     subprocess.run(["git", "-C", str(root), "add", "config/storage_layout.yaml"], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "initial layout"], check=True)
+
+
+def _commit_paths(root: Path, message: str, *paths: str) -> None:
+    subprocess.run(["git", "-C", str(root), "add", "-A", "--", *paths], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", message], check=True)
+
+
+def _anchored_taxonomy_fixture(root: Path) -> tuple[Path, bytes]:
+    _write_layout(root)
+    _initialize_git(root)
+    contracts = _install_taxonomy_contracts(root)
+    contract = contracts / "economic-edge-taxonomy-v1.json"
+    original = contract.read_bytes()
+    _commit_paths(root, "anchor taxonomy v1", "research/edge_backlog/contracts")
+    assert EdgeBacklogStore(root).validate()["status"] == "PASS"
+    return contract, original
+
+
+def _changed_taxonomy_bytes(original: bytes, field: str = "definition") -> bytes:
+    payload = json.loads(original)
+    concept = payload["code_sets"]["market_behavior"][0]
+    if field == "definition":
+        concept["definition"] += " A descendant must not redefine this concept."
+    elif field == "label":
+        concept["display_label"] += " changed"
+    elif field == "alias":
+        concept["recall_aliases"] = sorted(
+            {*concept["recall_aliases"], "descendant-only alias"}
+        )
+    else:  # pragma: no cover - helper guard
+        raise AssertionError(field)
+    return canonical_taxonomy_file_bytes(EconomicEdgeTaxonomyV1.model_validate(payload))
 
 
 def _capture_entry(store: EdgeBacklogStore):
@@ -741,3 +778,199 @@ def test_transaction_reuses_one_taxonomy_snapshot_after_first_dependent_operatio
     assert store.current_taxonomy_ref().taxonomy_sha256 == (
         "a9789e806f4c4471147ccdf35aa8d06e1a9b2d4559347850599a411e8f5742bb"
     )
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize("field", ["definition", "label", "alias"])
+def test_committed_taxonomy_version_rejects_descendant_redefinition(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    contract.write_bytes(_changed_taxonomy_bytes(original, field))
+    _commit_paths(tmp_path, f"change anchored taxonomy {field}", str(contract.relative_to(tmp_path)))
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "delete",
+        "rename",
+        "altered-readd",
+        "original-readd",
+        "multi-commit-readd",
+        "executable",
+        "symlink",
+        "object-type",
+    ],
+)
+def test_anchored_taxonomy_rejects_every_path_history_mutation(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    relative = contract.relative_to(tmp_path).as_posix()
+    if mutation == "delete":
+        contract.unlink()
+        _commit_paths(tmp_path, "delete anchored taxonomy", relative)
+    elif mutation == "rename":
+        renamed = contract.with_name("economic-edge-taxonomy-v2.json")
+        contract.rename(renamed)
+        _commit_paths(tmp_path, "rename anchored taxonomy version", str(contract.parent.relative_to(tmp_path)))
+    elif mutation in {"altered-readd", "original-readd", "multi-commit-readd"}:
+        contract.unlink()
+        _commit_paths(tmp_path, "delete anchored taxonomy before re-add", relative)
+        if mutation == "multi-commit-readd":
+            marker = tmp_path / "notes/taxonomy-disappearance.txt"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("taxonomy remained absent\n", encoding="utf-8")
+            _commit_paths(tmp_path, "retain taxonomy disappearance", str(marker.relative_to(tmp_path)))
+        contract.parent.mkdir(parents=True, exist_ok=True)
+        contract.write_bytes(
+            _changed_taxonomy_bytes(original) if mutation == "altered-readd" else original
+        )
+        _commit_paths(tmp_path, "re-add anchored taxonomy path", relative)
+    elif mutation == "executable":
+        contract.chmod(0o755)
+        _commit_paths(tmp_path, "make taxonomy executable", relative)
+    elif mutation == "symlink":
+        external = tmp_path / "external-taxonomy-v1.json"
+        external.write_bytes(original)
+        contract.unlink()
+        contract.symlink_to(external)
+        _commit_paths(tmp_path, "replace taxonomy with symlink", relative)
+    elif mutation == "object-type":
+        contract.unlink()
+        contract.mkdir()
+        (contract / "payload").write_bytes(original)
+        _commit_paths(tmp_path, "replace taxonomy blob with tree", relative)
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(mutation)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize("staged_change", ["modify", "delete"])
+def test_staged_taxonomy_change_with_restored_worktree_bytes_fails_closed(
+    tmp_path: Path,
+    staged_change: str,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    relative = contract.relative_to(tmp_path).as_posix()
+    if staged_change == "modify":
+        contract.write_bytes(_changed_taxonomy_bytes(original))
+        subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    else:
+        subprocess.run(["git", "-C", str(tmp_path), "rm", "--", relative], check=True)
+    contract.parent.mkdir(parents=True, exist_ok=True)
+    contract.write_bytes(original)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="HEAD and the Git index"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
+def test_uncommitted_anchored_taxonomy_change_cannot_authorize_entry_creation(
+    tmp_path: Path,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    contract.write_bytes(_changed_taxonomy_bytes(original))
+    store = EdgeBacklogStore(tmp_path)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy contract"):
+        _capture_entry(store)
+
+    assert not (tmp_path / "research/edge_backlog/observations").exists()
+
+
+@pytest.mark.production_taxonomy
+def test_ambiguous_taxonomy_introductions_fail_closed(tmp_path: Path) -> None:
+    _write_layout(tmp_path)
+    _initialize_git(tmp_path)
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(tmp_path), "switch", "-q", "-c", "taxonomy-a"], check=True)
+    contract = _install_taxonomy_contracts(tmp_path) / "economic-edge-taxonomy-v1.json"
+    _commit_paths(tmp_path, "introduce taxonomy on branch A", str(contract.relative_to(tmp_path)))
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "switch", "-q", "-c", "taxonomy-b", base],
+        check=True,
+    )
+    _install_taxonomy_contracts(tmp_path)
+    _commit_paths(tmp_path, "introduce taxonomy on branch B", str(contract.relative_to(tmp_path)))
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "merge",
+            "-q",
+            "--no-ff",
+            "-m",
+            "merge ambiguous taxonomy introductions",
+            "taxonomy-a",
+        ],
+        check=True,
+    )
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="ambiguous Git introduction"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
+def test_valid_additive_taxonomy_version_is_allowed_then_git_anchored(tmp_path: Path) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    payload = json.loads(original)
+    payload["taxonomy_version"] = 2
+    payload["previous_taxonomy_sha256"] = hashlib.sha256(original).hexdigest()
+    concept = payload["code_sets"]["market_behavior"][0]
+    concept["recall_aliases"] = sorted({*concept["recall_aliases"], "additive v2 recall alias"})
+    v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+    v2.write_bytes(canonical_taxonomy_file_bytes(EconomicEdgeTaxonomyV1.model_validate(payload)))
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    _commit_paths(tmp_path, "publish additive taxonomy v2", str(v2.relative_to(tmp_path)))
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+
+    anchored_v2 = v2.read_bytes()
+    v2.write_bytes(_changed_taxonomy_bytes(anchored_v2, "label"))
+    with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
+def test_unchanged_anchored_taxonomy_v1_retains_exact_identity(tmp_path: Path) -> None:
+    _contract, original = _anchored_taxonomy_fixture(tmp_path)
+
+    assert hashlib.sha256(original).hexdigest() == (
+        "a9789e806f4c4471147ccdf35aa8d06e1a9b2d4559347850599a411e8f5742bb"
+    )
+    assert EdgeBacklogStore(tmp_path).current_taxonomy_ref().taxonomy_sha256 == hashlib.sha256(
+        original
+    ).hexdigest()
+
+
+@pytest.mark.production_taxonomy
+def test_valid_taxonomy_can_establish_a_unique_initial_commit_anchor(tmp_path: Path) -> None:
+    _write_layout(tmp_path)
+    _install_taxonomy_contracts(tmp_path)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "P2 Security Test"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "user.email", "p2-security@example.test"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "initial taxonomy"], check=True)
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"

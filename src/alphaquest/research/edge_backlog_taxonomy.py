@@ -306,19 +306,9 @@ def load_taxonomy_catalog_bytes(
     catalog: dict[int, EconomicEdgeTaxonomyV1] = {}
     for name in sorted(files):
         try:
-            raw_bytes = files[name]
-            raw = json.loads(raw_bytes)
-            taxonomy = EconomicEdgeTaxonomyV1.model_validate(raw)
-            if raw_bytes != canonical_taxonomy_file_bytes(taxonomy):
-                raise ValueError(
-                    "taxonomy file must be canonical compact UTF-8 JSON with sorted object keys "
-                    "and exactly one final LF"
-                )
+            taxonomy = validate_taxonomy_contract_file_bytes(name, files[name])
         except (TypeError, ValueError) as exc:
             raise ValueError(f"invalid economic-edge taxonomy {source_label}/{name}: {exc}") from exc
-        expected_name = TAXONOMY_FILENAME_PATTERN.format(version=taxonomy.taxonomy_version)
-        if name != expected_name:
-            raise ValueError(f"taxonomy filename/version mismatch: {source_label}/{name}")
         if taxonomy.taxonomy_version in catalog:
             raise ValueError(f"duplicate taxonomy version {taxonomy.taxonomy_version}")
         catalog[taxonomy.taxonomy_version] = taxonomy
@@ -332,6 +322,25 @@ def load_taxonomy_catalog_bytes(
             raise ValueError(f"taxonomy v{version} does not bind the exact v{version - 1} hash")
         _validate_additive_evolution(previous, current)
     return catalog
+
+
+def validate_taxonomy_contract_file_bytes(
+    name: str,
+    raw_bytes: bytes,
+) -> EconomicEdgeTaxonomyV1:
+    """Validate one version file without depending on mutable neighboring versions."""
+
+    raw = json.loads(raw_bytes)
+    taxonomy = EconomicEdgeTaxonomyV1.model_validate(raw)
+    if raw_bytes != canonical_taxonomy_file_bytes(taxonomy):
+        raise ValueError(
+            "taxonomy file must be canonical compact UTF-8 JSON with sorted object keys "
+            "and exactly one final LF"
+        )
+    expected_name = TAXONOMY_FILENAME_PATTERN.format(version=taxonomy.taxonomy_version)
+    if name != expected_name:
+        raise ValueError(f"taxonomy filename/version mismatch: {name}")
+    return taxonomy
 
 
 def resolve_taxonomy(
@@ -511,5 +520,6 @@ __all__ = [
     "resolve_taxonomy",
     "taxonomy_ref",
     "taxonomy_file_sha256",
+    "validate_taxonomy_contract_file_bytes",
     "validate_concepts",
 ]

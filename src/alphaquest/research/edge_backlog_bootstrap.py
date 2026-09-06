@@ -7,12 +7,13 @@ from dataclasses import dataclass
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
 import subprocess
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Callable, Literal, Mapping, Sequence
 
 from pydantic import Field, model_validator
 import yaml
@@ -104,7 +105,7 @@ class RepositoryFileAnchor:
     """The unique immutable Git introduction of one canonical file."""
 
     introduction_commit: str
-    preceding_commit: str
+    preceding_commit: str | None
 
 
 @dataclass(frozen=True)
@@ -521,8 +522,16 @@ def repository_file_anchor(
 def repository_files_anchors(
     project_root: str | Path,
     expected_files: Mapping[str, bytes],
+    *,
+    first_anchor_validator: Callable[[str, bytes], bool] | None = None,
+    require_preceding_commit: bool = True,
 ) -> dict[str, RepositoryFileAnchor | None]:
-    """Resolve immutable anchors for several canonical paths in one graph snapshot."""
+    """Resolve immutable anchors for several authoritative paths in one graph snapshot.
+
+    Canonical records anchor at their first path appearance. Published contracts
+    may supply a strict byte validator so pre-contract drafts do not become an
+    authority anchor; their first valid appearance does.
+    """
 
     root = Path(project_root).resolve()
     head = repository_head(root)
@@ -560,6 +569,7 @@ def repository_files_anchors(
         commit: _repository_tree_entries_below(root, commit, common_prefix)
         for commit in commits
     }
+    object_bytes: dict[str, bytes] = {}
 
     anchors: dict[str, RepositoryFileAnchor | None] = {}
     for relative in ordered_paths:
@@ -569,22 +579,51 @@ def repository_files_anchors(
             anchors[relative] = None
             continue
 
+        anchor_present = present
+        if first_anchor_validator is not None:
+            valid: set[str] = set()
+            for commit in present:
+                entry = entries[commit]
+                if entry is None or entry[0:2] != ("100644", "blob"):
+                    continue
+                object_id = entry[2]
+                data = object_bytes.get(object_id)
+                if data is None:
+                    data = _git(root, "cat-file", "blob", object_id)
+                    object_bytes[object_id] = data
+                try:
+                    accepted = first_anchor_validator(relative, data)
+                except (TypeError, ValueError):
+                    accepted = False
+                if accepted:
+                    valid.add(commit)
+            anchor_present = valid
+            if not anchor_present:
+                raise ValueError(
+                    f"authoritative path has no valid Git anchor: {relative}"
+                )
+
         # Process parents before children and remember whether the path existed
-        # at any reachable ancestor. A deletion never creates a fresh anchor.
+        # at any reachable authoritative ancestor. A deletion after an anchor
+        # never creates a fresh anchor.
         has_present_ancestor: dict[str, bool] = {}
         for commit in reversed(commits):
             has_present_ancestor[commit] = any(
-                parent in present or has_present_ancestor[parent]
+                parent in anchor_present or has_present_ancestor[parent]
                 for parent in parents[commit]
             )
-        introductions = [commit for commit in present if not has_present_ancestor[commit]]
+        introductions = [
+            commit for commit in anchor_present if not has_present_ancestor[commit]
+        ]
         if len(introductions) != 1:
             raise ValueError(
                 f"canonical record has an ambiguous Git introduction history: {relative}"
             )
         introduction = introductions[0]
         introduction_parents = parents[introduction]
-        if len(introduction_parents) != 1:
+        if len(introduction_parents) != 1 and (
+            require_preceding_commit or introduction_parents
+        ):
             raise ValueError(
                 f"canonical record introduction must have exactly one Git parent: {relative}"
             )
@@ -607,7 +646,7 @@ def repository_files_anchors(
                 )
         anchors[relative] = RepositoryFileAnchor(
             introduction_commit=introduction,
-            preceding_commit=introduction_parents[0],
+            preceding_commit=introduction_parents[0] if introduction_parents else None,
         )
     return anchors
 
@@ -1365,7 +1404,14 @@ def _campaign_record(
         raise ValueError(f"invalid historical campaign definition {path}: {exc}") from exc
     if not isinstance(payload, dict):
         raise ValueError(f"historical campaign definition must be a mapping: {path}")
-    result = payload.get("result_summary") if isinstance(payload.get("result_summary"), dict) else {}
+    if any(type(key) is not str for key in payload):
+        raise ValueError(f"historical campaign definition mapping keys must be strings: {path}")
+    result_value = payload.get("result_summary")
+    if result_value is not None and type(result_value) is not dict:
+        _strict_historical_json_value(result_value, path="$.result_summary")
+    result = result_value if type(result_value) is dict else {}
+    if any(type(key) is not str for key in result):
+        raise ValueError(f"historical campaign result_summary keys must be strings: {path}")
     fingerprint = payload.get("economic_edge_fingerprint")
     raw = {
         "source_kind": "CAMPAIGN_DEFINITION",
@@ -1373,31 +1419,41 @@ def _campaign_record(
         "source_sha256": hashlib.sha256(data).hexdigest(),
         "source_row_number": None,
         **_generation(path, root, layout),
-        "campaign_id": _optional(payload.get("campaign_id") or path.parent.name),
+        "campaign_id": _coalesce_optional(payload.get("campaign_id"), path.parent.name),
         "variant_id": None,
         "attempt_id": None,
-        "instrument": _optional(payload.get("instrument") or payload.get("symbol")),
+        "instrument": _coalesce_optional(payload.get("instrument"), payload.get("symbol")),
         "timeframe": _optional(payload.get("timeframe")),
         "raw_title": _optional(payload.get("title")),
-        "raw_edge": _optional(payload.get("edge") or payload.get("market_behavior")),
+        "raw_edge": _coalesce_optional(payload.get("edge"), payload.get("market_behavior")),
         "raw_hypothesis": _optional(payload.get("hypothesis")),
         "raw_edge_family": _optional(payload.get("edge_family")),
-        "raw_counterparty_transfer_rationale": _optional(
-            payload.get("counterparty_transfer_rationale") or payload.get("counterparty")
+        "raw_counterparty_transfer_rationale": _coalesce_optional(
+            payload.get("counterparty_transfer_rationale"), payload.get("counterparty")
         ),
-        "raw_information_availability": _optional(
-            payload.get("information_availability") or payload.get("information_availability_timeline")
+        "raw_information_availability": _coalesce_optional(
+            payload.get("information_availability"),
+            payload.get("information_availability_timeline"),
         ),
         "raw_expected_effect": _optional(payload.get("expected_effect")),
         "raw_config_path": None,
         "raw_report_path": None,
-        "legacy_fingerprint": _json_safe(fingerprint) if fingerprint is not None else None,
-        "raw_outcome": _optional(
-            result.get("verdict") or payload.get("verdict") or payload.get("decision") or payload.get("status")
+        "legacy_fingerprint": (
+            _legacy_fingerprint(fingerprint) if fingerprint is not None else None
         ),
-        "raw_scientific_verdict": _optional(result.get("verdict") or payload.get("verdict")),
-        "raw_disposition": _optional(payload.get("decision") or payload.get("status")),
-        "raw_failure_reason": _optional(result.get("failure_reason") or payload.get("failure_reason")),
+        "raw_outcome": _coalesce_optional(
+            result.get("verdict"),
+            payload.get("verdict"),
+            payload.get("decision"),
+            payload.get("status"),
+        ),
+        "raw_scientific_verdict": _coalesce_optional(
+            result.get("verdict"), payload.get("verdict")
+        ),
+        "raw_disposition": _coalesce_optional(payload.get("decision"), payload.get("status")),
+        "raw_failure_reason": _coalesce_optional(
+            result.get("failure_reason"), payload.get("failure_reason")
+        ),
     }
     return _seal_history(raw)
 
@@ -1469,7 +1525,7 @@ def _experiment_records(
         if not line.strip():
             continue
         try:
-            row = json.loads(line)
+            row = _strict_historical_json_value(json.loads(line), path=f"$[{row_number}]")
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid experiment registry JSON at {path}:{row_number}: {exc}") from exc
         if not isinstance(row, dict):
@@ -1514,7 +1570,10 @@ def _reset_record(
         data = path.read_bytes() if source_bytes is None else source_bytes
         if not data.strip():
             raise ValueError("reset manifest is blank")
-        payload = json.loads(data.decode("utf-8"))
+        payload = _strict_historical_json_value(
+            json.loads(data.decode("utf-8")),
+            path="$",
+        )
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         raise ValueError(f"invalid historical reset manifest {path}: {exc}") from exc
     if not isinstance(payload, dict):
@@ -2062,8 +2121,24 @@ def _assert_repository_git_authority(root: Path) -> None:
 def _optional(value: Any) -> str | None:
     if value is None:
         return None
+    if type(value) not in {str, bool, int, float}:
+        raise ValueError(
+            "historical projected scalar fields accept only strings, booleans, integers, or finite floats"
+        )
+    if type(value) is float and not math.isfinite(value):
+        raise ValueError("historical projected scalar fields require finite floats")
     normalized = str(value).strip()
     return normalized or None
+
+
+def _coalesce_optional(*values: Any) -> str | None:
+    """Validate aliases in order while preserving the legacy truthy-first choice."""
+
+    for value in values:
+        normalized = _optional(value)
+        if value:
+            return normalized
+    return None
 
 
 def _present(value: Any) -> bool:
@@ -2072,8 +2147,38 @@ def _present(value: Any) -> bool:
     return bool(str(value or "").strip())
 
 
-def _json_safe(value: Any) -> Any:
-    return json.loads(json.dumps(value, default=str, allow_nan=False))
+def _strict_historical_json_value(value: Any, *, path: str) -> Any:
+    """Copy one historical input into the closed deterministic JSON value domain."""
+
+    if value is None or type(value) in {str, bool, int}:
+        return value
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError(f"historical input contains a non-finite float at {path}")
+        return value
+    if type(value) is list:
+        return [
+            _strict_historical_json_value(item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    if type(value) is dict:
+        output: dict[str, Any] = {}
+        for key, item in value.items():
+            if type(key) is not str:
+                raise ValueError(f"historical input mapping key is not a string at {path}")
+            output[key] = _strict_historical_json_value(item, path=f"{path}.{key}")
+        return output
+    raise ValueError(
+        f"historical input contains unsupported {type(value).__name__} value at {path}"
+    )
+
+
+def _legacy_fingerprint(value: Any) -> dict[str, Any] | str:
+    if type(value) is str:
+        return value
+    if type(value) is not dict:
+        raise ValueError("legacy_fingerprint must be a string or JSON-domain dictionary")
+    return _strict_historical_json_value(value, path="$.economic_edge_fingerprint")
 
 
 __all__ = [

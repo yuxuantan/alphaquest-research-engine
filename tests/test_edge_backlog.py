@@ -8,6 +8,7 @@ import multiprocessing
 from pathlib import Path
 import re
 import subprocess
+from types import MappingProxyType
 
 import pytest
 from pydantic import ValidationError
@@ -561,8 +562,8 @@ def test_additive_taxonomy_versions_preserve_fingerprint_but_change_entry_revisi
     store = EdgeBacklogStore(tmp_path)
     monkeypatch.setattr(
         store,
-        "_read_taxonomy_catalog_snapshot",
-        lambda: load_taxonomy_catalog(taxonomy_root),
+        "_read_taxonomy_snapshot",
+        lambda: (MappingProxyType({}), load_taxonomy_catalog(taxonomy_root)),
     )
     observation = _capture(store, "obs.taxonomy-evolution")
     first = store.create_entry(
@@ -613,8 +614,8 @@ def test_taxonomy_redefinition_or_removal_fails_closed(
     store = EdgeBacklogStore(tmp_path)
     monkeypatch.setattr(
         store,
-        "_read_taxonomy_catalog_snapshot",
-        lambda: load_taxonomy_catalog(taxonomy_root),
+        "_read_taxonomy_snapshot",
+        lambda: (MappingProxyType({}), load_taxonomy_catalog(taxonomy_root)),
     )
     with pytest.raises(EdgeBacklogIntegrityError, match="redefines|removes"):
         store.validate()

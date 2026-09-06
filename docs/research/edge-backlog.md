@@ -380,6 +380,18 @@ manifest JSON each use one shared parser for generation and verification;
 paths outside those configured roots, source substitution, and fabricated
 self-hashed provenance fail closed.
 
+Campaign YAML cannot pass Python-specific values into the projection. Mapping
+keys are strings, projected scalars accept only strings, booleans, integers, or
+finite floats, and a structured legacy fingerprint is recursively limited to
+`null`, strings, booleans, integers, finite floats, lists, and string-keyed
+dictionaries. In projection-relevant positions, sets, tuples, YAML
+timestamps/dates, binary values, non-string keys, non-finite numbers, custom
+tags, collections in scalar fields, and any value needing arbitrary string
+conversion fail before cache replacement. This
+keeps identical source bytes independent of Python hash ordering while
+preserving the qualified projection of legacy metadata that is not consumed by
+the historical index.
+
 An existing configured target is replaceable only when its entire contents
 validate as the complete current projection, the exact canonical projection of
 a reachable historical commit, or the exact canonical prior-v1 projection of a
@@ -436,7 +448,14 @@ The published taxonomy is similarly pinned to
 repository-rooted directory descriptors. Its version files must be regular,
 non-executable, canonical JSON files with expected names. A missing, malformed,
 symlinked, special, or concurrently mixed taxonomy catalog cannot authorize a
-canonical write, fingerprint, match, or validation result.
+canonical write, fingerprint, match, or validation result. Each version's first
+appearance satisfying the final taxonomy-file contract is its unique Git
+publication anchor. That exact `100644` path and blob must remain unchanged in
+every reachable descendant, and HEAD, stage-0 index, and the descriptor-read
+snapshot must agree. Earlier unqualified draft bytes do not gain authority;
+after publication, modification, deletion, relocation, disappearance/re-add,
+or an ambiguous competing introduction fails closed even when the backlog is
+empty.
 Human decisions require a standard complete Git repository;
 source-empty non-Git storage remains supported only while it contains no human
 decision records.
