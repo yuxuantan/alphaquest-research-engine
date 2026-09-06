@@ -210,6 +210,17 @@ cannot reveal a wholesale rewrite that occurs before the
 provisional file receives its first Git anchor, so that pre-anchor interval is
 not cryptographically detectable.
 
+The same path-history anchor applies to every canonical observation revision,
+entry revision, decision, and link. Each path's first reachable appearance must
+be its exact canonical non-executable `100644` blob, and every reachable
+descendant must preserve the same path, type, mode, and bytes. The current HEAD,
+Git index, and descriptor-read working tree must also retain every anchored
+record. Deleting an object or an entire observation/entry collection therefore
+cannot hide committed history or allow a revision, decision, link, or global
+append sequence to be reused. New files that have never appeared in reachable
+history remain valid uncommitted record material; only decisions affect the
+store-level `PROVISIONAL` validation status.
+
 All authoritative P2 Git reads use one non-fetching wrapper with replacement
 objects disabled and a sanitized Git environment. Replacement refs, legacy
 grafts, alternate object databases, shallow history, partial-clone metadata,
@@ -420,6 +431,12 @@ opened with directory and no-follow semantics; every record is opened relative
 to its held directory descriptor and must be a regular, non-executable file.
 Symlinks, special files, unexpected topology, and substitution between
 enumeration and opening fail closed before any canonical state is returned.
+The published taxonomy is similarly pinned to
+`research/edge_backlog/contracts` and captured once per transaction through
+repository-rooted directory descriptors. Its version files must be regular,
+non-executable, canonical JSON files with expected names. A missing, malformed,
+symlinked, special, or concurrently mixed taxonomy catalog cannot authorize a
+canonical write, fingerprint, match, or validation result.
 Human decisions require a standard complete Git repository;
 source-empty non-Git storage remains supported only while it contains no human
 decision records.

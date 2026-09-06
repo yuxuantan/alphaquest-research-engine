@@ -19,6 +19,7 @@ from alphaquest.research.storage import StorageLayout, load_storage_layout
 
 
 CANONICAL_EDGE_BACKLOG_RELATIVE = "research/edge_backlog"
+CANONICAL_TAXONOMY_RELATIVE = f"{CANONICAL_EDGE_BACKLOG_RELATIVE}/contracts"
 _LAYOUT_RELATIVE = "config/storage_layout.yaml"
 _DEFAULT_CACHE_RELATIVE = "catalogs/edge_backlog_history.jsonl"
 _DEFAULT_RUNTIME_RELATIVE = "run-store/studio-runtime"
@@ -273,6 +274,64 @@ def read_canonical_backlog_tree(project_root: str | Path) -> CanonicalBacklogTre
     )
 
 
+def read_taxonomy_contract_files(project_root: str | Path) -> Mapping[str, bytes]:
+    """Read one immutable descriptor-bound snapshot of every taxonomy contract."""
+
+    root = Path(project_root).resolve()
+    descriptors: dict[str, int] = {}
+    metadata: dict[str, os.stat_result] = {}
+    files: dict[str, bytes] = {}
+    try:
+        with repository_directory_fd(
+            root,
+            CANONICAL_TAXONOMY_RELATIVE,
+            allow_missing=False,
+        ) as contracts_fd:
+            if contracts_fd is None:  # pragma: no cover - allow_missing=False
+                raise FileNotFoundError(CANONICAL_TAXONOMY_RELATIVE)
+            names = tuple(sorted(os.listdir(contracts_fd)))
+            if not names:
+                raise ValueError("canonical taxonomy contract directory is empty")
+            _run_test_directory_enumeration_hook(
+                "taxonomy-contracts",
+                CANONICAL_TAXONOMY_RELATIVE,
+            )
+            for name in names:
+                if re.fullmatch(r"economic-edge-taxonomy-v[1-9][0-9]*\.json", name) is None:
+                    raise ValueError(f"unexpected canonical taxonomy contract name: {name}")
+                descriptor = os.open(
+                    name,
+                    os.O_RDONLY | os.O_NONBLOCK | _NOFOLLOW | _CLOEXEC,
+                    dir_fd=contracts_fd,
+                )
+                current = os.fstat(descriptor)
+                if not stat.S_ISREG(current.st_mode):
+                    os.close(descriptor)
+                    raise ValueError(f"taxonomy contract is not a regular file: {name}")
+                if current.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+                    os.close(descriptor)
+                    raise ValueError(f"taxonomy contract must not be executable: {name}")
+                descriptors[name] = descriptor
+                metadata[name] = current
+
+            _require_stable_directory_entries(contracts_fd, names, metadata)
+            for name in names:
+                descriptor = descriptors[name]
+                before = os.fstat(descriptor)
+                with os.fdopen(descriptor, "rb", closefd=False) as handle:
+                    files[name] = handle.read()
+                after = os.fstat(descriptor)
+                if _file_identity(before) != _file_identity(after):
+                    raise ValueError(f"taxonomy contract changed while being read: {name}")
+            _require_stable_directory_entries(contracts_fd, names, metadata)
+    except OSError as exc:
+        raise ValueError(f"unsafe canonical taxonomy topology: {exc}") from exc
+    finally:
+        for descriptor in descriptors.values():
+            os.close(descriptor)
+    return MappingProxyType(files)
+
+
 @contextmanager
 def repository_directory_fd(
     project_root: str | Path,
@@ -406,6 +465,31 @@ def _open_directory_at(parent_fd: int, name: str) -> int:
     except Exception:
         os.close(descriptor)
         raise
+
+
+def _require_stable_directory_entries(
+    directory_fd: int,
+    expected_names: tuple[str, ...],
+    expected_metadata: Mapping[str, os.stat_result],
+) -> None:
+    if tuple(sorted(os.listdir(directory_fd))) != expected_names:
+        raise ValueError("taxonomy contract directory changed while being read")
+    for name in expected_names:
+        current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        expected = expected_metadata[name]
+        if _file_identity(current) != _file_identity(expected):
+            raise ValueError(f"taxonomy contract path changed while being read: {name}")
+
+
+def _file_identity(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
 
 
 def exclusive_write_repository_file(
@@ -564,6 +648,7 @@ def _run_test_directory_enumeration_hook(operation: str, relative_path: str) -> 
 
 __all__ = [
     "CANONICAL_EDGE_BACKLOG_RELATIVE",
+    "CANONICAL_TAXONOMY_RELATIVE",
     "CanonicalBacklogTree",
     "P2RepositoryPaths",
     "atomic_replace_repository_file",
@@ -571,6 +656,7 @@ __all__ = [
     "read_repository_file",
     "read_repository_file_optional",
     "read_canonical_backlog_tree",
+    "read_taxonomy_contract_files",
     "repository_directory_fd",
     "repository_file_lock",
     "unlink_repository_file",

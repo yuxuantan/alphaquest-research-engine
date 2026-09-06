@@ -555,9 +555,15 @@ def test_taxonomy_and_fingerprint_runtime_require_schema_discriminators(tmp_path
 
 def test_additive_taxonomy_versions_preserve_fingerprint_but_change_entry_revision_hash(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     taxonomy_root, v1_ref, v2_ref = _additive_taxonomy_catalog(tmp_path)
-    store = EdgeBacklogStore(tmp_path, taxonomy_root=taxonomy_root)
+    store = EdgeBacklogStore(tmp_path)
+    monkeypatch.setattr(
+        store,
+        "_read_taxonomy_catalog_snapshot",
+        lambda: load_taxonomy_catalog(taxonomy_root),
+    )
     observation = _capture(store, "obs.taxonomy-evolution")
     first = store.create_entry(
         _entry_payload("ignored", observation, taxonomy_ref=v1_ref),
@@ -586,7 +592,11 @@ def test_additive_taxonomy_versions_preserve_fingerprint_but_change_entry_revisi
 
 
 @pytest.mark.parametrize("mutation", ["redefine", "remove"])
-def test_taxonomy_redefinition_or_removal_fails_closed(tmp_path: Path, mutation: str) -> None:
+def test_taxonomy_redefinition_or_removal_fails_closed(
+    tmp_path: Path,
+    mutation: str,
+    monkeypatch,
+) -> None:
     taxonomy_root, _v1_ref, _v2_ref = _additive_taxonomy_catalog(tmp_path)
     path = taxonomy_root / "economic-edge-taxonomy-v2.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -600,7 +610,12 @@ def test_taxonomy_redefinition_or_removal_fails_closed(tmp_path: Path, mutation:
         canonical_taxonomy_file_bytes(EconomicEdgeTaxonomyV1.model_validate(payload))
     )
 
-    store = EdgeBacklogStore(tmp_path, taxonomy_root=taxonomy_root)
+    store = EdgeBacklogStore(tmp_path)
+    monkeypatch.setattr(
+        store,
+        "_read_taxonomy_catalog_snapshot",
+        lambda: load_taxonomy_catalog(taxonomy_root),
+    )
     with pytest.raises(EdgeBacklogIntegrityError, match="redefines|removes"):
         store.validate()
 

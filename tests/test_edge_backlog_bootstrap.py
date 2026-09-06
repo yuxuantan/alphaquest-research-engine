@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta
 import os
 from pathlib import Path
+import shutil
 import subprocess
 
 import pytest
@@ -266,6 +267,41 @@ def _commit_paths(root: Path, message: str, *paths: str) -> str:
 
 def _commit_backlog(root: Path, store: EdgeBacklogStore, message: str) -> str:
     return _commit_paths(root, message, store.root.relative_to(root).as_posix())
+
+
+def _revise_bootstrap_observation(store: EdgeBacklogStore):
+    return store.revise_observation(
+        "obs.bootstrap",
+        {
+            "statement": "Opening-auction pressure persisted in the later source revision.",
+            "statement_kind": "RESEARCHER_SUMMARY",
+            "evidence_refs": [
+                {
+                    "source_id": "source.bootstrap",
+                    "source_kind": "PAPER",
+                    "locator": "doi:10/bootstrap",
+                    "claim_locator": "result-two",
+                    "evidence_time": "2026-09-01T00:01:00Z",
+                    "integrity": "LOCATOR_ONLY",
+                    "content_sha256": None,
+                }
+            ],
+            "known_conflicts": [],
+        },
+        actor_id="codex",
+    )
+
+
+def _bootstrap_link(root: Path, store: EdgeBacklogStore, entry_id: str):
+    target = root / "research/hypotheses/hypothesis.bootstrap.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('{"schema":"fixture"}\n', encoding="utf-8")
+    return store.record_hypothesis_proposal_link(
+        entry_id,
+        hypothesis_id="hypothesis.bootstrap",
+        target_locator=target,
+        actor_id="engine",
+    )
 
 
 def _commit_then_delete_decision(
@@ -1559,7 +1595,22 @@ def test_removed_git_anchored_decision_fails_closed(tmp_path: Path) -> None:
 def test_deleted_decision_path_cannot_be_reanchored_with_resealed_later_decision(
     tmp_path: Path,
 ) -> None:
-    store, entry, decision_path, original = _commit_then_delete_decision(tmp_path)
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    first_snapshot = store.duplicate_snapshot(entry.entry_id)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=first_snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="Decision A is durably anchored before the adversarial deletion.",
+        reviewer_id="owner",
+    )
+    _commit_backlog(tmp_path, store, "anchor decision A")
+    decision_path = store.root / f"entries/{entry.entry_id}/decisions/000001.json"
+    original = decision_path.read_bytes()
     source = tmp_path / "research/campaigns/active/later_universe_edge/campaign.yaml"
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -1576,6 +1627,12 @@ def test_deleted_decision_path_cannot_be_reanchored_with_resealed_later_decision
     )
     snapshot = store.duplicate_snapshot(entry.entry_id)
     assert snapshot["historical_source_commit"] == later_commit
+    decision_path.unlink()
+    _commit_paths(
+        tmp_path,
+        "delete anchored decision A",
+        decision_path.relative_to(tmp_path).as_posix(),
+    )
     payload = json.loads(original)
     payload["historical_source_commit"] = snapshot["historical_source_commit"]
     payload["historical_universe_sha256"] = snapshot["historical_universe_sha256"]
@@ -1660,6 +1717,252 @@ def test_ambiguous_merge_decision_introduction_fails_closed(tmp_path: Path) -> N
 
     with pytest.raises(EdgeBacklogIntegrityError, match="ambiguous Git introduction"):
         EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.parametrize(
+    "removed_scope",
+    [
+        "observation-tail",
+        "entry-revision",
+        "entry-object",
+        "entries-collection",
+        "both-collections",
+        "link-tail",
+    ],
+)
+def test_every_committed_canonical_record_remains_visible_after_git_anchor(
+    tmp_path: Path,
+    removed_scope: str,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    observation_tail = _revise_bootstrap_observation(store)
+    link = _bootstrap_link(tmp_path, store, entry.entry_id)
+    _commit_backlog(tmp_path, store, "anchor all canonical record kinds")
+
+    targets = {
+        "observation-tail": store.root
+        / f"observations/obs.bootstrap/revisions/{observation_tail.revision:06d}.json",
+        "entry-revision": store.root / f"entries/{entry.entry_id}/revisions/000001.json",
+        "entry-object": store.root / f"entries/{entry.entry_id}",
+        "entries-collection": store.root / "entries",
+        "link-tail": store.root / f"entries/{entry.entry_id}/links/{link.sequence:06d}.json",
+    }
+    if removed_scope == "both-collections":
+        shutil.rmtree(store.root / "observations")
+        shutil.rmtree(store.root / "entries")
+    else:
+        target = targets[removed_scope]
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+    _commit_backlog(tmp_path, store, f"remove anchored {removed_scope}")
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="removed or relocated"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["resealed", "original-readd", "executable", "symlink", "relocation", "multi-commit-readd"],
+)
+def test_committed_observation_path_rejects_every_post_anchor_mutation(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    _canonical_entry(store)
+    _commit_backlog(tmp_path, store, "anchor canonical observation")
+    path = store.root / "observations/obs.bootstrap/revisions/000001.json"
+    relative = path.relative_to(tmp_path).as_posix()
+    original = path.read_bytes()
+
+    if mutation == "resealed":
+        payload = json.loads(original)
+        payload["statement"] = "A forged but internally resealed observation."
+        payload["record_sha256"] = record_sha256(payload)
+        path.write_bytes(canonical_json_bytes(payload) + b"\n")
+        _commit_paths(tmp_path, "reseal anchored observation", relative)
+    elif mutation in {"original-readd", "multi-commit-readd"}:
+        path.unlink()
+        _commit_paths(tmp_path, "delete anchored observation", relative)
+        if mutation == "multi-commit-readd":
+            marker = tmp_path / "notes/intervening.txt"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("intervening commit\n", encoding="utf-8")
+            _commit_paths(tmp_path, "intervening disappearance", marker.relative_to(tmp_path).as_posix())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(original)
+        _commit_paths(tmp_path, "re-add original observation", relative)
+    elif mutation == "executable":
+        path.chmod(0o755)
+        _commit_paths(tmp_path, "make anchored observation executable", relative)
+    elif mutation == "symlink":
+        external = tmp_path / "external-observation.json"
+        external.write_bytes(original)
+        path.unlink()
+        path.symlink_to(external)
+        _commit_paths(tmp_path, "replace anchored observation with symlink", relative)
+    elif mutation == "relocation":
+        relocated = path.with_name("000002.json")
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "mv", "--", relative, relocated.relative_to(tmp_path).as_posix()],
+            check=True,
+        )
+        _commit_paths(
+            tmp_path,
+            "relocate anchored observation",
+            str(path.parent.relative_to(tmp_path)),
+        )
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(mutation)
+
+    with pytest.raises(EdgeBacklogIntegrityError):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+def test_staged_canonical_removal_with_restored_worktree_bytes_fails_closed(
+    tmp_path: Path,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    _canonical_entry(store)
+    _commit_backlog(tmp_path, store, "anchor record before staged removal")
+    path = store.root / "observations/obs.bootstrap/revisions/000001.json"
+    relative = path.relative_to(tmp_path).as_posix()
+    original = path.read_bytes()
+    subprocess.run(["git", "-C", str(tmp_path), "rm", "--", relative], check=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(original)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="HEAD and the Git index"):
+        store.validate()
+
+
+def test_worktree_tail_removal_blocks_revision_sequence_reuse_atomically(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    _canonical_entry(store)
+    tail = _revise_bootstrap_observation(store)
+    _commit_backlog(tmp_path, store, "anchor observation revision chain")
+    tail_path = store.root / f"observations/obs.bootstrap/revisions/{tail.revision:06d}.json"
+    tail_path.unlink()
+    before = (store.root / "observations/obs.bootstrap/revisions/000001.json").read_bytes()
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="missing from the current canonical backlog"):
+        _revise_bootstrap_observation(store)
+
+    assert not tail_path.exists()
+    assert (store.root / "observations/obs.bootstrap/revisions/000001.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("record_kind", ["decision", "link"])
+def test_worktree_tail_removal_blocks_decision_link_and_append_sequence_reuse(
+    tmp_path: Path,
+    record_kind: str,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    snapshot = None
+    if record_kind == "decision":
+        snapshot = store.duplicate_snapshot(entry.entry_id)
+        record = store.record_human_decision(
+            entry.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="Anchor the decision before testing sequence reuse.",
+            reviewer_id="owner",
+        )
+        path = store.root / f"entries/{entry.entry_id}/decisions/{record.sequence:06d}.json"
+    else:
+        record = _bootstrap_link(tmp_path, store, entry.entry_id)
+        path = store.root / f"entries/{entry.entry_id}/links/{record.sequence:06d}.json"
+    _commit_backlog(tmp_path, store, f"anchor {record_kind} before removal")
+    path.unlink()
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="missing from the current canonical backlog"):
+        if record_kind == "decision":
+            assert snapshot is not None
+            store.record_human_decision(
+                entry.entry_id,
+                disposition="REVIEWED_CONTINUE",
+                duplicate_resolution="DISTINCT_EDGE",
+                candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+                reason_codes=["OTHER"],
+                rationale="A deleted decision sequence cannot be reused.",
+                reviewer_id="owner",
+            )
+        else:
+            _bootstrap_link(tmp_path, store, entry.entry_id)
+
+    assert not path.exists()
+    assert not path.with_name("000002.json").exists()
+
+
+def test_ambiguous_merge_observation_introduction_fails_closed(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    store = EdgeBacklogStore(tmp_path)
+    _canonical_entry(store)
+    subprocess.run(["git", "-C", str(tmp_path), "switch", "-q", "-c", "observation-a"], check=True)
+    _commit_backlog(tmp_path, store, "introduce observation on branch A")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "switch", "-q", "-c", "observation-b", base],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "checkout", "observation-a", "--", store.root.relative_to(tmp_path)],
+        check=True,
+    )
+    _commit_backlog(tmp_path, store, "introduce observation on branch B")
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.name=AlphaQuest Test",
+            "-c",
+            "user.email=alphaquest.test@example.invalid",
+            "merge",
+            "-q",
+            "--no-ff",
+            "-m",
+            "merge ambiguous observation introductions",
+            "observation-a",
+        ],
+        check=True,
+    )
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="ambiguous Git introduction"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+def test_new_uncommitted_observation_entry_and_link_remain_valid_provisional_records(
+    tmp_path: Path,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _canonical_entry(store)
+    _bootstrap_link(tmp_path, store, entry.entry_id)
+
+    result = store.validate()
+
+    assert result["status"] == "PASS"
+    assert result["observations"] == 1
+    assert result["entries"] == 1
+    assert result["links"] == 1
 
 
 def test_source_empty_git_repository_binds_canonical_empty_universe(tmp_path: Path) -> None:

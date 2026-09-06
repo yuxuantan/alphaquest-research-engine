@@ -30,15 +30,17 @@ still require every current or prior derived row to match an approved source,
 actual file-byte hash, source kind/row, and the shared source-specific
 extraction.
 
-In Git repositories a newly appended decision is provisional until its path
-and exact canonical blob are committed. Full validation then requires the
-unique first reachable commit where the path existed at all to contain the
-expected canonical `100644` blob, source-commit ancestry, an equal historical
-universe in the introduction parent, and the same path, mode, type, and blob in
-every reachable descendant. Delete/re-add history cannot establish a new
-anchor. Commit timestamps grant no ordering authority. A
-wholesale rewrite before that first Git anchor cannot be detected
-cryptographically.
+In Git repositories every observation revision, entry revision, decision, and
+link remains provisional record material until its exact canonical path and
+blob are committed. Full validation requires each path's unique first reachable
+appearance to contain its expected canonical `100644` blob and every reachable
+descendant to retain the same path, mode, type, and bytes. HEAD, the Git index,
+and the working tree must retain every anchored record, so whole-object or
+collection deletion cannot hide history or permit sequence reuse. Delete/re-add
+history cannot establish a new anchor. Decisions additionally require
+source-commit ancestry and an equal historical universe in the introduction
+parent. Commit timestamps grant no ordering authority. A wholesale rewrite
+before the first Git anchor cannot be detected cryptographically.
 
 Observation statements and conflicts are unrestricted, source-bound memory and
 grant no P1 or strategy authority. Canonical entry identity is instead limited
@@ -53,7 +55,12 @@ contain stable taxonomy ID and selected codes, not taxonomy version, taxonomy
 hash, labels, or aliases. Every entry revision still binds the exact taxonomy
 ID/version/SHA used to validate it.
 
-Published taxonomy files have one byte representation: compact UTF-8 JSON,
+Production taxonomy authority is pinned to
+`research/edge_backlog/contracts`. The directory and each version file are read
+once per backlog transaction through repository-rooted, no-follow descriptors;
+symlinks, special files, executable files, unexpected names, and concurrent
+mixed snapshots fail closed. Published taxonomy files have one byte
+representation: compact UTF-8 JSON,
 sorted object keys, declared array order, and exactly one final LF. Taxonomy
 references hash that complete file byte sequence; fingerprint hashes remain
 newline-free. Additive versions cannot introduce invariants triggered by old

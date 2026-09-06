@@ -107,6 +107,15 @@ class RepositoryFileAnchor:
     preceding_commit: str
 
 
+@dataclass(frozen=True)
+class RepositoryPathInventory:
+    """Exact HEAD, index, and reachable-history state below one lexical prefix."""
+
+    head_entries: Mapping[str, tuple[str, str, str]]
+    index_entries: Mapping[str, tuple[tuple[str, str, int], ...]]
+    historical_paths: frozenset[str]
+
+
 class HistoricalEdgeIndexPriorV1(StrictBacklogModel):
     """Exact validator for the only released pre-remediation derived row format."""
 
@@ -503,58 +512,104 @@ def repository_file_anchor(
     every reachable descendant must retain that exact path, mode, type, and blob.
     """
 
+    return repository_files_anchors(
+        project_root,
+        {relative_path: expected_bytes},
+    )[relative_path]
+
+
+def repository_files_anchors(
+    project_root: str | Path,
+    expected_files: Mapping[str, bytes],
+) -> dict[str, RepositoryFileAnchor | None]:
+    """Resolve immutable anchors for several canonical paths in one graph snapshot."""
+
     root = Path(project_root).resolve()
     head = repository_head(root)
+    ordered_paths = tuple(sorted(expected_files))
+    for relative in ordered_paths:
+        _validate_repository_relative_path(relative)
     if head is None:
-        return None
-    _validate_repository_relative_path(relative_path)
-    expected_object_id = _git_with_input(root, expected_bytes, "hash-object", "--stdin").decode(
-        "ascii"
-    ).strip()
-    commits = str(_git(root, "rev-list", "--topo-order", "HEAD", text=True)).splitlines()
-    entries: dict[str, tuple[str, str, str] | None] = {
-        commit: _repository_path_entry(root, commit, relative_path) for commit in commits
-    }
-    present = {commit for commit, entry in entries.items() if entry is not None}
-    if not present:
-        return None
+        return {relative: None for relative in ordered_paths}
+    if not ordered_paths:
+        return {}
 
-    parents = {
-        commit: tuple(
-            str(_git(root, "show", "-s", "--format=%P", commit, text=True)).strip().split()
+    expected_entries = {
+        relative: (
+            "100644",
+            "blob",
+            _git_with_input(root, expected_files[relative], "hash-object", "--stdin")
+            .decode("ascii")
+            .strip(),
         )
+        for relative in ordered_paths
+    }
+    graph_rows = str(
+        _git(root, "rev-list", "--parents", "--topo-order", "HEAD", text=True)
+    ).splitlines()
+    commits: list[str] = []
+    parents: dict[str, tuple[str, ...]] = {}
+    for row in graph_rows:
+        values = row.split()
+        if not values:
+            continue
+        commits.append(values[0])
+        parents[values[0]] = tuple(values[1:])
+    common_prefix = _common_repository_prefix(ordered_paths)
+    trees = {
+        commit: _repository_tree_entries_below(root, commit, common_prefix)
         for commit in commits
     }
-    # Process parents before children and remember whether the path existed at
-    # any reachable ancestor. This is deliberately path-history based: a
-    # deletion does not let a later re-add become a fresh introduction merely
-    # because its immediate parent lacks the path.
-    has_present_ancestor: dict[str, bool] = {}
-    for commit in reversed(commits):
-        has_present_ancestor[commit] = any(
-            parent in present or has_present_ancestor[parent]
-            for parent in parents[commit]
-        )
-    introductions = [commit for commit in present if not has_present_ancestor[commit]]
-    if len(introductions) != 1:
-        raise ValueError("canonical decision has an ambiguous Git introduction history")
-    introduction = introductions[0]
-    introduction_parents = parents[introduction]
-    if len(introduction_parents) != 1:
-        raise ValueError("canonical decision introduction must have exactly one Git parent")
-    expected_entry = ("100644", "blob", expected_object_id)
-    if entries[introduction] != expected_entry:
-        raise ValueError(
-            "canonical decision path's first Git appearance did not contain the expected 100644 blob"
-        )
 
-    for commit, entry in entries.items():
-        if _repository_commit_is_ancestor(root, introduction, commit) and entry != expected_entry:
-            raise ValueError("committed canonical decision was changed or removed after introduction")
-    return RepositoryFileAnchor(
-        introduction_commit=introduction,
-        preceding_commit=introduction_parents[0],
-    )
+    anchors: dict[str, RepositoryFileAnchor | None] = {}
+    for relative in ordered_paths:
+        entries = {commit: trees[commit].get(relative) for commit in commits}
+        present = {commit for commit, entry in entries.items() if entry is not None}
+        if not present:
+            anchors[relative] = None
+            continue
+
+        # Process parents before children and remember whether the path existed
+        # at any reachable ancestor. A deletion never creates a fresh anchor.
+        has_present_ancestor: dict[str, bool] = {}
+        for commit in reversed(commits):
+            has_present_ancestor[commit] = any(
+                parent in present or has_present_ancestor[parent]
+                for parent in parents[commit]
+            )
+        introductions = [commit for commit in present if not has_present_ancestor[commit]]
+        if len(introductions) != 1:
+            raise ValueError(
+                f"canonical record has an ambiguous Git introduction history: {relative}"
+            )
+        introduction = introductions[0]
+        introduction_parents = parents[introduction]
+        if len(introduction_parents) != 1:
+            raise ValueError(
+                f"canonical record introduction must have exactly one Git parent: {relative}"
+            )
+        expected_entry = expected_entries[relative]
+        if entries[introduction] != expected_entry:
+            raise ValueError(
+                "canonical record path's first Git appearance did not contain the expected "
+                f"100644 blob: {relative}"
+            )
+
+        introduction_reachable: dict[str, bool] = {}
+        for commit in reversed(commits):
+            introduction_reachable[commit] = commit == introduction or any(
+                introduction_reachable[parent] for parent in parents[commit]
+            )
+        for commit, entry in entries.items():
+            if introduction_reachable[commit] and entry != expected_entry:
+                raise ValueError(
+                    f"committed canonical record was changed or removed after introduction: {relative}"
+                )
+        anchors[relative] = RepositoryFileAnchor(
+            introduction_commit=introduction,
+            preceding_commit=introduction_parents[0],
+        )
+    return anchors
 
 
 def repository_path_inventory(
@@ -563,21 +618,37 @@ def repository_path_inventory(
 ) -> tuple[set[str], set[str]]:
     """Return current and ever-reachable lexical paths below one repository prefix."""
 
+    inventory = repository_path_inventory_details(project_root, prefix)
+    return set(inventory.head_entries), set(inventory.historical_paths)
+
+
+def repository_path_inventory_details(
+    project_root: str | Path,
+    prefix: str,
+) -> RepositoryPathInventory:
+    """Return exact committed, indexed, and ever-reachable state below a prefix."""
+
     root = Path(project_root).resolve()
     head = repository_head(root)
     if head is None:
-        return set(), set()
+        return RepositoryPathInventory({}, {}, frozenset())
     normalized = prefix.rstrip("/")
     _validate_repository_relative_path(normalized)
     path_prefix = normalized + "/"
     current = {
-        path
-        for path in _repository_tree_entries(root, head)
+        path: entry
+        for path, entry in _repository_tree_entries(root, head).items()
+        if path.startswith(path_prefix)
+    }
+    indexed = {
+        path: entries
+        for path, entries in _repository_index_entries(root).items()
         if path.startswith(path_prefix)
     }
     history = _git(
         root,
         "log",
+        "--full-history",
         "--format=",
         "--name-only",
         "-z",
@@ -596,7 +667,7 @@ def repository_path_inventory(
         _validate_repository_relative_path(path)
         if path.startswith(path_prefix):
             ever.add(path)
-    return current, ever
+    return RepositoryPathInventory(current, indexed, frozenset(ever))
 
 
 def historical_source_layout_for_repository_commit(
@@ -654,9 +725,24 @@ def _repository_tree_entries(
     root: Path,
     commit: str,
 ) -> dict[str, tuple[str, str, str]]:
+    return _parse_repository_tree_entries(
+        _git(root, "ls-tree", "-r", "-z", "--full-tree", commit)
+    )
+
+
+def _repository_tree_entries_below(
+    root: Path,
+    commit: str,
+    prefix: str,
+) -> dict[str, tuple[str, str, str]]:
+    return _parse_repository_tree_entries(
+        _git(root, "ls-tree", "-r", "-z", "--full-tree", commit, "--", prefix)
+    )
+
+
+def _parse_repository_tree_entries(data: bytes) -> dict[str, tuple[str, str, str]]:
     entries: dict[str, tuple[str, str, str]] = {}
-    tree = _git(root, "ls-tree", "-r", "-z", "--full-tree", commit)
-    for raw in tree.split(b"\0"):
+    for raw in data.split(b"\0"):
         if not raw:
             continue
         metadata, raw_path = raw.split(b"\t", 1)
@@ -670,6 +756,18 @@ def _repository_tree_entries(
             raise ValueError(f"repository tree repeats path: {relative}")
         entries[relative] = (mode, object_type, object_id)
     return entries
+
+
+def _common_repository_prefix(paths: Sequence[str]) -> str:
+    split_paths = [PurePosixPath(path).parts for path in paths]
+    common: list[str] = []
+    for components in zip(*split_paths, strict=False):
+        if len(set(components)) != 1:
+            break
+        common.append(components[0])
+    if not common:
+        raise ValueError("canonical records do not share a repository prefix")
+    return PurePosixPath(*common).as_posix()
 
 
 def _repository_path_entry(
@@ -1984,6 +2082,7 @@ __all__ = [
     "HistoricalRepositoryState",
     "HistoricalSourceFileState",
     "RepositoryFileAnchor",
+    "RepositoryPathInventory",
     "build_historical_edge_index",
     "historical_records_for_repository_commit",
     "historical_records_for_current_review",
@@ -1994,8 +2093,10 @@ __all__ = [
     "historical_source_inventory",
     "repository_commit_is_ancestor",
     "repository_file_anchor",
+    "repository_files_anchors",
     "repository_head",
     "repository_path_inventory",
+    "repository_path_inventory_details",
     "validate_historical_edge_index",
     "validate_historical_index_records",
     "validate_historical_record_provenance",

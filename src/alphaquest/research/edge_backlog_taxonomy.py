@@ -281,16 +281,32 @@ def taxonomy_ref(value: EconomicEdgeTaxonomyV1) -> TaxonomyRefV1:
 
 
 def load_taxonomy_catalog(directory: str | Path) -> dict[int, EconomicEdgeTaxonomyV1]:
-    """Load every published version and prove its additive immutable lineage."""
+    """Load taxonomy files for authoring/tests; production uses descriptor snapshots."""
 
     root = Path(directory)
     paths = sorted(root.glob("economic-edge-taxonomy-v*.json"))
     if not paths:
         raise ValueError(f"no economic-edge taxonomy contracts found under {root}")
+    try:
+        files = {path.name: path.read_bytes() for path in paths}
+    except OSError as exc:
+        raise ValueError(f"could not read economic-edge taxonomy contracts under {root}: {exc}") from exc
+    return load_taxonomy_catalog_bytes(files, source_label=str(root))
+
+
+def load_taxonomy_catalog_bytes(
+    files: Mapping[str, bytes],
+    *,
+    source_label: str = "canonical taxonomy snapshot",
+) -> dict[int, EconomicEdgeTaxonomyV1]:
+    """Validate one already-captured immutable taxonomy-file snapshot."""
+
+    if not files:
+        raise ValueError(f"no economic-edge taxonomy contracts found in {source_label}")
     catalog: dict[int, EconomicEdgeTaxonomyV1] = {}
-    for path in paths:
+    for name in sorted(files):
         try:
-            raw_bytes = path.read_bytes()
+            raw_bytes = files[name]
             raw = json.loads(raw_bytes)
             taxonomy = EconomicEdgeTaxonomyV1.model_validate(raw)
             if raw_bytes != canonical_taxonomy_file_bytes(taxonomy):
@@ -298,11 +314,11 @@ def load_taxonomy_catalog(directory: str | Path) -> dict[int, EconomicEdgeTaxono
                     "taxonomy file must be canonical compact UTF-8 JSON with sorted object keys "
                     "and exactly one final LF"
                 )
-        except (OSError, ValueError) as exc:
-            raise ValueError(f"invalid economic-edge taxonomy {path}: {exc}") from exc
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid economic-edge taxonomy {source_label}/{name}: {exc}") from exc
         expected_name = TAXONOMY_FILENAME_PATTERN.format(version=taxonomy.taxonomy_version)
-        if path.name != expected_name:
-            raise ValueError(f"taxonomy filename/version mismatch: {path}")
+        if name != expected_name:
+            raise ValueError(f"taxonomy filename/version mismatch: {source_label}/{name}")
         if taxonomy.taxonomy_version in catalog:
             raise ValueError(f"duplicate taxonomy version {taxonomy.taxonomy_version}")
         catalog[taxonomy.taxonomy_version] = taxonomy
@@ -457,7 +473,13 @@ def bundled_taxonomy_root() -> Path:
 
 
 def bundled_taxonomy_ref(version: int = 1) -> TaxonomyRefV1:
-    catalog = load_taxonomy_catalog(bundled_taxonomy_root())
+    from alphaquest.research.edge_backlog_io import read_taxonomy_contract_files
+
+    repository_root = Path(__file__).resolve().parents[3]
+    catalog = load_taxonomy_catalog_bytes(
+        read_taxonomy_contract_files(repository_root),
+        source_label="research/edge_backlog/contracts",
+    )
     try:
         taxonomy = catalog[version]
     except KeyError as exc:
@@ -484,6 +506,7 @@ __all__ = [
     "fingerprint_document",
     "fingerprint_sha256",
     "load_taxonomy_catalog",
+    "load_taxonomy_catalog_bytes",
     "matcher_dimensions",
     "resolve_taxonomy",
     "taxonomy_ref",

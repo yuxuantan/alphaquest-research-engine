@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import multiprocessing
 import os
 from pathlib import Path
@@ -20,12 +21,20 @@ from alphaquest.research.edge_backlog_io import (
     repository_file_lock,
 )
 from alphaquest.research.edge_backlog_taxonomy import bundled_taxonomy_ref
+from alphaquest.research.edge_backlog_taxonomy import bundled_taxonomy_root
 
 
 def _write_layout(root: Path) -> None:
     target = root / "config/storage_layout.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes((Path(__file__).parents[1] / "config/storage_layout.yaml").read_bytes())
+
+
+def _install_taxonomy_contracts(root: Path) -> Path:
+    target = root / "research/edge_backlog/contracts"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(bundled_taxonomy_root(), target)
+    return target
 
 
 def _initialize_git(root: Path) -> None:
@@ -361,7 +370,7 @@ def test_canonical_reads_reject_external_symlinks_at_every_topology_boundary(
             external.unlink()
 
 
-@pytest.mark.parametrize("node_kind", ["fifo", "socket", "executable"])
+@pytest.mark.parametrize("node_kind", ["fifo", "executable"])
 def test_canonical_record_reader_rejects_nonregular_and_executable_nodes(
     tmp_path: Path,
     node_kind: str,
@@ -372,28 +381,43 @@ def test_canonical_record_reader_rejects_nonregular_and_executable_nodes(
     record = store.root / "observations/obs.security/revisions/000001.json"
     held = record.with_name("000001.held")
     record.rename(held)
-    unix_socket: socket.socket | None = None
-    socket_alias: Path | None = None
     try:
         if node_kind == "fifo":
             os.mkfifo(record)
-        elif node_kind == "socket":
-            unix_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            socket_alias = Path("/tmp") / f"aq-p2-socket-{os.getpid()}-{tmp_path.name[-8:]}"
-            socket_alias.symlink_to(record.parent, target_is_directory=True)
-            unix_socket.bind(str(socket_alias / record.name))
         else:
             shutil.copy2(held, record)
             record.chmod(0o755)
         with pytest.raises(EdgeBacklogIntegrityError, match="filesystem topology"):
             store.validate()
     finally:
-        if unix_socket is not None:
-            unix_socket.close()
         record.unlink(missing_ok=True)
-        if socket_alias is not None:
-            socket_alias.unlink(missing_ok=True)
         held.rename(record)
+
+
+def test_canonical_record_reader_rejects_socket_descriptor(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from alphaquest.research import edge_backlog_io
+
+    _write_layout(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    _capture_entry(store)
+    original_open = edge_backlog_io.os.open
+    left, right = socket.socketpair()
+
+    def substitute_socket(path, flags, *args, **kwargs):
+        if path == "000001.json":
+            return os.dup(left.fileno())
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(edge_backlog_io.os, "open", substitute_socket)
+    try:
+        with pytest.raises(EdgeBacklogIntegrityError, match="not a regular file"):
+            store.validate()
+    finally:
+        left.close()
+        right.close()
 
 
 def _canonical_read_race_worker(
@@ -475,3 +499,245 @@ def test_descriptor_snapshot_rejects_symlink_substitution_between_enumeration_an
             shutil.rmtree(external)
         else:
             external.unlink()
+
+
+@pytest.mark.production_taxonomy
+def test_production_taxonomy_root_is_fixed_and_rejects_external_override(tmp_path: Path) -> None:
+    _write_layout(tmp_path)
+    _install_taxonomy_contracts(tmp_path)
+    external = tmp_path / "external-taxonomy"
+    shutil.copytree(bundled_taxonomy_root(), external)
+
+    with pytest.raises(TypeError, match="taxonomy_root"):
+        EdgeBacklogStore(tmp_path, taxonomy_root=external)  # type: ignore[call-arg]
+
+    assert EdgeBacklogStore(tmp_path).current_taxonomy_ref() == bundled_taxonomy_ref()
+
+
+@pytest.mark.production_taxonomy
+def test_external_taxonomy_directory_symlink_fails_before_any_canonical_write(
+    tmp_path: Path,
+) -> None:
+    _write_layout(tmp_path)
+    contracts = _install_taxonomy_contracts(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = _capture_entry(store)
+    first_revision = store.root / f"entries/{entry.entry_id}/revisions/000001.json"
+    first_revision_bytes = first_revision.read_bytes()
+    managed = {
+        "schema",
+        "record_id",
+        "append_sequence",
+        "revision",
+        "previous_revision_sha256",
+        "recorded_at",
+        "actor",
+        "record_sha256",
+    }
+    revision_payload = entry.model_dump(mode="json", by_alias=True, exclude=managed)
+    external = tmp_path / "external-taxonomy"
+    shutil.copytree(contracts, external)
+    external_before = _path_bytes(external)
+    shutil.rmtree(contracts)
+    contracts.symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy"):
+        store.revise_entry(
+            entry.entry_id,
+            revision_payload,
+            actor_id="codex",
+        )
+
+    assert _path_bytes(external) == external_before
+    assert first_revision.read_bytes() == first_revision_bytes
+    assert not first_revision.with_name("000002.json").exists()
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "file-symlink",
+        "device-symlink",
+        "fifo",
+        "executable",
+        "unexpected",
+        "missing",
+        "malformed",
+        "noncanonical",
+    ],
+)
+def test_production_taxonomy_reader_fails_closed_for_unsafe_or_invalid_contracts(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    _write_layout(tmp_path)
+    contracts = _install_taxonomy_contracts(tmp_path)
+    contract = contracts / "economic-edge-taxonomy-v1.json"
+    original = contract.read_bytes()
+    held = tmp_path / "held-economic-edge-taxonomy-v1.json"
+    if defect in {"file-symlink", "device-symlink", "fifo"}:
+        contract.rename(held)
+    if defect == "file-symlink":
+        external = tmp_path / "external-taxonomy.json"
+        external.write_bytes(original)
+        contract.symlink_to(external)
+    elif defect == "device-symlink":
+        contract.symlink_to("/dev/null")
+    elif defect == "fifo":
+        os.mkfifo(contract)
+    elif defect == "executable":
+        contract.chmod(0o755)
+    elif defect == "unexpected":
+        (contracts / "notes.txt").write_text("not a taxonomy contract\n", encoding="utf-8")
+    elif defect == "missing":
+        contract.unlink()
+    elif defect == "malformed":
+        contract.write_bytes(b'{"schema":')
+    elif defect == "noncanonical":
+        contract.write_text(json.dumps(json.loads(original), indent=2) + "\n", encoding="utf-8")
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(defect)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize("node_kind", ["socket", "device"])
+def test_production_taxonomy_reader_rejects_special_file_descriptor(
+    tmp_path: Path,
+    monkeypatch,
+    node_kind: str,
+) -> None:
+    from alphaquest.research import edge_backlog_io
+
+    _write_layout(tmp_path)
+    _install_taxonomy_contracts(tmp_path)
+    original_open = edge_backlog_io.os.open
+    left: socket.socket | None = None
+    right: socket.socket | None = None
+    device_fd = -1
+    if node_kind == "socket":
+        left, right = socket.socketpair()
+        injected_fd = left.fileno()
+    else:
+        device_fd = original_open("/dev/null", os.O_RDONLY)
+        injected_fd = device_fd
+
+    def substitute_special_file(path, flags, *args, **kwargs):
+        if path == "economic-edge-taxonomy-v1.json":
+            return os.dup(injected_fd)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(edge_backlog_io.os, "open", substitute_special_file)
+    try:
+        with pytest.raises(EdgeBacklogIntegrityError, match="not a regular file"):
+            EdgeBacklogStore(tmp_path).validate()
+    finally:
+        if left is not None:
+            left.close()
+        if right is not None:
+            right.close()
+        if device_fd >= 0:
+            os.close(device_fd)
+
+
+def _taxonomy_read_race_worker(root: str, barrier, results) -> None:
+    from alphaquest.research import edge_backlog_io
+
+    triggered = False
+
+    def pause(operation: str, relative: str) -> None:
+        nonlocal triggered
+        if not triggered and operation == "taxonomy-contracts":
+            triggered = True
+            barrier.wait(timeout=20)
+            barrier.wait(timeout=20)
+
+    edge_backlog_io._TEST_AFTER_DIRECTORY_ENUMERATION = pause
+    try:
+        reference = EdgeBacklogStore(root).current_taxonomy_ref()
+        results.put(("PASS", reference.taxonomy_sha256))
+    except Exception as exc:  # pragma: no cover - asserted in parent
+        results.put(("ERROR", f"{type(exc).__name__}: {exc}"))
+    finally:
+        edge_backlog_io._TEST_AFTER_DIRECTORY_ENUMERATION = None
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize("substitution", ["directory", "file"])
+def test_taxonomy_substitution_cannot_mix_catalog_or_read_external_content(
+    tmp_path: Path,
+    substitution: str,
+) -> None:
+    _write_layout(tmp_path)
+    contracts = _install_taxonomy_contracts(tmp_path)
+    contract = contracts / "economic-edge-taxonomy-v1.json"
+    external = tmp_path / f"external-taxonomy-{substitution}"
+    if substitution == "directory":
+        external.mkdir()
+        (external / contract.name).write_bytes(b'{"external":"malformed"}\n')
+        target = contracts
+    else:
+        external.write_bytes(b'{"external":"malformed"}\n')
+        target = contract
+    external_before = _path_bytes(external)
+    context = multiprocessing.get_context("fork")
+    barrier = context.Barrier(2)
+    results = context.Queue()
+    process = context.Process(
+        target=_taxonomy_read_race_worker,
+        args=(str(tmp_path), barrier, results),
+    )
+    process.start()
+    barrier.wait(timeout=20)
+    held = target.with_name(target.name + ".held")
+    target.rename(held)
+    target.symlink_to(external, target_is_directory=substitution == "directory")
+    barrier.wait(timeout=20)
+    process.join(timeout=20)
+    try:
+        assert process.exitcode == 0
+        status, detail = results.get(timeout=5)
+        if substitution == "directory":
+            assert (status, detail) == (
+                "PASS",
+                "a9789e806f4c4471147ccdf35aa8d06e1a9b2d4559347850599a411e8f5742bb",
+            )
+        else:
+            assert status == "ERROR"
+            assert "EdgeBacklogIntegrityError" in detail
+        assert _path_bytes(external) == external_before
+    finally:
+        target.unlink()
+        held.rename(target)
+        if external.is_dir():
+            shutil.rmtree(external)
+        else:
+            external.unlink()
+
+
+@pytest.mark.production_taxonomy
+def test_transaction_reuses_one_taxonomy_snapshot_after_first_dependent_operation(
+    tmp_path: Path,
+) -> None:
+    _write_layout(tmp_path)
+    contracts = _install_taxonomy_contracts(tmp_path)
+    contract = contracts / "economic-edge-taxonomy-v1.json"
+    original = contract.read_bytes()
+    store = EdgeBacklogStore(tmp_path)
+
+    try:
+        with store._transaction(exclusive=False):
+            first = store.current_taxonomy_ref()
+            contract.write_bytes(b'{"external":"malformed"}\n')
+            second = store.current_taxonomy_ref()
+            assert second == first
+            assert store._taxonomy_catalog() is store._taxonomy_catalog()
+    finally:
+        contract.write_bytes(original)
+
+    assert store.current_taxonomy_ref().taxonomy_sha256 == (
+        "a9789e806f4c4471147ccdf35aa8d06e1a9b2d4559347850599a411e8f5742bb"
+    )
