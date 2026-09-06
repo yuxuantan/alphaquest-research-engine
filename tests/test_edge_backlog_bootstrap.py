@@ -28,6 +28,7 @@ from alphaquest.research.edge_backlog_bootstrap import (
     HistoricalEdgeIndexRecordV1,
     build_historical_edge_index,
     historical_records_for_repository_commit,
+    historical_source_inventory,
     validate_historical_edge_index,
 )
 
@@ -2696,9 +2697,40 @@ def test_historical_yaml_accepts_nested_json_domain_fingerprint_without_coercion
     }
 
 
-def test_existing_repository_projection_is_hash_seed_independent() -> None:
+def test_existing_repository_projection_is_hash_seed_independent(tmp_path: Path) -> None:
+    # Actions intentionally checks this repository out shallowly, which the P2
+    # authority layer must reject.  Materialize the exact approved-source
+    # working-tree projection in a new one-commit repository so this test
+    # exercises hash-seed determinism without weakening the shallow-history
+    # fail-closed rule.
+    repository = tmp_path / "complete-repository"
+    for source in (
+        _PROJECT_ROOT / "config/storage_layout.yaml",
+        *historical_source_inventory(_PROJECT_ROOT),
+    ):
+        destination = repository / source.relative_to(_PROJECT_ROOT)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    subprocess.run(["git", "-C", str(repository), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository),
+            "-c",
+            "user.name=AlphaQuest Test",
+            "-c",
+            "user.email=alphaquest.test@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "complete approved historical source snapshot",
+        ],
+        check=True,
+    )
     commit = subprocess.run(
-        ["git", "-C", str(_PROJECT_ROOT), "rev-parse", "HEAD"],
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
         check=True,
         capture_output=True,
         text=True,
@@ -2718,7 +2750,7 @@ def test_existing_repository_projection_is_hash_seed_independent() -> None:
         environment["PYTHONPATH"] = str(_PROJECT_ROOT / "src")
         environment["PYTHONHASHSEED"] = seed
         completed = subprocess.run(
-            [sys.executable, "-c", code, str(_PROJECT_ROOT), commit],
+            [sys.executable, "-c", code, str(repository), commit],
             check=True,
             capture_output=True,
             text=True,
