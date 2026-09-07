@@ -1366,6 +1366,7 @@ class EdgeBacklogStore:
             ("published taxonomy contract", _CANONICAL_TAXONOMY_PATH, taxonomy_files),
         )
         expected_by_class: dict[str, dict[str, bytes]] = {}
+        historical_by_class: dict[str, set[str]] = {}
         for label, pattern, working_files in path_classes:
             head_files = {
                 path: entry
@@ -1375,7 +1376,7 @@ class EdgeBacklogStore:
             historical_files = {
                 path for path in inventory.historical_paths if pattern.fullmatch(path)
             }
-            if historical_files - set(head_files):
+            if label == "canonical record" and historical_files - set(head_files):
                 raise EdgeBacklogIntegrityError(
                     f"a reachable committed {label} was removed or relocated after its first Git anchor"
                 )
@@ -1397,6 +1398,7 @@ class EdgeBacklogStore:
                     )
                 expected_files[relative] = working_files[relative]
             expected_by_class[label] = expected_files
+            historical_by_class[label] = historical_files
         try:
             anchors = repository_files_anchors(
                 self.project_root,
@@ -1413,13 +1415,21 @@ class EdgeBacklogStore:
                         )
                     ),
                     require_preceding_commit=False,
+                    historical_candidates=historical_by_class[
+                        "published taxonomy contract"
+                    ],
                 )
             )
         except (OSError, ValueError) as exc:
             raise EdgeBacklogIntegrityError(
                 f"Git-anchored decision, canonical record, or taxonomy contract is invalid: {exc}"
             ) from exc
-        for relative, anchor in anchors.items():
+        expected_anchors = {
+            *expected_by_class["canonical record"],
+            *expected_by_class["published taxonomy contract"],
+        }
+        for relative in expected_anchors:
+            anchor = anchors[relative]
             if anchor is None:  # pragma: no cover - path was read from HEAD
                 raise EdgeBacklogIntegrityError(
                     f"committed canonical record or taxonomy contract has no Git anchor: {relative}"

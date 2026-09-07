@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 import shutil
 import stat
 import subprocess
-from typing import Any, Callable, Literal, Mapping, Sequence
+from typing import Any, Callable, Iterable, Literal, Mapping, Sequence
 
 from pydantic import Field, model_validator
 import yaml
@@ -525,6 +525,7 @@ def repository_files_anchors(
     *,
     first_anchor_validator: Callable[[str, bytes], bool] | None = None,
     require_preceding_commit: bool = True,
+    historical_candidates: Iterable[str] = (),
 ) -> dict[str, RepositoryFileAnchor | None]:
     """Resolve immutable anchors for several authoritative paths in one graph snapshot.
 
@@ -535,7 +536,7 @@ def repository_files_anchors(
 
     root = Path(project_root).resolve()
     head = repository_head(root)
-    ordered_paths = tuple(sorted(expected_files))
+    ordered_paths = tuple(sorted(set(expected_files) | set(historical_candidates)))
     for relative in ordered_paths:
         _validate_repository_relative_path(relative)
     if head is None:
@@ -551,7 +552,7 @@ def repository_files_anchors(
             .decode("ascii")
             .strip(),
         )
-        for relative in ordered_paths
+        for relative in sorted(expected_files)
     }
     graph_rows = str(
         _git(root, "rev-list", "--parents", "--topo-order", "HEAD", text=True)
@@ -599,9 +600,12 @@ def repository_files_anchors(
                     valid.add(commit)
             anchor_present = valid
             if not anchor_present:
-                raise ValueError(
-                    f"authoritative path has no valid Git anchor: {relative}"
-                )
+                if relative in expected_files:
+                    raise ValueError(
+                        f"authoritative path has no valid Git anchor: {relative}"
+                    )
+                anchors[relative] = None
+                continue
 
         # Process parents before children and remember whether the path existed
         # at any reachable authoritative ancestor. A deletion after an anchor
@@ -626,6 +630,10 @@ def repository_files_anchors(
         ):
             raise ValueError(
                 f"canonical record introduction must have exactly one Git parent: {relative}"
+            )
+        if relative not in expected_entries:
+            raise ValueError(
+                f"published authoritative path was removed after its first valid Git anchor: {relative}"
             )
         expected_entry = expected_entries[relative]
         if entries[introduction] != expected_entry:

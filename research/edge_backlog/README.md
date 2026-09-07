@@ -69,7 +69,8 @@ valid final taxonomy contract in Git, that exact path, `100644` blob, and bytes
 must survive every reachable descendant. HEAD, index, and the descriptor-read
 transaction snapshot must agree; deletion, rename, redefinition, or re-addition
 cannot establish a fresh publication anchor. A valid additive version may be
-authored provisionally, but becomes immutable at its first valid Git anchor.
+authored provisionally, and invalid draft-only history may be abandoned, but a
+version becomes immutable at its first valid Git anchor.
 
 The backlog is not a strategy list and cannot create a scientific verdict,
 admit a hypothesis, create an edge family or campaign, promote a candidate, or

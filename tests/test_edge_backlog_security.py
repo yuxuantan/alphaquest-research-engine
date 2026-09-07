@@ -85,6 +85,17 @@ def _changed_taxonomy_bytes(original: bytes, field: str = "definition") -> bytes
     return canonical_taxonomy_file_bytes(EconomicEdgeTaxonomyV1.model_validate(payload))
 
 
+def _additive_taxonomy_v2_bytes(v1: bytes) -> bytes:
+    payload = json.loads(v1)
+    payload["taxonomy_version"] = 2
+    payload["previous_taxonomy_sha256"] = hashlib.sha256(v1).hexdigest()
+    concept = payload["code_sets"]["market_behavior"][0]
+    concept["recall_aliases"] = sorted(
+        {*concept["recall_aliases"], "additive v2 recall alias"}
+    )
+    return canonical_taxonomy_file_bytes(EconomicEdgeTaxonomyV1.model_validate(payload))
+
+
 def _capture_entry(store: EdgeBacklogStore):
     observation = store.capture_observation(
         {
@@ -928,15 +939,120 @@ def test_ambiguous_taxonomy_introductions_fail_closed(tmp_path: Path) -> None:
 
 
 @pytest.mark.production_taxonomy
+def test_abandoned_invalid_taxonomy_draft_does_not_become_published(
+    tmp_path: Path,
+) -> None:
+    contract, _original = _anchored_taxonomy_fixture(tmp_path)
+    v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+    relative = v2.relative_to(tmp_path).as_posix()
+    v2.write_bytes(b'{"invalid":"unpublished draft"}\n')
+    _commit_paths(tmp_path, "commit invalid taxonomy v2 draft", relative)
+    v2.unlink()
+    _commit_paths(tmp_path, "abandon invalid taxonomy v2 draft", relative)
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+
+
+@pytest.mark.production_taxonomy
+def test_invalid_taxonomy_draft_can_precede_first_valid_publication(
+    tmp_path: Path,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+    relative = v2.relative_to(tmp_path).as_posix()
+    v2.write_bytes(b'{"invalid":"unpublished draft"}\n')
+    _commit_paths(tmp_path, "commit invalid taxonomy v2 draft", relative)
+    v2.write_bytes(_additive_taxonomy_v2_bytes(original))
+    _commit_paths(tmp_path, "publish valid additive taxonomy v2", relative)
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize("mutation", ["delete", "rewrite", "original-readd"])
+def test_taxonomy_becomes_immutable_after_invalid_draft_then_valid_publication(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+    relative = v2.relative_to(tmp_path).as_posix()
+    v2.write_bytes(b'{"invalid":"unpublished draft"}\n')
+    _commit_paths(tmp_path, "commit invalid taxonomy v2 draft", relative)
+    published = _additive_taxonomy_v2_bytes(original)
+    v2.write_bytes(published)
+    _commit_paths(tmp_path, "publish valid additive taxonomy v2", relative)
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+
+    if mutation == "delete":
+        v2.unlink()
+        _commit_paths(tmp_path, "delete published taxonomy v2", relative)
+    elif mutation == "rewrite":
+        v2.write_bytes(_changed_taxonomy_bytes(published, "label"))
+        _commit_paths(tmp_path, "rewrite published taxonomy v2", relative)
+    elif mutation == "original-readd":
+        v2.unlink()
+        _commit_paths(tmp_path, "delete published taxonomy v2", relative)
+        v2.write_bytes(published)
+        _commit_paths(tmp_path, "re-add original published taxonomy v2", relative)
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(mutation)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
+def test_competing_invalid_taxonomy_drafts_do_not_create_publication_ambiguity(
+    tmp_path: Path,
+) -> None:
+    contract, _original = _anchored_taxonomy_fixture(tmp_path)
+    v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+    relative = v2.relative_to(tmp_path).as_posix()
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    subprocess.run(["git", "-C", str(tmp_path), "switch", "-q", "-c", "invalid-a"], check=True)
+    v2.write_bytes(b'{"invalid":"branch a draft"}\n')
+    _commit_paths(tmp_path, "commit invalid branch A draft", relative)
+    v2.unlink()
+    _commit_paths(tmp_path, "abandon invalid branch A draft", relative)
+
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "switch", "-q", "-c", "invalid-b", base],
+        check=True,
+    )
+    v2.write_bytes(b'{"invalid":"branch b draft"}\n')
+    _commit_paths(tmp_path, "commit invalid branch B draft", relative)
+    v2.unlink()
+    _commit_paths(tmp_path, "abandon invalid branch B draft", relative)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "merge",
+            "-q",
+            "--no-ff",
+            "-m",
+            "merge abandoned invalid drafts",
+            "invalid-a",
+        ],
+        check=True,
+    )
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+
+
+@pytest.mark.production_taxonomy
 def test_valid_additive_taxonomy_version_is_allowed_then_git_anchored(tmp_path: Path) -> None:
     contract, original = _anchored_taxonomy_fixture(tmp_path)
-    payload = json.loads(original)
-    payload["taxonomy_version"] = 2
-    payload["previous_taxonomy_sha256"] = hashlib.sha256(original).hexdigest()
-    concept = payload["code_sets"]["market_behavior"][0]
-    concept["recall_aliases"] = sorted({*concept["recall_aliases"], "additive v2 recall alias"})
     v2 = contract.with_name("economic-edge-taxonomy-v2.json")
-    v2.write_bytes(canonical_taxonomy_file_bytes(EconomicEdgeTaxonomyV1.model_validate(payload)))
+    v2.write_bytes(_additive_taxonomy_v2_bytes(original))
 
     assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
     _commit_paths(tmp_path, "publish additive taxonomy v2", str(v2.relative_to(tmp_path)))

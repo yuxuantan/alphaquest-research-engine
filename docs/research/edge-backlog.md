@@ -453,7 +453,10 @@ appearance satisfying the final taxonomy-file contract is its unique Git
 publication anchor. That exact `100644` path and blob must remain unchanged in
 every reachable descendant, and HEAD, stage-0 index, and the descriptor-read
 snapshot must agree. Earlier unqualified draft bytes do not gain authority;
-after publication, modification, deletion, relocation, disappearance/re-add,
+an invalid-only version path may be abandoned before publication without
+becoming permanently required. If that path later contains a valid additive
+contract, that first valid appearance establishes its publication anchor.
+After publication, modification, deletion, relocation, disappearance/re-add,
 or an ambiguous competing introduction fails closed even when the backlog is
 empty.
 Human decisions require a standard complete Git repository;
