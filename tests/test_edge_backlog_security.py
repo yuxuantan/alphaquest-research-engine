@@ -26,6 +26,8 @@ from alphaquest.research.edge_backlog_taxonomy import (
     bundled_taxonomy_ref,
     bundled_taxonomy_root,
     canonical_taxonomy_file_bytes,
+    load_taxonomy_catalog_bytes,
+    validate_taxonomy_contract_file_bytes,
 )
 
 
@@ -85,15 +87,112 @@ def _changed_taxonomy_bytes(original: bytes, field: str = "definition") -> bytes
     return canonical_taxonomy_file_bytes(EconomicEdgeTaxonomyV1.model_validate(payload))
 
 
-def _additive_taxonomy_v2_bytes(v1: bytes) -> bytes:
-    payload = json.loads(v1)
-    payload["taxonomy_version"] = 2
-    payload["previous_taxonomy_sha256"] = hashlib.sha256(v1).hexdigest()
+def _additive_taxonomy_bytes(previous: bytes, version: int) -> bytes:
+    payload = json.loads(previous)
+    payload["taxonomy_version"] = version
+    payload["previous_taxonomy_sha256"] = hashlib.sha256(previous).hexdigest()
     concept = payload["code_sets"]["market_behavior"][0]
     concept["recall_aliases"] = sorted(
-        {*concept["recall_aliases"], "additive v2 recall alias"}
+        {*concept["recall_aliases"], f"additive v{version} recall alias"}
     )
     return canonical_taxonomy_file_bytes(EconomicEdgeTaxonomyV1.model_validate(payload))
+
+
+def _additive_taxonomy_v2_bytes(v1: bytes) -> bytes:
+    return _additive_taxonomy_bytes(v1, 2)
+
+
+def _canonical_json_document_bytes(payload: dict) -> bytes:
+    return (
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
+
+
+_CATALOG_SEMANTIC_DRAFT_DEFECTS = (
+    "redefined-concept",
+    "removed-concept",
+    "removed-recall-alias",
+    "incorrect-predecessor",
+    "non-contiguous-version",
+    "changed-protected-dimension",
+    "changed-fingerprint-rule",
+    "changed-hash-generation-rule",
+    "changed-existing-invariant",
+    "removed-existing-invariant",
+    "new-invariant-existing-trigger",
+    "removed-prohibited-category",
+)
+
+
+def _catalog_semantic_draft(v1: bytes, defect: str) -> tuple[str, bytes, bool]:
+    payload = json.loads(_additive_taxonomy_v2_bytes(v1))
+    standalone_valid = True
+    if defect == "redefined-concept":
+        payload["code_sets"]["market_behavior"][0]["definition"] += " Redefined in a draft."
+    elif defect == "removed-concept":
+        payload["code_sets"]["market_behavior"] = [
+            item
+            for item in payload["code_sets"]["market_behavior"]
+            if item["code"] != "INVENTORY_IMBALANCE"
+        ]
+    elif defect == "removed-recall-alias":
+        existing_alias = json.loads(v1)["code_sets"]["market_behavior"][0][
+            "recall_aliases"
+        ][0]
+        payload["code_sets"]["market_behavior"][0]["recall_aliases"].remove(
+            existing_alias
+        )
+    elif defect == "incorrect-predecessor":
+        payload["previous_taxonomy_sha256"] = "0" * 64
+    elif defect == "non-contiguous-version":
+        payload["taxonomy_version"] = 3
+    elif defect == "changed-protected-dimension":
+        payload["dimensions"][0], payload["dimensions"][1] = (
+            payload["dimensions"][1],
+            payload["dimensions"][0],
+        )
+        standalone_valid = False
+    elif defect == "changed-fingerprint-rule":
+        payload["fingerprint_schema"] = "alphaquest.edge-backlog-fingerprint/v999"
+        standalone_valid = False
+    elif defect == "changed-hash-generation-rule":
+        payload["taxonomy_hash_generation"]["digest"] = "SHA512"
+        standalone_valid = False
+    elif defect == "changed-existing-invariant":
+        payload["cross_field_invariants"][0]["definition"] += " Changed in a draft."
+    elif defect == "removed-existing-invariant":
+        payload["cross_field_invariants"].pop(0)
+    elif defect == "new-invariant-existing-trigger":
+        payload["cross_field_invariants"].append(
+            {
+                "definition": "An invalid draft restriction on an existing concept.",
+                "if_any": [
+                    {
+                        "codes": ["INVENTORY_IMBALANCE"],
+                        "field": "market_behavior_code",
+                    }
+                ],
+                "invariant_id": "preexisting_inventory_requires_nq",
+                "require_all": [{"codes": ["NQ"], "field": "instrument_ids"}],
+                "require_any": [],
+            }
+        )
+        payload["cross_field_invariants"].sort(key=lambda item: item["invariant_id"])
+    elif defect == "removed-prohibited-category":
+        payload["prohibited_concept_categories"].pop(0)
+        standalone_valid = False
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(defect)
+    version = payload["taxonomy_version"]
+    name = f"economic-edge-taxonomy-v{version}.json"
+    return name, _canonical_json_document_bytes(payload), standalone_valid
 
 
 def _capture_entry(store: EdgeBacklogStore):
@@ -954,6 +1053,62 @@ def test_abandoned_invalid_taxonomy_draft_does_not_become_published(
 
 
 @pytest.mark.production_taxonomy
+@pytest.mark.parametrize("defect", _CATALOG_SEMANTIC_DRAFT_DEFECTS)
+def test_catalog_semantic_invalid_draft_can_be_abandoned_without_publication(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    name, draft, standalone_valid = _catalog_semantic_draft(original, defect)
+    draft_path = contract.with_name(name)
+    relative = draft_path.relative_to(tmp_path).as_posix()
+    if standalone_valid:
+        validate_taxonomy_contract_file_bytes(name, draft)
+    with pytest.raises(ValueError):
+        load_taxonomy_catalog_bytes(
+            {contract.name: original, name: draft},
+            source_label=f"{defect} test catalog",
+        )
+
+    draft_path.write_bytes(draft)
+    _commit_paths(tmp_path, f"commit {defect} taxonomy draft", relative)
+    draft_path.unlink()
+    _commit_paths(tmp_path, f"abandon {defect} taxonomy draft", relative)
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize("defect", _CATALOG_SEMANTIC_DRAFT_DEFECTS)
+def test_catalog_semantic_invalid_draft_can_precede_valid_publication(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    name, draft, _standalone_valid = _catalog_semantic_draft(original, defect)
+    draft_path = contract.with_name(name)
+    relative = draft_path.relative_to(tmp_path).as_posix()
+    draft_path.write_bytes(draft)
+    _commit_paths(tmp_path, f"commit {defect} taxonomy draft", relative)
+
+    valid_v2 = _additive_taxonomy_v2_bytes(original)
+    if name == "economic-edge-taxonomy-v3.json":
+        v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+        v2.write_bytes(valid_v2)
+        published = _additive_taxonomy_bytes(valid_v2, 3)
+    else:
+        published = valid_v2
+    draft_path.write_bytes(published)
+    _commit_paths(
+        tmp_path,
+        f"publish valid taxonomy after {defect} draft",
+        str(contract.parent.relative_to(tmp_path)),
+    )
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+
+
+@pytest.mark.production_taxonomy
 def test_invalid_taxonomy_draft_can_precede_first_valid_publication(
     tmp_path: Path,
 ) -> None:
@@ -969,7 +1124,19 @@ def test_invalid_taxonomy_draft_can_precede_first_valid_publication(
 
 
 @pytest.mark.production_taxonomy
-@pytest.mark.parametrize("mutation", ["delete", "rewrite", "original-readd"])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "delete",
+        "rewrite",
+        "relocate",
+        "executable",
+        "symlink",
+        "object-type",
+        "multi-commit-readd",
+        "original-readd",
+    ],
+)
 def test_taxonomy_becomes_immutable_after_invalid_draft_then_valid_publication(
     tmp_path: Path,
     mutation: str,
@@ -977,7 +1144,11 @@ def test_taxonomy_becomes_immutable_after_invalid_draft_then_valid_publication(
     contract, original = _anchored_taxonomy_fixture(tmp_path)
     v2 = contract.with_name("economic-edge-taxonomy-v2.json")
     relative = v2.relative_to(tmp_path).as_posix()
-    v2.write_bytes(b'{"invalid":"unpublished draft"}\n')
+    _name, semantic_draft, _standalone_valid = _catalog_semantic_draft(
+        original,
+        "incorrect-predecessor",
+    )
+    v2.write_bytes(semantic_draft)
     _commit_paths(tmp_path, "commit invalid taxonomy v2 draft", relative)
     published = _additive_taxonomy_v2_bytes(original)
     v2.write_bytes(published)
@@ -990,9 +1161,35 @@ def test_taxonomy_becomes_immutable_after_invalid_draft_then_valid_publication(
     elif mutation == "rewrite":
         v2.write_bytes(_changed_taxonomy_bytes(published, "label"))
         _commit_paths(tmp_path, "rewrite published taxonomy v2", relative)
-    elif mutation == "original-readd":
+    elif mutation == "relocate":
+        v2.rename(v2.with_name("economic-edge-taxonomy-v3.json"))
+        _commit_paths(tmp_path, "relocate published taxonomy v2", str(v2.parent.relative_to(tmp_path)))
+    elif mutation == "executable":
+        v2.chmod(0o755)
+        _commit_paths(tmp_path, "make published taxonomy v2 executable", relative)
+    elif mutation == "symlink":
+        external = tmp_path / "external-published-taxonomy-v2.json"
+        external.write_bytes(published)
+        v2.unlink()
+        v2.symlink_to(external)
+        _commit_paths(tmp_path, "replace published taxonomy v2 with symlink", relative)
+    elif mutation == "object-type":
+        v2.unlink()
+        v2.mkdir()
+        (v2 / "payload").write_bytes(published)
+        _commit_paths(tmp_path, "replace published taxonomy v2 with tree", relative)
+    elif mutation in {"multi-commit-readd", "original-readd"}:
         v2.unlink()
         _commit_paths(tmp_path, "delete published taxonomy v2", relative)
+        if mutation == "multi-commit-readd":
+            marker = tmp_path / "notes/published-v2-remained-absent.txt"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("published v2 remained absent\n", encoding="utf-8")
+            _commit_paths(
+                tmp_path,
+                "retain published taxonomy v2 disappearance",
+                str(marker.relative_to(tmp_path)),
+            )
         v2.write_bytes(published)
         _commit_paths(tmp_path, "re-add original published taxonomy v2", relative)
     else:  # pragma: no cover - parametrization guard
@@ -1006,7 +1203,7 @@ def test_taxonomy_becomes_immutable_after_invalid_draft_then_valid_publication(
 def test_competing_invalid_taxonomy_drafts_do_not_create_publication_ambiguity(
     tmp_path: Path,
 ) -> None:
-    contract, _original = _anchored_taxonomy_fixture(tmp_path)
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
     v2 = contract.with_name("economic-edge-taxonomy-v2.json")
     relative = v2.relative_to(tmp_path).as_posix()
     base = subprocess.run(
@@ -1017,7 +1214,12 @@ def test_competing_invalid_taxonomy_drafts_do_not_create_publication_ambiguity(
     ).stdout.strip()
 
     subprocess.run(["git", "-C", str(tmp_path), "switch", "-q", "-c", "invalid-a"], check=True)
-    v2.write_bytes(b'{"invalid":"branch a draft"}\n')
+    _name, branch_a_draft, standalone_valid = _catalog_semantic_draft(
+        original,
+        "incorrect-predecessor",
+    )
+    assert standalone_valid is True
+    v2.write_bytes(branch_a_draft)
     _commit_paths(tmp_path, "commit invalid branch A draft", relative)
     v2.unlink()
     _commit_paths(tmp_path, "abandon invalid branch A draft", relative)
@@ -1026,7 +1228,12 @@ def test_competing_invalid_taxonomy_drafts_do_not_create_publication_ambiguity(
         ["git", "-C", str(tmp_path), "switch", "-q", "-c", "invalid-b", base],
         check=True,
     )
-    v2.write_bytes(b'{"invalid":"branch b draft"}\n')
+    _name, branch_b_draft, standalone_valid = _catalog_semantic_draft(
+        original,
+        "redefined-concept",
+    )
+    assert standalone_valid is True
+    v2.write_bytes(branch_b_draft)
     _commit_paths(tmp_path, "commit invalid branch B draft", relative)
     v2.unlink()
     _commit_paths(tmp_path, "abandon invalid branch B draft", relative)
@@ -1044,6 +1251,133 @@ def test_competing_invalid_taxonomy_drafts_do_not_create_publication_ambiguity(
         ],
         check=True,
     )
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    v2.write_bytes(_additive_taxonomy_v2_bytes(original))
+    _commit_paths(tmp_path, "publish valid taxonomy after competing drafts", relative)
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+
+
+@pytest.mark.production_taxonomy
+def test_competing_valid_additive_taxonomy_publications_are_ambiguous(
+    tmp_path: Path,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+    relative = v2.relative_to(tmp_path).as_posix()
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    valid_v2 = _additive_taxonomy_v2_bytes(original)
+
+    subprocess.run(["git", "-C", str(tmp_path), "switch", "-q", "-c", "valid-a"], check=True)
+    v2.write_bytes(valid_v2)
+    _commit_paths(tmp_path, "publish valid taxonomy v2 on branch A", relative)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "switch", "-q", "-c", "valid-b", base],
+        check=True,
+    )
+    v2.write_bytes(valid_v2)
+    _commit_paths(tmp_path, "publish valid taxonomy v2 on branch B", relative)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "merge",
+            "-q",
+            "--no-ff",
+            "-m",
+            "merge competing valid taxonomy publications",
+            "valid-a",
+        ],
+        check=True,
+    )
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="ambiguous Git introduction"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
+def test_valid_taxonomy_publication_ignores_competing_semantic_invalid_draft(
+    tmp_path: Path,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+    relative = v2.relative_to(tmp_path).as_posix()
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    valid_v2 = _additive_taxonomy_v2_bytes(original)
+
+    subprocess.run(["git", "-C", str(tmp_path), "switch", "-q", "-c", "valid"], check=True)
+    v2.write_bytes(valid_v2)
+    _commit_paths(tmp_path, "publish valid taxonomy v2", relative)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "switch", "-q", "-c", "invalid", base],
+        check=True,
+    )
+    _name, invalid_v2, standalone_valid = _catalog_semantic_draft(
+        original,
+        "incorrect-predecessor",
+    )
+    assert standalone_valid is True
+    v2.write_bytes(invalid_v2)
+    _commit_paths(tmp_path, "commit semantic-invalid taxonomy v2 draft", relative)
+    merge = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "merge",
+            "-q",
+            "--no-ff",
+            "--no-commit",
+            "valid",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert merge.returncode != 0
+    v2.write_bytes(valid_v2)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "--", relative], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "resolve with valid publication"],
+        check=True,
+    )
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    v2.write_bytes(_changed_taxonomy_bytes(valid_v2, "label"))
+    _commit_paths(tmp_path, "rewrite the valid taxonomy publication", relative)
+    with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize("draft_kind", ["malformed", "noncanonical"])
+def test_byte_invalid_taxonomy_history_remains_unpublished(
+    tmp_path: Path,
+    draft_kind: str,
+) -> None:
+    contract, original = _anchored_taxonomy_fixture(tmp_path)
+    v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+    relative = v2.relative_to(tmp_path).as_posix()
+    if draft_kind == "malformed":
+        draft = b'{"schema":'
+    else:
+        draft = (json.dumps(json.loads(_additive_taxonomy_v2_bytes(original)), indent=2) + "\n").encode(
+            "utf-8"
+        )
+    v2.write_bytes(draft)
+    _commit_paths(tmp_path, f"commit {draft_kind} taxonomy draft", relative)
+    v2.unlink()
+    _commit_paths(tmp_path, f"abandon {draft_kind} taxonomy draft", relative)
 
     assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
 

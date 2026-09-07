@@ -37,7 +37,6 @@ from alphaquest.research.edge_backlog_taxonomy import (
     matcher_dimensions,
     resolve_taxonomy,
     taxonomy_ref as build_taxonomy_ref,
-    validate_taxonomy_contract_file_bytes,
     validate_concepts,
 )
 from alphaquest.research.edge_backlog_io import (
@@ -1399,6 +1398,28 @@ class EdgeBacklogStore:
                 expected_files[relative] = working_files[relative]
             expected_by_class[label] = expected_files
             historical_by_class[label] = historical_files
+
+        def valid_historical_taxonomy_catalog(
+            commit: str,
+            snapshot: Mapping[str, tuple[str, str, bytes | None]],
+        ) -> bool:
+            prefix = CANONICAL_TAXONOMY_RELATIVE + "/"
+            files: dict[str, bytes] = {}
+            for relative, (mode, object_type, data) in snapshot.items():
+                if not relative.startswith(prefix):
+                    raise ValueError("historical taxonomy snapshot escaped its fixed directory")
+                name = relative[len(prefix) :]
+                if "/" in name or mode != "100644" or object_type != "blob" or data is None:
+                    raise ValueError(
+                        "historical taxonomy snapshot must contain only direct 100644 blobs"
+                    )
+                files[name] = data
+            load_taxonomy_catalog_bytes(
+                files,
+                source_label=f"Git taxonomy snapshot at {commit}",
+            )
+            return True
+
         try:
             anchors = repository_files_anchors(
                 self.project_root,
@@ -1408,12 +1429,8 @@ class EdgeBacklogStore:
                 repository_files_anchors(
                     self.project_root,
                     expected_by_class["published taxonomy contract"],
-                    first_anchor_validator=lambda relative, data: bool(
-                        validate_taxonomy_contract_file_bytes(
-                            relative.rsplit("/", 1)[-1],
-                            data,
-                        )
-                    ),
+                    first_anchor_snapshot_validator=valid_historical_taxonomy_catalog,
+                    snapshot_prefix=CANONICAL_TAXONOMY_RELATIVE,
                     require_preceding_commit=False,
                     historical_candidates=historical_by_class[
                         "published taxonomy contract"

@@ -524,17 +524,26 @@ def repository_files_anchors(
     expected_files: Mapping[str, bytes],
     *,
     first_anchor_validator: Callable[[str, bytes], bool] | None = None,
+    first_anchor_snapshot_validator: Callable[
+        [str, Mapping[str, tuple[str, str, bytes | None]]], bool
+    ]
+    | None = None,
+    snapshot_prefix: str | None = None,
     require_preceding_commit: bool = True,
     historical_candidates: Iterable[str] = (),
 ) -> dict[str, RepositoryFileAnchor | None]:
     """Resolve immutable anchors for several authoritative paths in one graph snapshot.
 
     Canonical records anchor at their first path appearance. Published contracts
-    may supply a strict byte validator so pre-contract drafts do not become an
-    authority anchor; their first valid appearance does.
+    may qualify an anchor using either one candidate blob or a complete committed
+    directory snapshot, so invalid draft history does not gain authority.
     """
 
     root = Path(project_root).resolve()
+    if first_anchor_validator is not None and first_anchor_snapshot_validator is not None:
+        raise ValueError("repository anchor validation must select one validation scope")
+    if first_anchor_snapshot_validator is not None and snapshot_prefix is None:
+        raise ValueError("repository snapshot anchor validation requires an explicit prefix")
     head = repository_head(root)
     ordered_paths = tuple(sorted(set(expected_files) | set(historical_candidates)))
     for relative in ordered_paths:
@@ -565,12 +574,19 @@ def repository_files_anchors(
             continue
         commits.append(values[0])
         parents[values[0]] = tuple(values[1:])
-    common_prefix = _common_repository_prefix(ordered_paths)
+    common_prefix = snapshot_prefix or _common_repository_prefix(ordered_paths)
+    _validate_repository_relative_path(common_prefix)
+    if any(
+        relative != common_prefix and not relative.startswith(common_prefix.rstrip("/") + "/")
+        for relative in ordered_paths
+    ):
+        raise ValueError("repository anchor path is outside its snapshot prefix")
     trees = {
         commit: _repository_tree_entries_below(root, commit, common_prefix)
         for commit in commits
     }
     object_bytes: dict[str, bytes] = {}
+    snapshot_validity: dict[str, bool] = {}
 
     anchors: dict[str, RepositoryFileAnchor | None] = {}
     for relative in ordered_paths:
@@ -581,21 +597,39 @@ def repository_files_anchors(
             continue
 
         anchor_present = present
-        if first_anchor_validator is not None:
+        if first_anchor_validator is not None or first_anchor_snapshot_validator is not None:
             valid: set[str] = set()
             for commit in present:
                 entry = entries[commit]
                 if entry is None or entry[0:2] != ("100644", "blob"):
                     continue
-                object_id = entry[2]
-                data = object_bytes.get(object_id)
-                if data is None:
-                    data = _git(root, "cat-file", "blob", object_id)
-                    object_bytes[object_id] = data
-                try:
-                    accepted = first_anchor_validator(relative, data)
-                except (TypeError, ValueError):
-                    accepted = False
+                if first_anchor_snapshot_validator is not None:
+                    accepted = snapshot_validity.get(commit)
+                    if accepted is None:
+                        snapshot: dict[str, tuple[str, str, bytes | None]] = {}
+                        for path, (mode, object_type, object_id) in trees[commit].items():
+                            data: bytes | None = None
+                            if object_type == "blob":
+                                data = object_bytes.get(object_id)
+                                if data is None:
+                                    data = _git(root, "cat-file", "blob", object_id)
+                                    object_bytes[object_id] = data
+                            snapshot[path] = (mode, object_type, data)
+                        try:
+                            accepted = first_anchor_snapshot_validator(commit, snapshot)
+                        except (TypeError, ValueError):
+                            accepted = False
+                        snapshot_validity[commit] = accepted
+                else:
+                    object_id = entry[2]
+                    data = object_bytes.get(object_id)
+                    if data is None:
+                        data = _git(root, "cat-file", "blob", object_id)
+                        object_bytes[object_id] = data
+                    try:
+                        accepted = first_anchor_validator(relative, data)
+                    except (TypeError, ValueError):
+                        accepted = False
                 if accepted:
                     valid.add(commit)
             anchor_present = valid

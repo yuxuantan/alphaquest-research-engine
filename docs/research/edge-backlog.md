@@ -448,14 +448,20 @@ The published taxonomy is similarly pinned to
 repository-rooted directory descriptors. Its version files must be regular,
 non-executable, canonical JSON files with expected names. A missing, malformed,
 symlinked, special, or concurrently mixed taxonomy catalog cannot authorize a
-canonical write, fingerprint, match, or validation result. Each version's first
-appearance satisfying the final taxonomy-file contract is its unique Git
-publication anchor. That exact `100644` path and blob must remain unchanged in
-every reachable descendant, and HEAD, stage-0 index, and the descriptor-read
-snapshot must agree. Earlier unqualified draft bytes do not gain authority;
-an invalid-only version path may be abandoned before publication without
-becoming permanently required. If that path later contains a valid additive
-contract, that first valid appearance establishes its publication anchor.
+canonical write, fingerprint, match, or validation result. For every candidate
+publication commit, validation reconstructs the complete contracts directory
+solely from that commit's Git tree. A version qualifies only when its path is an
+exact canonical `100644` blob and that complete committed snapshot passes the
+same production catalog loader used for current taxonomy authority, including
+contiguous versions, predecessor hashes, and all additive-evolution rules. The
+unique first qualifying commit is its publication anchor. That exact path,
+mode, type, and blob must remain unchanged in every reachable descendant, and
+HEAD, stage-0 index, and the descriptor-read snapshot must agree. Malformed,
+noncanonical, schema-invalid, and lineage-invalid draft states do not gain
+authority or create introduction ambiguity; an invalid-only version path may be
+abandoned before publication without becoming permanently required. If that
+path later participates in a valid complete catalog, that later first valid
+commit establishes its publication anchor.
 After publication, modification, deletion, relocation, disappearance/re-add,
 or an ambiguous competing introduction fails closed even when the backlog is
 empty.
