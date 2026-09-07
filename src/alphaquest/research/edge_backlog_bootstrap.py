@@ -659,9 +659,7 @@ def repository_files_anchors(
             )
         introduction = introductions[0]
         introduction_parents = parents[introduction]
-        if len(introduction_parents) != 1 and (
-            require_preceding_commit or introduction_parents
-        ):
+        if require_preceding_commit and len(introduction_parents) != 1:
             raise ValueError(
                 f"canonical record introduction must have exactly one Git parent: {relative}"
             )
@@ -688,7 +686,9 @@ def repository_files_anchors(
                 )
         anchors[relative] = RepositoryFileAnchor(
             introduction_commit=introduction,
-            preceding_commit=introduction_parents[0] if introduction_parents else None,
+            preceding_commit=(
+                introduction_parents[0] if len(introduction_parents) == 1 else None
+            ),
         )
     return anchors
 

@@ -1725,6 +1725,71 @@ def test_ambiguous_merge_decision_introduction_fails_closed(tmp_path: Path) -> N
         EdgeBacklogStore(tmp_path).validate()
 
 
+@pytest.mark.parametrize("record_kind", ["canonical-record", "decision"])
+def test_unique_merge_introduction_keeps_canonical_single_parent_rule(
+    tmp_path: Path,
+    record_kind: str,
+) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    entry = None
+    if record_kind == "decision":
+        entry = _canonical_entry(store)
+        _commit_backlog(tmp_path, store, "anchor decision prerequisites")
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    subprocess.run(["git", "-C", str(tmp_path), "switch", "-q", "-c", "record-parent-a"], check=True)
+    marker_a = tmp_path / "notes/record-parent-a.txt"
+    marker_a.parent.mkdir(parents=True)
+    marker_a.write_text("canonical record parent A\n", encoding="utf-8")
+    _commit_paths(tmp_path, "create canonical record parent A", marker_a.relative_to(tmp_path).as_posix())
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "switch", "-q", "-c", "record-parent-b", base],
+        check=True,
+    )
+    marker_b = tmp_path / "notes/record-parent-b.txt"
+    marker_b.parent.mkdir(parents=True)
+    marker_b.write_text("canonical record parent B\n", encoding="utf-8")
+    _commit_paths(tmp_path, "create canonical record parent B", marker_b.relative_to(tmp_path).as_posix())
+
+    if record_kind == "canonical-record":
+        _canonical_entry(store)
+    else:
+        assert entry is not None
+        snapshot = store.duplicate_snapshot(entry.entry_id)
+        store.record_human_decision(
+            entry.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="A decision introduced by a merge must remain invalid.",
+            reviewer_id="owner",
+        )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "merge",
+            "-q",
+            "--no-ff",
+            "--no-commit",
+            "record-parent-a",
+        ],
+        check=True,
+    )
+    _commit_backlog(tmp_path, store, f"introduce {record_kind} in merge")
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="exactly one Git parent"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
 @pytest.mark.parametrize(
     "removed_scope",
     [

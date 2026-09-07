@@ -21,6 +21,7 @@ from alphaquest.research.edge_backlog_io import (
     exclusive_write_repository_file,
     repository_file_lock,
 )
+from alphaquest.research.edge_backlog_bootstrap import repository_files_anchors
 from alphaquest.research.edge_backlog_taxonomy import (
     EconomicEdgeTaxonomyV1,
     bundled_taxonomy_ref,
@@ -58,6 +59,15 @@ def _initialize_git(root: Path) -> None:
 def _commit_paths(root: Path, message: str, *paths: str) -> None:
     subprocess.run(["git", "-C", str(root), "add", "-A", "--", *paths], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", message], check=True)
+
+
+def _git_head(root: Path) -> str:
+    return subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
 
 def _anchored_taxonomy_fixture(root: Path) -> tuple[Path, bytes]:
@@ -100,6 +110,76 @@ def _additive_taxonomy_bytes(previous: bytes, version: int) -> bytes:
 
 def _additive_taxonomy_v2_bytes(v1: bytes) -> bytes:
     return _additive_taxonomy_bytes(v1, 2)
+
+
+def _taxonomy_publication_anchor(root: Path, path: Path, expected: bytes):
+    prefix = "research/edge_backlog/contracts"
+    relative = path.relative_to(root).as_posix()
+
+    def valid_catalog(
+        commit: str,
+        snapshot: dict[str, tuple[str, str, bytes | None]],
+    ) -> bool:
+        files: dict[str, bytes] = {}
+        for snapshot_path, (mode, object_type, data) in snapshot.items():
+            if not snapshot_path.startswith(prefix + "/"):
+                raise ValueError("taxonomy test snapshot escaped the contracts directory")
+            name = snapshot_path[len(prefix) + 1 :]
+            if "/" in name or mode != "100644" or object_type != "blob" or data is None:
+                raise ValueError("taxonomy test snapshot contains an invalid Git tree entry")
+            files[name] = data
+        load_taxonomy_catalog_bytes(
+            files,
+            source_label=f"Git taxonomy test snapshot at {commit}",
+        )
+        return True
+
+    return repository_files_anchors(
+        root,
+        {relative: expected},
+        first_anchor_snapshot_validator=valid_catalog,
+        snapshot_prefix=prefix,
+        require_preceding_commit=False,
+        historical_candidates=(relative,),
+    )[relative]
+
+
+def _merge_introduced_taxonomy_v2(
+    root: Path,
+) -> tuple[Path, bytes, str]:
+    contract, original = _anchored_taxonomy_fixture(root)
+    base = _git_head(root)
+    subprocess.run(["git", "-C", str(root), "switch", "-q", "-c", "taxonomy-parent-a"], check=True)
+    marker_a = root / "notes/taxonomy-parent-a.txt"
+    marker_a.parent.mkdir(parents=True)
+    marker_a.write_text("parent A has only taxonomy v1\n", encoding="utf-8")
+    _commit_paths(root, "create taxonomy parent A", marker_a.relative_to(root).as_posix())
+    subprocess.run(
+        ["git", "-C", str(root), "switch", "-q", "-c", "taxonomy-parent-b", base],
+        check=True,
+    )
+    marker_b = root / "notes/taxonomy-parent-b.txt"
+    marker_b.parent.mkdir(parents=True)
+    marker_b.write_text("parent B has only taxonomy v1\n", encoding="utf-8")
+    _commit_paths(root, "create taxonomy parent B", marker_b.relative_to(root).as_posix())
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "merge",
+            "-q",
+            "--no-ff",
+            "--no-commit",
+            "taxonomy-parent-a",
+        ],
+        check=True,
+    )
+    v2 = contract.with_name("economic-edge-taxonomy-v2.json")
+    valid_v2 = _additive_taxonomy_v2_bytes(original)
+    v2.write_bytes(valid_v2)
+    _commit_paths(root, "publish taxonomy v2 in merge", v2.relative_to(root).as_posix())
+    return v2, valid_v2, _git_head(root)
 
 
 def _canonical_json_document_bytes(payload: dict) -> bytes:
@@ -1302,6 +1382,98 @@ def test_competing_valid_additive_taxonomy_publications_are_ambiguous(
 
 
 @pytest.mark.production_taxonomy
+def test_merge_commit_can_uniquely_publish_additive_taxonomy_version(
+    tmp_path: Path,
+) -> None:
+    v2, valid_v2, merge_commit = _merge_introduced_taxonomy_v2(tmp_path)
+    parents = subprocess.run(
+        ["git", "-C", str(tmp_path), "show", "-s", "--format=%P", merge_commit],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    assert len(parents) == 2
+    relative = v2.relative_to(tmp_path).as_posix()
+    for parent in parents:
+        absent = subprocess.run(
+            ["git", "-C", str(tmp_path), "cat-file", "-e", f"{parent}:{relative}"],
+            capture_output=True,
+        )
+        assert absent.returncode != 0
+
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    anchor = _taxonomy_publication_anchor(tmp_path, v2, valid_v2)
+    assert anchor is not None
+    assert anchor.introduction_commit == merge_commit
+    assert anchor.preceding_commit is None
+
+
+@pytest.mark.production_taxonomy
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "delete",
+        "rewrite",
+        "relocate",
+        "executable",
+        "symlink",
+        "object-type",
+        "multi-commit-readd",
+        "original-readd",
+    ],
+)
+def test_merge_published_taxonomy_retains_descendant_integrity(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    v2, published, _merge_commit = _merge_introduced_taxonomy_v2(tmp_path)
+    relative = v2.relative_to(tmp_path).as_posix()
+    assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+
+    if mutation == "delete":
+        v2.unlink()
+        _commit_paths(tmp_path, "delete merge-published taxonomy", relative)
+    elif mutation == "rewrite":
+        v2.write_bytes(_changed_taxonomy_bytes(published, "alias"))
+        _commit_paths(tmp_path, "rewrite merge-published taxonomy", relative)
+    elif mutation == "relocate":
+        v2.rename(v2.with_name("economic-edge-taxonomy-v3.json"))
+        _commit_paths(tmp_path, "relocate merge-published taxonomy", str(v2.parent.relative_to(tmp_path)))
+    elif mutation == "executable":
+        v2.chmod(0o755)
+        _commit_paths(tmp_path, "make merge-published taxonomy executable", relative)
+    elif mutation == "symlink":
+        external = tmp_path / "external-merge-published-taxonomy-v2.json"
+        external.write_bytes(published)
+        v2.unlink()
+        v2.symlink_to(external)
+        _commit_paths(tmp_path, "replace merge-published taxonomy with symlink", relative)
+    elif mutation == "object-type":
+        v2.unlink()
+        v2.mkdir()
+        (v2 / "payload").write_bytes(published)
+        _commit_paths(tmp_path, "replace merge-published taxonomy with tree", relative)
+    elif mutation in {"multi-commit-readd", "original-readd"}:
+        v2.unlink()
+        _commit_paths(tmp_path, "delete merge-published taxonomy before re-add", relative)
+        if mutation == "multi-commit-readd":
+            marker = tmp_path / "notes/merge-published-v2-remained-absent.txt"
+            marker.write_text("merge-published v2 remained absent\n", encoding="utf-8")
+            _commit_paths(
+                tmp_path,
+                "retain merge-published taxonomy disappearance",
+                marker.relative_to(tmp_path).as_posix(),
+            )
+        v2.write_bytes(published)
+        _commit_paths(tmp_path, "re-add original merge-published taxonomy", relative)
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(mutation)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy"):
+        EdgeBacklogStore(tmp_path).validate()
+
+
+@pytest.mark.production_taxonomy
 def test_valid_taxonomy_publication_ignores_competing_semantic_invalid_draft(
     tmp_path: Path,
 ) -> None:
@@ -1319,6 +1491,7 @@ def test_valid_taxonomy_publication_ignores_competing_semantic_invalid_draft(
     subprocess.run(["git", "-C", str(tmp_path), "switch", "-q", "-c", "valid"], check=True)
     v2.write_bytes(valid_v2)
     _commit_paths(tmp_path, "publish valid taxonomy v2", relative)
+    valid_introduction = _git_head(tmp_path)
     subprocess.run(
         ["git", "-C", str(tmp_path), "switch", "-q", "-c", "invalid", base],
         check=True,
@@ -1353,6 +1526,10 @@ def test_valid_taxonomy_publication_ignores_competing_semantic_invalid_draft(
     )
 
     assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    anchor = _taxonomy_publication_anchor(tmp_path, v2, valid_v2)
+    assert anchor is not None
+    assert anchor.introduction_commit == valid_introduction
+    assert anchor.preceding_commit == base
     v2.write_bytes(_changed_taxonomy_bytes(valid_v2, "label"))
     _commit_paths(tmp_path, "rewrite the valid taxonomy publication", relative)
     with pytest.raises(EdgeBacklogIntegrityError, match="taxonomy"):
@@ -1386,11 +1563,18 @@ def test_byte_invalid_taxonomy_history_remains_unpublished(
 def test_valid_additive_taxonomy_version_is_allowed_then_git_anchored(tmp_path: Path) -> None:
     contract, original = _anchored_taxonomy_fixture(tmp_path)
     v2 = contract.with_name("economic-edge-taxonomy-v2.json")
-    v2.write_bytes(_additive_taxonomy_v2_bytes(original))
+    valid_v2 = _additive_taxonomy_v2_bytes(original)
+    v2.write_bytes(valid_v2)
 
     assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    parent = _git_head(tmp_path)
     _commit_paths(tmp_path, "publish additive taxonomy v2", str(v2.relative_to(tmp_path)))
+    introduction = _git_head(tmp_path)
     assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    anchor = _taxonomy_publication_anchor(tmp_path, v2, valid_v2)
+    assert anchor is not None
+    assert anchor.introduction_commit == introduction
+    assert anchor.preceding_commit == parent
 
     anchored_v2 = v2.read_bytes()
     v2.write_bytes(_changed_taxonomy_bytes(anchored_v2, "label"))
@@ -1424,3 +1608,8 @@ def test_valid_taxonomy_can_establish_a_unique_initial_commit_anchor(tmp_path: P
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "initial taxonomy"], check=True)
 
     assert EdgeBacklogStore(tmp_path).validate()["status"] == "PASS"
+    contract = tmp_path / "research/edge_backlog/contracts/economic-edge-taxonomy-v1.json"
+    anchor = _taxonomy_publication_anchor(tmp_path, contract, contract.read_bytes())
+    assert anchor is not None
+    assert anchor.introduction_commit == _git_head(tmp_path)
+    assert anchor.preceding_commit is None

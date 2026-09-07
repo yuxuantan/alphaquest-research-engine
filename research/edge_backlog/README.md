@@ -69,12 +69,15 @@ commit where its path exists as a `100644` blob and the complete taxonomy
 directory from that exact Git tree passes the production catalog loader's byte,
 filename, lineage, and additive-evolution rules. No working-tree or current-HEAD
 file is mixed into that historical snapshot. The unique first such commit is
-the publication anchor, and that exact path, mode, type, and blob must survive
-every reachable descendant. HEAD, index, and the descriptor-read transaction
-snapshot must agree; deletion, rename, redefinition, or re-addition cannot
-establish a fresh anchor. A valid additive version may be authored
-provisionally, and malformed, noncanonical, or catalog-invalid draft history
-may be abandoned, but it gains no publication authority.
+the publication anchor whether it is a root, ordinary, or merge commit. Root
+and merge publications have no arbitrarily selected preceding commit; canonical
+backlog records still require a one-parent introduction. The anchored taxonomy
+path, mode, type, and blob must survive every reachable descendant. HEAD, index,
+and the descriptor-read transaction snapshot must agree; deletion, rename,
+redefinition, or re-addition cannot establish a fresh anchor. A valid additive
+version may be authored provisionally, and malformed, noncanonical, or
+catalog-invalid draft history may be abandoned, but it gains no publication
+authority.
 
 The backlog is not a strategy list and cannot create a scientific verdict,
 admit a hypothesis, create an edge family or campaign, promote a candidate, or

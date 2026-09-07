@@ -454,9 +454,12 @@ solely from that commit's Git tree. A version qualifies only when its path is an
 exact canonical `100644` blob and that complete committed snapshot passes the
 same production catalog loader used for current taxonomy authority, including
 contiguous versions, predecessor hashes, and all additive-evolution rules. The
-unique first qualifying commit is its publication anchor. That exact path,
-mode, type, and blob must remain unchanged in every reachable descendant, and
-HEAD, stage-0 index, and the descriptor-read snapshot must agree. Malformed,
+unique first qualifying commit is its publication anchor whether it is a root,
+one-parent, or merge commit. Neither a root nor a merge publication selects a
+preceding commit; canonical backlog records and decisions retain their required
+one-parent introductions. The exact anchored taxonomy path, mode, type, and blob
+must remain unchanged in every reachable descendant, and HEAD, stage-0 index,
+and the descriptor-read snapshot must agree. Malformed,
 noncanonical, schema-invalid, and lineage-invalid draft states do not gain
 authority or create introduction ambiguity; an invalid-only version path may be
 abandoned before publication without becoming permanently required. If that
