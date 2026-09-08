@@ -31,6 +31,8 @@ class StorageLayout:
     studio_runtime_root: Path
     edge_backlog_root: Path
     edge_backlog_history_index: Path
+    literature_root: Path
+    literature_runtime_root: Path
     migration_manifest: Path | None
     legacy_prefixes: tuple[tuple[str, str], ...]
 
@@ -128,6 +130,8 @@ def load_storage_layout(
         edge_backlog_history_index=one(
             "edge_backlog_history_index", "catalogs/edge_backlog_history.jsonl"
         ),
+        literature_root=one("literature_root", "research/literature"),
+        literature_runtime_root=one("literature_runtime_root", "run-store/literature"),
         migration_manifest=_absolute(root, migration) if migration else None,
         legacy_prefixes=tuple(sorted(((str(k), str(v)) for k, v in prefixes.items()), key=lambda x: len(x[0]), reverse=True)),
     )

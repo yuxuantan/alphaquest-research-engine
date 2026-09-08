@@ -257,6 +257,56 @@ def _parser() -> argparse.ArgumentParser:
     edge_bootstrap.add_argument("--project-root", default=".")
     edge_bootstrap.set_defaults(handler=_edge_bootstrap)
 
+    literature = commands.add_parser(
+        "literature", help="Create, inspect, validate, and emit the offline canonical P3 literature slice."
+    )
+    literature_commands = literature.add_subparsers(dest="literature_command")
+    literature_put = literature_commands.add_parser("put-artifact", help="Store one offline content-addressed artifact.")
+    literature_put.add_argument("--project-root", default=".")
+    literature_put.add_argument("--input", required=True)
+    literature_put.add_argument("--kind", required=True, choices=("artifacts", "extracted", "provider-traces", "codex-io"))
+    literature_put.set_defaults(handler=_literature_put_artifact)
+    literature_append = literature_commands.add_parser("append", help="Append one strict canonical P3 record from JSON.")
+    literature_append.add_argument(
+        "family",
+        choices=("protocol", "search-start", "search-finish", "work", "source-version", "source-relationship", "capture", "claim", "evidence-relation", "dossier", "freeze", "codex-attempt"),
+    )
+    literature_append.add_argument("--project-root", default=".")
+    literature_append.add_argument("--input", required=True)
+    literature_append.add_argument("--actor-id", required=True)
+    literature_append.add_argument("--actor-class", default="ALPHAQUEST_DETERMINISTIC_ENGINE", choices=("CODEX", "HUMAN_OWNER_RESEARCHER", "ALPHAQUEST_DETERMINISTIC_ENGINE"))
+    literature_append.add_argument("--task-id")
+    literature_append.add_argument("--idempotency-key", required=True)
+    literature_append.set_defaults(handler=_literature_append)
+    literature_list = literature_commands.add_parser("list", help="List canonical P3 records in append order.")
+    literature_list.add_argument("--project-root", default=".")
+    literature_list.add_argument("--family")
+    literature_list.set_defaults(handler=_literature_list)
+    literature_show = literature_commands.add_parser("show", help="Show one exact canonical P3 record.")
+    literature_show.add_argument("record_id")
+    literature_show.add_argument("--project-root", default=".")
+    literature_show.set_defaults(handler=_literature_show)
+    literature_validate = literature_commands.add_parser("validate", help="Validate chains and referenced offline artifacts.")
+    literature_validate.add_argument("--project-root", default=".")
+    literature_validate.set_defaults(handler=_literature_validate)
+    literature_prepare = literature_commands.add_parser("prepare-emission", help="Reserve evidence before any P2 write.")
+    literature_prepare.add_argument("freeze_id")
+    literature_prepare.add_argument("operation_id")
+    literature_prepare.add_argument("--project-root", default=".")
+    literature_prepare.add_argument("--target-entry-id")
+    literature_prepare.add_argument("--actor-id", required=True)
+    literature_prepare.add_argument("--idempotency-key", required=True)
+    literature_prepare.set_defaults(handler=_literature_prepare)
+    for name, handler, help_text in (
+        ("emit", _literature_emit, "Apply a prepared emission transaction."),
+        ("reconcile", _literature_reconcile, "Recover and reconcile an interrupted emission transaction."),
+    ):
+        command = literature_commands.add_parser(name, help=help_text)
+        command.add_argument("operation_id")
+        command.add_argument("--project-root", default=".")
+        command.add_argument("--actor-id", required=True)
+        command.set_defaults(handler=handler)
+
     campaign = commands.add_parser("campaign", help="Expert YAML compatibility, validation, inspection, and execution.")
     campaign_commands = campaign.add_subparsers(
         dest="campaign_command",
@@ -1337,6 +1387,124 @@ def _edge_input(value: str | Path) -> dict[str, Any]:
 
 def _edge_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+
+
+def _literature_actor(args: argparse.Namespace):
+    from alphaquest.research.literature.contracts import ActorProvenanceV1
+
+    return ActorProvenanceV1(
+        actor_class=getattr(args, "actor_class", "ALPHAQUEST_DETERMINISTIC_ENGINE"),
+        actor_id=args.actor_id,
+        task_id=getattr(args, "task_id", None),
+    )
+
+
+def _literature_put_artifact(args: argparse.Namespace) -> int:
+    from alphaquest.research.literature.store import LiteratureStore
+
+    digest = LiteratureStore(args.project_root).put_artifact(Path(args.input).read_bytes(), kind=args.kind)
+    _edge_json({"kind": args.kind, "sha256": digest})
+    return 0
+
+
+def _literature_append(args: argparse.Namespace) -> int:
+    from alphaquest.research.literature.store import LiteratureStore
+
+    store = LiteratureStore(args.project_root)
+    payload = _edge_input(args.input)
+    kwargs = {"actor": _literature_actor(args), "idempotency_key": args.idempotency_key}
+    if args.family == "search-finish":
+        search_run_id = str(payload.pop("search_run_id"))
+        record = store.finish_search(search_run_id, payload, **kwargs)
+    else:
+        methods = {
+            "protocol": store.append_protocol,
+            "search-start": store.start_search,
+            "work": store.append_work,
+            "source-version": store.append_source_version,
+            "source-relationship": store.append_source_relationship,
+            "capture": store.append_capture,
+            "claim": store.append_claim,
+            "evidence-relation": store.append_evidence_relation,
+            "dossier": store.append_dossier,
+            "freeze": store.freeze_dossier,
+            "codex-attempt": store.append_codex_attempt,
+        }
+        record = methods[args.family](payload, **kwargs)
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _literature_list(args: argparse.Namespace) -> int:
+    from alphaquest.research.literature.store import LiteratureStore
+
+    records = LiteratureStore(args.project_root).records()
+    rows = [
+        {
+            "append_sequence": item.append_sequence,
+            "family": type(item).family,
+            "record_id": item.record_id,
+            "record_sha256": item.record_sha256,
+        }
+        for item in records
+        if args.family is None or type(item).family == args.family
+    ]
+    _edge_json(rows)
+    return 0
+
+
+def _literature_show(args: argparse.Namespace) -> int:
+    from alphaquest.research.literature.store import LiteratureStore
+
+    record = LiteratureStore(args.project_root).get(args.record_id)
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _literature_validate(args: argparse.Namespace) -> int:
+    from alphaquest.research.literature.store import LiteratureStore
+
+    _edge_json(LiteratureStore(args.project_root).validate())
+    return 0
+
+
+def _literature_prepare(args: argparse.Namespace) -> int:
+    from alphaquest.research.literature.emission import prepare_emission
+
+    record = prepare_emission(
+        args.project_root,
+        freeze_id=args.freeze_id,
+        operation_id=args.operation_id,
+        target_entry_id=args.target_entry_id,
+        actor=_literature_actor(args),
+        idempotency_key=args.idempotency_key,
+    )
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _literature_emit(args: argparse.Namespace) -> int:
+    from alphaquest.research.literature.emission import emit_prepared
+
+    record = emit_prepared(
+        args.project_root,
+        operation_id=args.operation_id,
+        actor=_literature_actor(args),
+    )
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _literature_reconcile(args: argparse.Namespace) -> int:
+    from alphaquest.research.literature.emission import reconcile_emission
+
+    record = reconcile_emission(
+        args.project_root,
+        operation_id=args.operation_id,
+        actor=_literature_actor(args),
+    )
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
 
 
 def _campaign_show(args: argparse.Namespace) -> int:

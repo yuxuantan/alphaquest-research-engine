@@ -1,0 +1,435 @@
+{
+  "$defs": {
+    "ActorProvenanceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_class": {
+          "enum": [
+            "CODEX",
+            "HUMAN_OWNER_RESEARCHER",
+            "ALPHAQUEST_DETERMINISTIC_ENGINE"
+          ],
+          "title": "Actor Class",
+          "type": "string"
+        },
+        "actor_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        }
+      },
+      "required": [
+        "actor_class",
+        "actor_id"
+      ],
+      "title": "ActorProvenanceV1",
+      "type": "object"
+    },
+    "DuplicateCandidateBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_decision_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Decision Sha256"
+        },
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "candidate_link_chain_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Candidate Link Chain Sha256",
+          "type": "string"
+        },
+        "candidate_record_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Candidate Record Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "candidate_record_sha256",
+        "candidate_link_chain_sha256"
+      ],
+      "title": "DuplicateCandidateBindingV1",
+      "type": "object"
+    },
+    "DuplicateSnapshotBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "before_append_sequence": {
+          "minimum": 1,
+          "title": "Before Append Sequence",
+          "type": "integer"
+        },
+        "candidate_bindings": {
+          "items": {
+            "$ref": "#/$defs/DuplicateCandidateBindingV1"
+          },
+          "title": "Candidate Bindings",
+          "type": "array"
+        },
+        "entry_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "entry_link_chain_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Entry Link Chain Sha256",
+          "type": "string"
+        },
+        "entry_revision_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Entry Revision Sha256",
+          "type": "string"
+        },
+        "historical_source_commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Historical Source Commit"
+        },
+        "historical_universe_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Historical Universe Sha256",
+          "type": "string"
+        },
+        "snapshot_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Snapshot Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entry_id",
+        "entry_revision_sha256",
+        "before_append_sequence",
+        "entry_link_chain_sha256",
+        "historical_universe_sha256",
+        "snapshot_sha256",
+        "candidate_bindings"
+      ],
+      "title": "DuplicateSnapshotBindingV1",
+      "type": "object"
+    },
+    "EvidenceTimeBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "enum": [
+            "VERIFIED_PUBLIC_AVAILABILITY",
+            "CAPTURE_FALLBACK_COARSE_OR_UNCERTAIN"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "evidence_time": {
+          "format": "date-time",
+          "title": "Evidence Time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_time",
+        "basis"
+      ],
+      "title": "EvidenceTimeBindingV1",
+      "type": "object"
+    },
+    "P2EvidenceReservationV1": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_locator": {
+          "minLength": 1,
+          "title": "Canonical Locator",
+          "type": "string"
+        },
+        "canonical_source_version_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Canonical Source Version Id",
+          "type": "string"
+        },
+        "capture_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Capture Id",
+          "type": "string"
+        },
+        "content_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "evidence_time": {
+          "$ref": "#/$defs/EvidenceTimeBindingV1"
+        },
+        "extracted_representation_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Extracted Representation Sha256",
+          "type": "string"
+        },
+        "p2_source_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "P2 Source Id",
+          "type": "string"
+        },
+        "relationship_state_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Relationship State Sha256",
+          "type": "string"
+        },
+        "reservation_operation_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Reservation Operation Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "enum": [
+            "PAPER",
+            "DATASET",
+            "EXCHANGE_RESEARCH",
+            "PRACTITIONER_RESEARCH",
+            "MARKET_EVENT",
+            "OTHER"
+          ],
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "terminal_capture_revision_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Terminal Capture Revision Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonical_source_version_id",
+        "relationship_state_sha256",
+        "p2_source_id",
+        "source_kind",
+        "canonical_locator",
+        "capture_id",
+        "terminal_capture_revision_sha256",
+        "content_sha256",
+        "extracted_representation_sha256",
+        "evidence_time",
+        "reservation_operation_id"
+      ],
+      "title": "P2EvidenceReservationV1",
+      "type": "object"
+    },
+    "P2RecordBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "record_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,255}$",
+          "title": "Record Id",
+          "type": "string"
+        },
+        "record_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Record Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "record_sha256"
+      ],
+      "title": "P2RecordBindingV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://alphaquest.local/schemas/literature-p2-emission-receipt-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/ActorProvenanceV1"
+    },
+    "append_sequence": {
+      "minimum": 1,
+      "title": "Append Sequence",
+      "type": "integer"
+    },
+    "duplicate_snapshot": {
+      "$ref": "#/$defs/DuplicateSnapshotBindingV1"
+    },
+    "entry_binding": {
+      "$ref": "#/$defs/P2RecordBindingV1"
+    },
+    "freeze_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Freeze Id",
+      "type": "string"
+    },
+    "freeze_record_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Freeze Record Sha256",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "intent_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Intent Sha256",
+      "type": "string"
+    },
+    "observation_bindings": {
+      "items": {
+        "$ref": "#/$defs/P2RecordBindingV1"
+      },
+      "minItems": 1,
+      "title": "Observation Bindings",
+      "type": "array"
+    },
+    "operation_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "operation_revision_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Operation Revision Sha256",
+      "type": "string"
+    },
+    "previous_store_record_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Store Record Sha256"
+    },
+    "prior_staled_decision_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prior Staled Decision Sha256"
+    },
+    "receipt_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Receipt Id",
+      "type": "string"
+    },
+    "record_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,255}$",
+      "title": "Record Id",
+      "type": "string"
+    },
+    "record_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Record Sha256",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "reservations": {
+      "items": {
+        "$ref": "#/$defs/P2EvidenceReservationV1"
+      },
+      "minItems": 1,
+      "title": "Reservations",
+      "type": "array"
+    },
+    "schema": {
+      "const": "alphaquest.literature-p2-emission-receipt/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "search_completion_status": {
+      "enum": [
+        "COMPLETE_WITHIN_DECLARED_BOUNDS",
+        "TERMINATED_WITH_DECLARED_GAPS"
+      ],
+      "title": "Search Completion Status",
+      "type": "string"
+    },
+    "unsatisfied_lanes": {
+      "items": {
+        "enum": [
+          "SUPPORTING_OR_MOTIVATING",
+          "NULL_OR_CONTRARY",
+          "FAILED_REPLICATION",
+          "REGIME_DEPENDENCE",
+          "TRANSACTION_COST_OR_EXECUTION_OBJECTION",
+          "ALTERNATIVE_EXPLANATION",
+          "DATA_MINING_OR_MULTIPLE_TESTING"
+        ],
+        "type": "string"
+      },
+      "title": "Unsatisfied Lanes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "record_id",
+    "append_sequence",
+    "recorded_at",
+    "actor",
+    "idempotency_key",
+    "intent_sha256",
+    "record_sha256",
+    "receipt_id",
+    "operation_id",
+    "operation_revision_sha256",
+    "freeze_id",
+    "freeze_record_sha256",
+    "reservations",
+    "observation_bindings",
+    "entry_binding",
+    "duplicate_snapshot",
+    "search_completion_status",
+    "unsatisfied_lanes"
+  ],
+  "title": "P2EmissionReceiptV1",
+  "type": "object"
+}

@@ -1,0 +1,524 @@
+"""Recoverable offline P3-to-P2 emission transaction journal."""
+
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Sequence, TypeVar
+
+from pydantic import BaseModel
+
+from alphaquest.research.edge_backlog import (
+    EdgeBacklogEntryRevisionV1,
+    EdgeBacklogStore,
+    HashedRecord,
+    ObservationRevisionV1,
+)
+from alphaquest.research.literature.contracts import (
+    ActorProvenanceV1,
+    CanonicalRecordV1,
+    ClaimExtractionRevisionV1,
+    DossierFreezeV1,
+    EdgeDossierRevisionV1,
+    LiteratureConflictError,
+    P2EmissionOperationRevisionV1,
+    P2EmissionReceiptV1,
+    P2EvidenceReservationV1,
+    P2ObservationRolePlanV1,
+    P2RecordBindingV1,
+    SourceCaptureRevisionV1,
+    SourceIdentityRevisionV1,
+    SourceRelationshipRevisionV1,
+    SourceVersionIdentityRevisionV1,
+    canonical_json_bytes,
+)
+from alphaquest.research.literature.mapper import (
+    canonical_source_version_resolution,
+    map_claim_to_observation,
+    map_dossier_entry,
+    p2_entry_payload,
+    reserve_p2_evidence,
+)
+from alphaquest.research.literature.store import LiteratureStore
+
+
+R = TypeVar("R", bound=CanonicalRecordV1)
+_P3_MANAGED = {
+    "schema",
+    "record_id",
+    "append_sequence",
+    "previous_store_record_sha256",
+    "recorded_at",
+    "actor",
+    "idempotency_key",
+    "intent_sha256",
+    "record_sha256",
+    "revision",
+    "previous_revision_sha256",
+}
+
+
+def _by_hash(records: Iterable[CanonicalRecordV1], digest: str, expected: type[R]) -> R:
+    matches = [item for item in records if isinstance(item, expected) and item.record_sha256 == digest]
+    if len(matches) != 1:
+        raise LiteratureConflictError(f"missing exact {expected.family} record: {digest}")
+    return matches[0]
+
+
+def _latest_reservations(records: Sequence[CanonicalRecordV1]) -> dict[str, P2EvidenceReservationV1]:
+    output: dict[str, P2EvidenceReservationV1] = {}
+    for record in records:
+        if not isinstance(record, P2EmissionOperationRevisionV1) or record.revision != 1:
+            continue
+        for reservation in record.reservations:
+            output.setdefault(reservation.canonical_source_version_id, reservation)
+    return output
+
+
+def _current_hypothesis_link(backlog: EdgeBacklogStore, entry_id: str) -> bool:
+    return any(item.relationship == "HYPOTHESIS_PROPOSAL" for item in backlog.links(entry_id))
+
+
+def _lifecycle_action(
+    backlog: EdgeBacklogStore,
+    dossier: EdgeDossierRevisionV1,
+    target_entry_id: str | None,
+) -> tuple[str, str | None, str | None, str | None, str | None]:
+    """Return action, exact entry SHA, state, staled decision SHA, blocker."""
+
+    if target_entry_id is None:
+        return "CREATE_NEW_ENTRY", None, None, None, None
+    entry = backlog.latest_entry(target_entry_id)
+    state = backlog.entry_state(target_entry_id)
+    decisions = backlog.decisions(target_entry_id)
+    decision_sha = decisions[-1].record_sha256 if decisions and state != "UNREVIEWED" else None
+    bound = dossier.p2_entry_id == target_entry_id
+    if state == "SUSPENDED":
+        return "BLOCKED", entry.record_sha256, state, None, "BOUND_ENTRY_SUSPENDED" if bound else "TARGET_ENTRY_SUSPENDED"
+    if _current_hypothesis_link(backlog, target_entry_id):
+        if bound:
+            return "BLOCKED", entry.record_sha256, state, None, "BOUND_ENTRY_HAS_CURRENT_HYPOTHESIS_PROPOSAL"
+        return "CREATE_NEW_ENTRY", entry.record_sha256, state, None, None
+    if state in {"REJECTED", "DUPLICATE"}:
+        if bound:
+            return "BLOCKED", entry.record_sha256, state, None, f"BOUND_ENTRY_TERMINAL_{state}"
+        return "CREATE_NEW_ENTRY", entry.record_sha256, state, None, None
+    if state not in {"UNREVIEWED", "REVIEWED_CONTINUE", "RESUMED"}:
+        raise LiteratureConflictError(f"unsupported authoritative P2 state: {state}")
+    return "REVISE_SAME_ENTRY", entry.record_sha256, state, decision_sha, None
+
+
+def prepare_emission(
+    project_root: str | Path,
+    *,
+    freeze_id: str,
+    operation_id: str,
+    actor: ActorProvenanceV1,
+    idempotency_key: str,
+    target_entry_id: str | None = None,
+) -> P2EmissionOperationRevisionV1:
+    """Reserve evidence and append PREPARED before any P2 write."""
+
+    literature = LiteratureStore(project_root)
+    backlog = EdgeBacklogStore(project_root)
+    records = literature.records()
+    freeze = next((item for item in records if isinstance(item, DossierFreezeV1) and item.freeze_id == freeze_id), None)
+    if freeze is None:
+        raise LiteratureConflictError(f"dossier freeze not found: {freeze_id}")
+    dossier = _by_hash(records, freeze.dossier_revision_sha256, EdgeDossierRevisionV1)
+    if dossier.p2_entry_id is not None:
+        if target_entry_id is not None and target_entry_id != dossier.p2_entry_id:
+            raise LiteratureConflictError("bound dossier cannot change its canonical P2 entry identity")
+        target_entry_id = dossier.p2_entry_id
+    action, target_sha, target_state, staled_decision, blocked_reason = _lifecycle_action(
+        backlog, dossier, target_entry_id
+    )
+    relationships = [item for item in records if isinstance(item, SourceRelationshipRevisionV1)]
+    existing_reservations = _latest_reservations(records)
+    reservations: dict[str, P2EvidenceReservationV1] = {}
+    plans = []
+    resolved_claims = []
+    for reference in dossier.claim_refs:
+        claim = _by_hash(records, reference.claim_revision_sha256, ClaimExtractionRevisionV1)
+        capture = _by_hash(records, claim.capture_revision_sha256, SourceCaptureRevisionV1)
+        version = _by_hash(records, claim.source_version_revision_sha256, SourceVersionIdentityRevisionV1)
+        work = _by_hash(records, claim.work_revision_sha256, SourceIdentityRevisionV1)
+        canonical_version_id, _relationship_hash, component = canonical_source_version_resolution(
+            version.source_version_id, relationships
+        )
+        resolved_claims.append(
+            (
+                canonical_version_id,
+                version.source_version_id != canonical_version_id,
+                version.source_version_id,
+                capture.capture_id,
+                claim.claim_id,
+                reference,
+                claim,
+                capture,
+                version,
+                work,
+                component,
+            )
+        )
+    for (
+        canonical_version_id,
+        _noncanonical,
+        _version_id,
+        _capture_id,
+        _claim_id,
+        reference,
+        claim,
+        capture,
+        version,
+        work,
+        component,
+    ) in sorted(resolved_claims, key=lambda item: item[:5]):
+        prior_candidates = [
+            item
+            for key, item in existing_reservations.items()
+            if key == canonical_version_id or key in component
+        ]
+        if len(prior_candidates) > 1:
+            raise LiteratureConflictError(
+                "current SAME_VERSION_AS state merges incompatible historical P2 reservations"
+            )
+        existing = reservations.get(canonical_version_id) or next(iter(prior_candidates), None)
+        reservation = reserve_p2_evidence(
+            operation_id=operation_id,
+            work=work,
+            version=version,
+            capture=capture,
+            relationships=relationships,
+            existing=existing,
+        )
+        reservations[canonical_version_id] = reservation
+        observation_id = hashlib.sha256(f"alphaquest-p3-claim|{claim.claim_id}".encode()).hexdigest()
+        logical_id = f"obs.p3.{observation_id[:32]}"
+        try:
+            prior = backlog.latest_observation(logical_id)
+        except FileNotFoundError:
+            prior = None
+        plans.append(
+            map_claim_to_observation(
+                claim=claim,
+                role=reference.p2_role,
+                reservation=reservation,
+                prior_observation=prior,
+            )
+        )
+    entry_plan = map_dossier_entry(dossier, plans)
+    if action == "REVISE_SAME_ENTRY" and target_entry_id is not None:
+        prior_entry = backlog.latest_entry(target_entry_id)
+        preserved = [
+            P2ObservationRolePlanV1(
+                observation_id=item.observation_id,
+                role="CONTRADICTING",
+                frozen_revision_sha256=item.observation_revision_sha256,
+            )
+            for item in prior_entry.observation_refs
+            if item.role == "CONTRADICTING"
+        ]
+        entry_plan = entry_plan.model_copy(
+            update={"observation_roles": [*entry_plan.observation_roles, *preserved]}
+        )
+    unsatisfied = [
+        item.lane for item in dossier.lane_completions if item.obligation_status != "SATISFIED"
+    ]
+    payload = {
+        "operation_id": operation_id,
+        "freeze_id": freeze.freeze_id,
+        "freeze_record_sha256": freeze.record_sha256,
+        "target_entry_id": target_entry_id,
+        "target_entry_revision_sha256": target_sha,
+        "target_entry_state": target_state,
+        "emission_action": action,
+        "state": "BLOCKED" if action == "BLOCKED" else "PREPARED",
+        "reservations": [item.model_dump(mode="json") for item in reservations.values()],
+        "observation_plans": [item.model_dump(mode="json") for item in plans],
+        "entry_plan": entry_plan.model_dump(mode="json"),
+        "search_completion_status": dossier.search_completion_status,
+        "unsatisfied_lanes": unsatisfied,
+        "observation_bindings": [],
+        "entry_binding": None,
+        "duplicate_snapshot": None,
+        "prior_staled_decision_sha256": staled_decision,
+        "receipt_record_sha256": None,
+        "blocked_reason": blocked_reason,
+        "conflict_reason": None,
+    }
+    return literature.append_emission_operation(
+        payload,
+        actor=actor,
+        idempotency_key=idempotency_key,
+    )
+
+
+def _p2_payload(record: ObservationRevisionV1) -> dict[str, Any]:
+    return record.model_dump(
+        mode="json",
+        by_alias=True,
+        include={"observation_id", "statement", "statement_kind", "evidence_refs", "known_conflicts"},
+    )
+
+
+def _plan_payload(plan: Any) -> dict[str, Any]:
+    return plan.payload.model_dump(mode="json")
+
+
+def _same_payload(record: ObservationRevisionV1, plan: Any) -> bool:
+    return _p2_payload(record) == _plan_payload(plan)
+
+
+def _same_entry_payload(record: EdgeBacklogEntryRevisionV1, payload: Mapping[str, Any]) -> bool:
+    actual = record.model_dump(
+        mode="json",
+        by_alias=True,
+        include={
+            "classification_status",
+            "taxonomy_ref",
+            "governance_scope",
+            "p1_evidence_eligibility",
+            "economic_concepts",
+            "unclassified_reason",
+            "observation_refs",
+        },
+    )
+    return actual == dict(payload)
+
+
+def _advance(
+    literature: LiteratureStore,
+    operation: P2EmissionOperationRevisionV1,
+    *,
+    state: str,
+    actor: ActorProvenanceV1,
+    suffix: str,
+    **updates: Any,
+) -> P2EmissionOperationRevisionV1:
+    payload = operation.model_dump(mode="json", by_alias=True, exclude=_P3_MANAGED)
+    payload.update(updates)
+    payload["state"] = state
+    return literature.append_emission_operation(
+        payload,
+        actor=actor,
+        idempotency_key=f"{operation.operation_id}.{suffix}",
+    )
+
+
+def _binding(record: HashedRecord) -> dict[str, str]:
+    return {"record_id": record.record_id, "record_sha256": record.record_sha256}
+
+
+def _find_task_entry(backlog: EdgeBacklogStore, operation_id: str) -> EdgeBacklogEntryRevisionV1 | None:
+    records = [item for item in backlog.records_by_task_id(operation_id) if isinstance(item, EdgeBacklogEntryRevisionV1)]
+    if len(records) > 1:
+        raise LiteratureConflictError("emission recovery found multiple task-authored P2 entries")
+    return records[0] if records else None
+
+
+def emit_prepared(
+    project_root: str | Path,
+    *,
+    operation_id: str,
+    actor: ActorProvenanceV1,
+) -> P2EmissionReceiptV1 | P2EmissionOperationRevisionV1:
+    """Apply or recover one prepared operation using only EdgeBacklogStore writes."""
+
+    literature = LiteratureStore(project_root)
+    backlog = EdgeBacklogStore(project_root)
+    operation = literature.latest(P2EmissionOperationRevisionV1, operation_id)
+    if operation.state == "BLOCKED":
+        return operation
+    if operation.state == "CONFLICT":
+        raise LiteratureConflictError(str(operation.conflict_reason))
+    if operation.state == "COMPLETED":
+        records = literature.records()
+        return _by_hash(records, str(operation.receipt_record_sha256), P2EmissionReceiptV1)
+
+    if operation.state == "PREPARED":
+        bindings: list[dict[str, str]] = []
+        for plan in operation.observation_plans:
+            payload = _plan_payload(plan)
+            try:
+                current = backlog.latest_observation(plan.observation_id)
+            except FileNotFoundError:
+                current = backlog.capture_observation(
+                    payload,
+                    actor_id=actor.actor_id,
+                    task_id=operation.operation_id,
+                )
+            else:
+                if not _same_payload(current, plan):
+                    claim = _by_hash(literature.records(), plan.claim_revision_sha256, ClaimExtractionRevisionV1)
+                    if claim.revision == 1 and claim.reliability == "ACTIVE":
+                        operation = _advance(
+                            literature,
+                            operation,
+                            state="CONFLICT",
+                            actor=actor,
+                            suffix="observation-conflict",
+                            conflict_reason=f"logical observation collision: {plan.observation_id}",
+                        )
+                        raise LiteratureConflictError(str(operation.conflict_reason))
+                    current = backlog.revise_observation(
+                        plan.observation_id,
+                        payload,
+                        actor_id=actor.actor_id,
+                        task_id=operation.operation_id,
+                    )
+            bindings.append(_binding(current))
+        operation = _advance(
+            literature,
+            operation,
+            state="OBSERVATIONS_WRITTEN",
+            actor=actor,
+            suffix="observations-written",
+            observation_bindings=bindings,
+        )
+
+    if operation.state == "OBSERVATIONS_WRITTEN":
+        observation_hashes = {
+            binding.record_id.split(".r", 1)[0]: binding.record_sha256
+            for binding in operation.observation_bindings
+        }
+        entry_payload = p2_entry_payload(operation.entry_plan, observation_hashes)
+        entry: EdgeBacklogEntryRevisionV1 | None = _find_task_entry(backlog, operation.operation_id)
+        if operation.emission_action == "REVISE_SAME_ENTRY":
+            if entry is not None:
+                if entry.entry_id != operation.target_entry_id or not _same_entry_payload(entry, entry_payload):
+                    raise LiteratureConflictError("recovered P2 entry does not match the prepared target/payload")
+            else:
+                current = backlog.latest_entry(str(operation.target_entry_id))
+                state = backlog.entry_state(current.entry_id)
+                if (
+                    current.record_sha256 != operation.target_entry_revision_sha256
+                    or state != operation.target_entry_state
+                    or _current_hypothesis_link(backlog, current.entry_id)
+                ):
+                    operation = _advance(
+                        literature,
+                        operation,
+                        state="CONFLICT",
+                        actor=actor,
+                        suffix="target-conflict",
+                        conflict_reason="target P2 entry state changed after PREPARED",
+                    )
+                    raise LiteratureConflictError(str(operation.conflict_reason))
+                entry = backlog.revise_entry(
+                    current.entry_id,
+                    entry_payload,
+                    actor_id=actor.actor_id,
+                    task_id=operation.operation_id,
+                )
+        elif operation.emission_action == "CREATE_NEW_ENTRY":
+            if entry is None:
+                entry = backlog.create_entry(
+                    entry_payload,
+                    actor_id=actor.actor_id,
+                    task_id=operation.operation_id,
+                )
+            elif not _same_entry_payload(entry, entry_payload):
+                raise LiteratureConflictError("recovered P2 entry does not match the prepared payload")
+        else:  # pragma: no cover - strict contract prevents this state
+            raise LiteratureConflictError("blocked emission cannot reach P2 entry writing")
+        assert entry is not None
+        operation = _advance(
+            literature,
+            operation,
+            state="ENTRY_WRITTEN",
+            actor=actor,
+            suffix="entry-written",
+            entry_binding=_binding(entry),
+        )
+
+    if operation.state == "ENTRY_WRITTEN":
+        assert operation.entry_binding is not None
+        bound_entry_id = operation.entry_binding.record_id.rsplit(".r", 1)[0]
+        exact_entry = backlog.exact_entry_revision(
+            bound_entry_id,
+            operation.entry_binding.record_sha256,
+        )
+        before_sequence = exact_entry.append_sequence + 1
+        snapshot = backlog.duplicate_snapshot_at_prefix(
+            bound_entry_id,
+            entry_revision_sha256=operation.entry_binding.record_sha256,
+            before_append_sequence=before_sequence,
+        )
+        binding = {
+            "entry_id": snapshot["entry_id"],
+            "entry_revision_sha256": snapshot["entry_revision_sha256"],
+            "before_append_sequence": snapshot["before_append_sequence"],
+            "entry_link_chain_sha256": snapshot["entry_link_chain_sha256"],
+            "historical_source_commit": snapshot["historical_source_commit"],
+            "historical_universe_sha256": snapshot["historical_universe_sha256"],
+            "snapshot_sha256": snapshot["snapshot_sha256"],
+            "candidate_bindings": [
+                {
+                    "candidate_id": item["candidate_id"],
+                    "candidate_record_sha256": item["candidate_record_sha256"],
+                    "candidate_decision_sha256": item["candidate_decision_sha256"],
+                    "candidate_link_chain_sha256": item["candidate_link_chain_sha256"],
+                }
+                for item in snapshot["candidates"]
+            ],
+        }
+        operation = _advance(
+            literature,
+            operation,
+            state="SNAPSHOT_BOUND",
+            actor=actor,
+            suffix="snapshot-bound",
+            duplicate_snapshot=binding,
+        )
+
+    if operation.state == "SNAPSHOT_BOUND":
+        receipt_id = "receipt." + hashlib.sha256(operation.operation_id.encode()).hexdigest()[:32]
+        receipt = literature.append_emission_receipt(
+            {
+                "record_id": receipt_id,
+                "receipt_id": receipt_id,
+                "operation_id": operation.operation_id,
+                "operation_revision_sha256": operation.record_sha256,
+                "freeze_id": operation.freeze_id,
+                "freeze_record_sha256": operation.freeze_record_sha256,
+                "reservations": [item.model_dump(mode="json") for item in operation.reservations],
+                "observation_bindings": [item.model_dump(mode="json") for item in operation.observation_bindings],
+                "entry_binding": operation.entry_binding.model_dump(mode="json"),
+                "duplicate_snapshot": operation.duplicate_snapshot.model_dump(mode="json"),
+                "prior_staled_decision_sha256": operation.prior_staled_decision_sha256,
+                "search_completion_status": operation.search_completion_status,
+                "unsatisfied_lanes": operation.unsatisfied_lanes,
+            },
+            actor=actor,
+            idempotency_key=f"{operation.operation_id}.receipt",
+        )
+        _advance(
+            literature,
+            operation,
+            state="COMPLETED",
+            actor=actor,
+            suffix="completed",
+            receipt_record_sha256=receipt.record_sha256,
+        )
+        return receipt
+    raise LiteratureConflictError(f"unsupported recoverable emission state: {operation.state}")
+
+
+def reconcile_emission(
+    project_root: str | Path,
+    *,
+    operation_id: str,
+    actor: ActorProvenanceV1,
+) -> P2EmissionReceiptV1 | P2EmissionOperationRevisionV1:
+    """Validate both stores, then resume the deterministic transaction."""
+
+    LiteratureStore(project_root).validate()
+    EdgeBacklogStore(project_root).validate()
+    result = emit_prepared(project_root, operation_id=operation_id, actor=actor)
+    LiteratureStore(project_root).validate()
+    EdgeBacklogStore(project_root).validate()
+    return result
+
+
+__all__ = ["emit_prepared", "prepare_emission", "reconcile_emission"]

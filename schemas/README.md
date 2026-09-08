@@ -7,4 +7,9 @@ observation, tentative-edge, human-decision, and downstream-link contracts.
 Canonical records remain JSON files under `research/edge_backlog/`; schemas and
 any catalog or registry representation do not replace those files as authority.
 
+The `literature-*.schema.json` files are the 13 strict P3 offline canonical
+contracts. Regenerate them with
+`PYTHONPATH=src python3 tools/generate_literature_schemas.py` and commit the
+runtime contracts and generated schemas together.
+
 Schema changes require regression tests and an architecture decision when they alter execution, lineage, or verdict semantics.
