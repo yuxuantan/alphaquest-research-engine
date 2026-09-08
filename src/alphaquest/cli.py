@@ -128,6 +128,135 @@ def _parser() -> argparse.ArgumentParser:
     search.add_argument("--json", action="store_true")
     search.set_defaults(handler=_research_search)
 
+    edge_backlog = commands.add_parser(
+        "edge-backlog",
+        help="Capture and govern the canonical pre-hypothesis economic-edge inventory.",
+    )
+    edge_commands = edge_backlog.add_subparsers(dest="edge_backlog_command")
+    capture_observation = edge_commands.add_parser(
+        "capture-observation", help="Append the first CODEX-authored observation revision."
+    )
+    capture_observation.add_argument("--project-root", default=".")
+    capture_observation.add_argument("--input", required=True, help="JSON observation payload.")
+    capture_observation.add_argument("--actor-id", required=True, help="Provenance only; not authentication.")
+    capture_observation.add_argument("--task-id")
+    capture_observation.set_defaults(handler=_edge_capture_observation)
+    revise_observation = edge_commands.add_parser(
+        "revise-observation", help="Append a CODEX-authored observation revision."
+    )
+    revise_observation.add_argument("observation_id")
+    revise_observation.add_argument("--project-root", default=".")
+    revise_observation.add_argument("--input", required=True, help="JSON observation payload.")
+    revise_observation.add_argument("--actor-id", required=True, help="Provenance only; not authentication.")
+    revise_observation.add_argument("--task-id")
+    revise_observation.set_defaults(handler=_edge_revise_observation)
+    create_edge = edge_commands.add_parser("create", help="Append the first CODEX-authored edge revision.")
+    create_edge.add_argument("--project-root", default=".")
+    create_edge.add_argument("--input", required=True, help="JSON edge-entry payload.")
+    create_edge.add_argument("--actor-id", required=True, help="Provenance only; not authentication.")
+    create_edge.add_argument("--task-id")
+    create_edge.set_defaults(handler=_edge_create)
+    revise_edge = edge_commands.add_parser("revise", help="Append a CODEX-authored unsealed edge revision.")
+    revise_edge.add_argument("entry_id")
+    revise_edge.add_argument("--project-root", default=".")
+    revise_edge.add_argument("--input", required=True, help="JSON edge-entry payload.")
+    revise_edge.add_argument("--actor-id", required=True, help="Provenance only; not authentication.")
+    revise_edge.add_argument("--task-id")
+    revise_edge.set_defaults(handler=_edge_revise)
+    edge_list = edge_commands.add_parser("list", help="List current derived entry states.")
+    edge_list.add_argument("--project-root", default=".")
+    edge_list.add_argument(
+        "--state",
+        choices=("UNREVIEWED", "REVIEWED_CONTINUE", "REJECTED", "DUPLICATE", "SUSPENDED", "RESUMED"),
+    )
+    edge_list.add_argument("--json", action="store_true")
+    edge_list.set_defaults(handler=_edge_list)
+    edge_show = edge_commands.add_parser("show", help="Show one entry with immutable decisions and links.")
+    edge_show.add_argument("entry_id")
+    edge_show.add_argument("--project-root", default=".")
+    edge_show.add_argument("--json", action="store_true")
+    edge_show.set_defaults(handler=_edge_show)
+    edge_search = edge_commands.add_parser("search", help="Search normalized economic-edge content.")
+    edge_search.add_argument("--project-root", default=".")
+    edge_search.add_argument("--query")
+    edge_search.add_argument(
+        "--state",
+        choices=("UNREVIEWED", "REVIEWED_CONTINUE", "REJECTED", "DUPLICATE", "SUSPENDED", "RESUMED"),
+    )
+    edge_search.add_argument("--json", action="store_true")
+    edge_search.set_defaults(handler=_edge_search)
+    edge_duplicates = edge_commands.add_parser(
+        "duplicate-candidates", help="Build the deterministic candidate snapshot for human review."
+    )
+    edge_duplicates.add_argument("entry_id")
+    edge_duplicates.add_argument("--project-root", default=".")
+    edge_duplicates.set_defaults(handler=_edge_duplicate_candidates)
+    edge_review = edge_commands.add_parser(
+        "review", help="Record an immutable HUMAN_OWNER_RESEARCHER backlog disposition."
+    )
+    edge_review.add_argument("entry_id")
+    edge_review.add_argument("--project-root", default=".")
+    edge_review.add_argument(
+        "--disposition",
+        required=True,
+        choices=("REVIEWED_CONTINUE", "REJECTED", "DUPLICATE", "SUSPENDED"),
+    )
+    edge_review.add_argument(
+        "--duplicate-resolution",
+        required=True,
+        choices=("SAME_EDGE", "RELATED_EDGE_FAMILY", "DISTINCT_EDGE", "UNRESOLVED"),
+    )
+    edge_review.add_argument("--candidate-snapshot-sha256", required=True)
+    edge_review.add_argument("--canonical-entry-id")
+    edge_review.add_argument("--related-edge-family-id", action="append", default=[])
+    edge_review.add_argument(
+        "--reason-code",
+        action="append",
+        required=True,
+        choices=(
+            "AMBIGUOUS_DUPLICATE",
+            "CAUSAL_WEAKNESS",
+            "DATA_UNAVAILABLE",
+            "DUPLICATE_EDGE",
+            "INSUFFICIENT_EVIDENCE",
+            "NEW_INFORMATION",
+            "OWNER_PRIORITY",
+            "PRIOR_FAILURE",
+            "SCOPE_MISMATCH",
+            "SOURCE_QUALITY",
+            "TEMPORARY_BLOCKER",
+            "OTHER",
+        ),
+    )
+    edge_review.add_argument("--rationale", required=True)
+    edge_review.add_argument("--revisit-condition", action="append", default=[])
+    edge_review.add_argument("--reviewer-id", required=True, help="Provenance only; not authentication.")
+    edge_review.add_argument("--decision-id")
+    edge_review.set_defaults(handler=_edge_review)
+    edge_resume = edge_commands.add_parser(
+        "resume", help="Record an immutable human resume after a current suspension."
+    )
+    edge_resume.add_argument("entry_id")
+    edge_resume.add_argument("--project-root", default=".")
+    edge_resume.add_argument(
+        "--reason-code",
+        action="append",
+        required=True,
+        choices=("NEW_INFORMATION", "TEMPORARY_BLOCKER", "OTHER"),
+    )
+    edge_resume.add_argument("--rationale", required=True)
+    edge_resume.add_argument("--reviewer-id", required=True, help="Provenance only; not authentication.")
+    edge_resume.add_argument("--decision-id")
+    edge_resume.set_defaults(handler=_edge_resume)
+    edge_validate = edge_commands.add_parser("validate", help="Validate all canonical backlog history.")
+    edge_validate.add_argument("--project-root", default=".")
+    edge_validate.set_defaults(handler=_edge_validate)
+    edge_bootstrap = edge_commands.add_parser(
+        "bootstrap-index", help="Rebuild the deterministic derived historical index."
+    )
+    edge_bootstrap.add_argument("--project-root", default=".")
+    edge_bootstrap.set_defaults(handler=_edge_bootstrap)
+
     campaign = commands.add_parser("campaign", help="Expert YAML compatibility, validation, inspection, and execution.")
     campaign_commands = campaign.add_subparsers(
         dest="campaign_command",
@@ -1044,6 +1173,170 @@ def _research_search(args: argparse.Namespace) -> int:
     rows = _query(database, query, params)
     _emit_rows(rows, args.json)
     return 0
+
+
+def _edge_capture_observation(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    record = EdgeBacklogStore(args.project_root).capture_observation(
+        _edge_input(args.input),
+        actor_id=args.actor_id,
+        task_id=args.task_id,
+    )
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _edge_revise_observation(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    record = EdgeBacklogStore(args.project_root).revise_observation(
+        args.observation_id,
+        _edge_input(args.input),
+        actor_id=args.actor_id,
+        task_id=args.task_id,
+    )
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _edge_create(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    record = EdgeBacklogStore(args.project_root).create_entry(
+        _edge_input(args.input),
+        actor_id=args.actor_id,
+        task_id=args.task_id,
+    )
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _edge_revise(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    record = EdgeBacklogStore(args.project_root).revise_entry(
+        args.entry_id,
+        _edge_input(args.input),
+        actor_id=args.actor_id,
+        task_id=args.task_id,
+    )
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _edge_list(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    rows = EdgeBacklogStore(args.project_root).list_entries()
+    if args.state:
+        rows = [row for row in rows if row["state"] == args.state]
+    _emit_rows(rows, args.json)
+    return 0
+
+
+def _edge_show(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    payload = EdgeBacklogStore(args.project_root).show(args.entry_id)
+    if args.json:
+        _edge_json(payload)
+    else:
+        _print_mapping(
+            {
+                "entry_id": payload["entry"]["entry_id"],
+                "revision": payload["entry"]["revision"],
+                "state": payload["state"],
+                "title": payload["display_label"],
+                "decisions": len(payload["decisions"]),
+                "links": len(payload["links"]),
+            }
+        )
+    return 0
+
+
+def _edge_search(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    rows = EdgeBacklogStore(args.project_root).search(args.query, state=args.state)
+    _emit_rows(rows, args.json)
+    return 0
+
+
+def _edge_duplicate_candidates(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    _edge_json(EdgeBacklogStore(args.project_root).duplicate_snapshot(args.entry_id))
+    return 0
+
+
+def _edge_review(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    record = EdgeBacklogStore(args.project_root).record_human_decision(
+        args.entry_id,
+        disposition=args.disposition,
+        duplicate_resolution=args.duplicate_resolution,
+        candidate_snapshot_sha256=args.candidate_snapshot_sha256,
+        canonical_entry_id=args.canonical_entry_id,
+        related_edge_family_ids=args.related_edge_family_id,
+        reason_codes=args.reason_code,
+        rationale=args.rationale,
+        revisit_conditions=args.revisit_condition,
+        reviewer_id=args.reviewer_id,
+        decision_id=args.decision_id,
+    )
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _edge_resume(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    record = EdgeBacklogStore(args.project_root).resume_entry(
+        args.entry_id,
+        reason_codes=args.reason_code,
+        rationale=args.rationale,
+        reviewer_id=args.reviewer_id,
+        decision_id=args.decision_id,
+    )
+    _edge_json(record.model_dump(mode="json", by_alias=True))
+    return 0
+
+
+def _edge_validate(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog import EdgeBacklogStore
+
+    store = EdgeBacklogStore(args.project_root)
+    payload = store.validate()
+    if store.layout.edge_backlog_history_index.is_file():
+        payload["historical_index"] = {"status": "PRESENT_NON_AUTHORITATIVE"}
+    else:
+        payload["historical_index"] = {"status": "NOT_BUILT"}
+    _edge_json(payload)
+    return 0
+
+
+def _edge_bootstrap(args: argparse.Namespace) -> int:
+    from alphaquest.research.edge_backlog_bootstrap import build_historical_edge_index
+
+    _edge_json(build_historical_edge_index(args.project_root))
+    return 0
+
+
+def _edge_input(value: str | Path) -> dict[str, Any]:
+    path = Path(value)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read Edge Backlog JSON input {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Edge Backlog JSON input must be an object")
+    return payload
+
+
+def _edge_json(payload: Any) -> None:
+    print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
 
 
 def _campaign_show(args: argparse.Namespace) -> int:

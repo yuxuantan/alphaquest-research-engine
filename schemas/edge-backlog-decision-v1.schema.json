@@ -1,0 +1,877 @@
+{
+  "$defs": {
+    "ActorProvenanceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_class": {
+          "enum": [
+            "CODEX",
+            "HUMAN_OWNER_RESEARCHER",
+            "ALPHAQUEST_DETERMINISTIC_ENGINE",
+            "EXTERNAL_SYSTEM"
+          ],
+          "title": "Actor Class",
+          "type": "string"
+        },
+        "actor_id": {
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        }
+      },
+      "required": [
+        "actor_class",
+        "actor_id"
+      ],
+      "title": "ActorProvenanceV1",
+      "type": "object"
+    },
+    "DuplicateCandidateV1": {
+      "additionalProperties": false,
+      "properties": {
+        "archive_generation": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Archive Generation"
+        },
+        "candidate_decision_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Decision Sha256"
+        },
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "candidate_kind": {
+          "enum": [
+            "CANONICAL_BACKLOG_ENTRY",
+            "DERIVED_HISTORICAL_RECORD"
+          ],
+          "title": "Candidate Kind",
+          "type": "string"
+        },
+        "candidate_link_chain_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Candidate Link Chain Sha256",
+          "type": "string"
+        },
+        "candidate_record_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Candidate Record Sha256",
+          "type": "string"
+        },
+        "derived_index_use": {
+          "anyOf": [
+            {
+              "const": "DUPLICATE_RECALL_ONLY",
+              "enum": [
+                "DUPLICATE_RECALL_ONLY"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Derived Index Use"
+        },
+        "dimension_scores": {
+          "additionalProperties": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "title": "Dimension Scores",
+          "type": "object"
+        },
+        "exact_fingerprint": {
+          "title": "Exact Fingerprint",
+          "type": "boolean"
+        },
+        "historical_disposition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Historical Disposition"
+        },
+        "historical_record": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoricalEdgeIndexRecordV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "historical_scientific_verdict": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Historical Scientific Verdict"
+        },
+        "lexical_similarity": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Lexical Similarity",
+          "type": "number"
+        },
+        "lineage_related": {
+          "title": "Lineage Related",
+          "type": "boolean"
+        },
+        "match_band": {
+          "enum": [
+            "EXACT_FINGERPRINT",
+            "HIGH_STRUCTURED_SIMILARITY",
+            "POSSIBLE_RELATED_EDGE",
+            "LEXICAL_REVIEW"
+          ],
+          "title": "Match Band",
+          "type": "string"
+        },
+        "matched_dimensions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Matched Dimensions",
+          "type": "array"
+        },
+        "p1_evidence_eligibility": {
+          "anyOf": [
+            {
+              "const": "NOT_CURRENT_P1_EVIDENCE",
+              "enum": [
+                "NOT_CURRENT_P1_EVIDENCE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P1 Evidence Eligibility"
+        },
+        "semantic_resolution": {
+          "anyOf": [
+            {
+              "const": "NEEDS_MANUAL_REVIEW",
+              "enum": [
+                "NEEDS_MANUAL_REVIEW"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Resolution"
+        },
+        "shared_link_targets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Shared Link Targets",
+          "type": "array"
+        },
+        "source_generation": {
+          "anyOf": [
+            {
+              "enum": [
+                "CURRENT",
+                "CONFIGURED_ARCHIVE",
+                "CLEAN_SLATE_ARCHIVE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Generation"
+        },
+        "source_overlap": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Overlap",
+          "type": "array"
+        },
+        "source_path": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Path"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "State"
+        },
+        "taxonomy_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Taxonomy Score",
+          "type": "number"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "candidate_kind",
+        "candidate_record_sha256",
+        "candidate_link_chain_sha256",
+        "title",
+        "exact_fingerprint",
+        "taxonomy_score",
+        "dimension_scores",
+        "matched_dimensions",
+        "lexical_similarity",
+        "source_overlap",
+        "shared_link_targets",
+        "lineage_related",
+        "match_band"
+      ],
+      "title": "DuplicateCandidateV1",
+      "type": "object"
+    },
+    "HistoricalEdgeIndexRecordV1": {
+      "additionalProperties": false,
+      "description": "One strict provenance-preserving projection from a historical source.",
+      "properties": {
+        "archive_generation": {
+          "minLength": 1,
+          "title": "Archive Generation",
+          "type": "string"
+        },
+        "attempt_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt Id"
+        },
+        "campaign_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Campaign Id"
+        },
+        "derived_index_use": {
+          "const": "DUPLICATE_RECALL_ONLY",
+          "enum": [
+            "DUPLICATE_RECALL_ONLY"
+          ],
+          "title": "Derived Index Use",
+          "type": "string"
+        },
+        "extraction_completeness": {
+          "enum": [
+            "COMPLETE",
+            "PARTIAL",
+            "INSUFFICIENT"
+          ],
+          "title": "Extraction Completeness",
+          "type": "string"
+        },
+        "instrument": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instrument"
+        },
+        "legacy_fingerprint": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Legacy Fingerprint"
+        },
+        "p1_evidence_eligibility": {
+          "const": "NOT_CURRENT_P1_EVIDENCE",
+          "enum": [
+            "NOT_CURRENT_P1_EVIDENCE"
+          ],
+          "title": "P1 Evidence Eligibility",
+          "type": "string"
+        },
+        "raw_config_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Config Path"
+        },
+        "raw_counterparty_transfer_rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Counterparty Transfer Rationale"
+        },
+        "raw_disposition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Disposition"
+        },
+        "raw_edge": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Edge"
+        },
+        "raw_edge_family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Edge Family"
+        },
+        "raw_expected_effect": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Expected Effect"
+        },
+        "raw_failure_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Failure Reason"
+        },
+        "raw_hypothesis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Hypothesis"
+        },
+        "raw_information_availability": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Information Availability"
+        },
+        "raw_outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Outcome"
+        },
+        "raw_report_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Report Path"
+        },
+        "raw_scientific_verdict": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Scientific Verdict"
+        },
+        "raw_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Title"
+        },
+        "record_id": {
+          "pattern": "^history\\.[a-f0-9]{24}$",
+          "title": "Record Id",
+          "type": "string"
+        },
+        "record_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Record Sha256",
+          "type": "string"
+        },
+        "schema": {
+          "const": "alphaquest.edge-backlog-history-index-record/v1",
+          "default": "alphaquest.edge-backlog-history-index-record/v1",
+          "enum": [
+            "alphaquest.edge-backlog-history-index-record/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "semantic_resolution": {
+          "const": "NEEDS_MANUAL_REVIEW",
+          "enum": [
+            "NEEDS_MANUAL_REVIEW"
+          ],
+          "title": "Semantic Resolution",
+          "type": "string"
+        },
+        "source_generation": {
+          "enum": [
+            "CURRENT",
+            "CONFIGURED_ARCHIVE",
+            "CLEAN_SLATE_ARCHIVE"
+          ],
+          "title": "Source Generation",
+          "type": "string"
+        },
+        "source_kind": {
+          "enum": [
+            "CAMPAIGN_DEFINITION",
+            "RESEARCH_LEDGER_ROW",
+            "EXPERIMENT_REGISTRY_EVENT",
+            "RESEARCH_RESET_MANIFEST"
+          ],
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "source_path": {
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        },
+        "source_row_number": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Row Number"
+        },
+        "source_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Source Sha256",
+          "type": "string"
+        },
+        "timeframe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeframe"
+        },
+        "variant_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variant Id"
+        }
+      },
+      "required": [
+        "record_id",
+        "source_kind",
+        "source_path",
+        "source_sha256",
+        "source_generation",
+        "archive_generation",
+        "p1_evidence_eligibility",
+        "derived_index_use",
+        "extraction_completeness",
+        "semantic_resolution",
+        "record_sha256"
+      ],
+      "title": "HistoricalEdgeIndexRecordV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/ActorProvenanceV1"
+    },
+    "append_sequence": {
+      "minimum": 1,
+      "title": "Append Sequence",
+      "type": "integer"
+    },
+    "candidate_snapshot": {
+      "items": {
+        "$ref": "#/$defs/DuplicateCandidateV1"
+      },
+      "title": "Candidate Snapshot",
+      "type": "array"
+    },
+    "candidate_snapshot_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Snapshot Sha256"
+    },
+    "canonical_entry_id": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Canonical Entry Id"
+    },
+    "decision_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "disposition": {
+      "enum": [
+        "REVIEWED_CONTINUE",
+        "REJECTED",
+        "DUPLICATE",
+        "SUSPENDED",
+        "RESUMED"
+      ],
+      "title": "Disposition",
+      "type": "string"
+    },
+    "duplicate_resolution": {
+      "anyOf": [
+        {
+          "enum": [
+            "SAME_EDGE",
+            "RELATED_EDGE_FAMILY",
+            "DISTINCT_EDGE",
+            "UNRESOLVED"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duplicate Resolution"
+    },
+    "entry_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Entry Id",
+      "type": "string"
+    },
+    "entry_link_chain_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Entry Link Chain Sha256",
+      "type": "string"
+    },
+    "entry_revision_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Entry Revision Sha256",
+      "type": "string"
+    },
+    "historical_source_commit": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{40}(?:[a-f0-9]{24})?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Historical Source Commit"
+    },
+    "historical_universe_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Historical Universe Sha256"
+    },
+    "previous_decision_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Decision Sha256"
+    },
+    "rationale": {
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "reason_codes": {
+      "items": {
+        "enum": [
+          "AMBIGUOUS_DUPLICATE",
+          "CAUSAL_WEAKNESS",
+          "DATA_UNAVAILABLE",
+          "DUPLICATE_EDGE",
+          "INSUFFICIENT_EVIDENCE",
+          "NEW_INFORMATION",
+          "OWNER_PRIORITY",
+          "PRIOR_FAILURE",
+          "SCOPE_MISMATCH",
+          "SOURCE_QUALITY",
+          "TEMPORARY_BLOCKER",
+          "OTHER"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Reason Codes",
+      "type": "array"
+    },
+    "record_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,255}$",
+      "title": "Record Id",
+      "type": "string"
+    },
+    "record_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Record Sha256",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "related_edge_family_ids": {
+      "items": {
+        "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+        "type": "string"
+      },
+      "title": "Related Edge Family Ids",
+      "type": "array"
+    },
+    "revisit_conditions": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Revisit Conditions",
+      "type": "array"
+    },
+    "schema": {
+      "const": "alphaquest.edge-backlog-decision/v1",
+      "default": "alphaquest.edge-backlog-decision/v1",
+      "enum": [
+        "alphaquest.edge-backlog-decision/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "record_id",
+    "append_sequence",
+    "recorded_at",
+    "actor",
+    "record_sha256",
+    "decision_id",
+    "entry_id",
+    "entry_revision_sha256",
+    "entry_link_chain_sha256",
+    "sequence",
+    "disposition",
+    "reason_codes",
+    "rationale"
+  ],
+  "title": "EdgeBacklogDecisionV1",
+  "type": "object"
+}

@@ -1,0 +1,191 @@
+{
+  "$defs": {
+    "ActorProvenanceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_class": {
+          "enum": [
+            "CODEX",
+            "HUMAN_OWNER_RESEARCHER",
+            "ALPHAQUEST_DETERMINISTIC_ENGINE",
+            "EXTERNAL_SYSTEM"
+          ],
+          "title": "Actor Class",
+          "type": "string"
+        },
+        "actor_id": {
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        }
+      },
+      "required": [
+        "actor_class",
+        "actor_id"
+      ],
+      "title": "ActorProvenanceV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/ActorProvenanceV1"
+    },
+    "append_sequence": {
+      "minimum": 1,
+      "title": "Append Sequence",
+      "type": "integer"
+    },
+    "authorizing_decision_id": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Authorizing Decision Id"
+    },
+    "entry_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Entry Id",
+      "type": "string"
+    },
+    "entry_revision_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Entry Revision Sha256",
+      "type": "string"
+    },
+    "link_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Link Id",
+      "type": "string"
+    },
+    "previous_link_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Link Sha256"
+    },
+    "rationale": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rationale"
+    },
+    "record_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,255}$",
+      "title": "Record Id",
+      "type": "string"
+    },
+    "record_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Record Sha256",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "relationship": {
+      "enum": [
+        "HYPOTHESIS_PROPOSAL",
+        "ADMITTED_HYPOTHESIS",
+        "EDGE_FAMILY",
+        "CAMPAIGN",
+        "REVISIT_OF"
+      ],
+      "title": "Relationship",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.edge-backlog-link/v1",
+      "default": "alphaquest.edge-backlog-link/v1",
+      "enum": [
+        "alphaquest.edge-backlog-link/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "target_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Target Id",
+      "type": "string"
+    },
+    "target_kind": {
+      "enum": [
+        "HYPOTHESIS",
+        "EDGE_FAMILY",
+        "CAMPAIGN",
+        "EDGE_BACKLOG_ENTRY"
+      ],
+      "title": "Target Kind",
+      "type": "string"
+    },
+    "target_locator": {
+      "minLength": 1,
+      "title": "Target Locator",
+      "type": "string"
+    },
+    "target_payload_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Target Payload Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "record_id",
+    "append_sequence",
+    "recorded_at",
+    "actor",
+    "record_sha256",
+    "link_id",
+    "entry_id",
+    "entry_revision_sha256",
+    "sequence",
+    "relationship",
+    "target_kind",
+    "target_id",
+    "target_locator",
+    "target_payload_sha256"
+  ],
+  "title": "EdgeBacklogLinkV1",
+  "type": "object"
+}

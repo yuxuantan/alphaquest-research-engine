@@ -6,6 +6,7 @@ The filesystem is storage, not the primary research interface. Begin with `views
 
 - `research/campaigns/active/`: authored hypotheses currently under research.
 - `research/campaigns/archive/`: closed hypotheses, configs, rationale, and attempts.
+- `research/edge_backlog/`: append-only observations and tentative economic-edge discovery records.
 - `src/alphaquest/`: reusable engine, validation, data, and research code.
 - `tests/`: executable controls and regressions.
 - `config/`: repository-level research policy settings.
@@ -15,6 +16,7 @@ The filesystem is storage, not the primary research interface. Begin with `views
 - `research/evidence/runs/`: generated run evidence; do not hand-edit.
 - `run-store/`: opaque run-UID compatibility view.
 - `catalogs/`: rebuildable registry and exports.
+- `catalogs/edge_backlog_history.jsonl`: rebuildable current/historical duplicate-memory index.
 - `views/`: rebuildable navigation.
 - `research_artifacts/`: durable audits and decisions.
 

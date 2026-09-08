@@ -2,6 +2,12 @@
 
 AlphaQuest Research Studio is the local, single-researcher interface for completed-bar ES and NQ research. After one administrator installs the workspace, launch it by double-clicking `AlphaQuest Studio.command`. You do not edit Python, YAML, hashes, or artifact paths.
 
+> **P2 legacy compatibility:** Studio still begins with a campaign draft. It is
+> temporarily compatible with existing campaigns but is not the target P1
+> discovery flow. The canonical pre-hypothesis inventory is the
+> [Central Edge Backlog](../research/edge-backlog.md); replacing Studio's start
+> flow and enforcing campaign linkage belong to later P3-P5 work.
+
 For the audited research/backtesting comparison with MultiCharts, see
 [MultiCharts research and backtesting parity](../reference/multicharts-research-parity.md).
 
