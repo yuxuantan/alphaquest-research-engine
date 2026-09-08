@@ -34,6 +34,7 @@ def main() -> None:
         schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
         schema["$id"] = f"https://alphaquest.local/schemas/{FILENAMES[model.family]}"
         schema.setdefault("properties", {}).setdefault("schema", {})["const"] = model.schema_literal
+        schema["properties"].setdefault("record_sha256", {})["not"] = {"const": "0" * 64}
         required = schema.setdefault("required", [])
         if "schema" not in required:
             required.insert(0, "schema")

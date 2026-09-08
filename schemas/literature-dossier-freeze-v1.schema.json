@@ -38,6 +38,292 @@
       "title": "ActorProvenanceV1",
       "type": "object"
     },
+    "DossierClaimRefV1": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "claim_revision_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Claim Revision Sha256",
+          "type": "string"
+        },
+        "p2_role": {
+          "enum": [
+            "MOTIVATING",
+            "SUPPORTING",
+            "CONTRADICTING"
+          ],
+          "title": "P2 Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "claim_revision_sha256",
+        "p2_role"
+      ],
+      "title": "DossierClaimRefV1",
+      "type": "object"
+    },
+    "EconomicConceptsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "beneficiary_counterparty_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Beneficiary Counterparty Codes",
+          "type": "array"
+        },
+        "causal_mechanism_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Causal Mechanism Code",
+          "type": "string"
+        },
+        "cost_bearer_counterparty_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Cost Bearer Counterparty Codes",
+          "type": "array"
+        },
+        "expected_effect_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Expected Effect Code",
+          "type": "string"
+        },
+        "holding_horizon_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Holding Horizon Code",
+          "type": "string"
+        },
+        "information_availability_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Information Availability Code",
+          "type": "string"
+        },
+        "information_input_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Information Input Codes",
+          "type": "array"
+        },
+        "instrument_ids": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Instrument Ids",
+          "type": "array"
+        },
+        "market_behavior_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Market Behavior Code",
+          "type": "string"
+        },
+        "market_context_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Market Context Codes",
+          "type": "array"
+        },
+        "transfer_rationale_code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "title": "Transfer Rationale Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "instrument_ids",
+        "market_behavior_code",
+        "causal_mechanism_code",
+        "beneficiary_counterparty_codes",
+        "cost_bearer_counterparty_codes",
+        "transfer_rationale_code",
+        "information_input_codes",
+        "information_availability_code",
+        "expected_effect_code",
+        "holding_horizon_code",
+        "market_context_codes"
+      ],
+      "title": "EconomicConceptsV1",
+      "type": "object"
+    },
+    "FactualDescriptorV1": {
+      "additionalProperties": false,
+      "properties": {
+        "basis_claims": {
+          "items": {
+            "$ref": "#/$defs/RecordReferenceV1"
+          },
+          "title": "Basis Claims",
+          "type": "array"
+        },
+        "descriptor": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Descriptor",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "verification": {
+          "enum": [
+            "VERIFIED",
+            "UNVERIFIED",
+            "UNKNOWN",
+            "NOT_STATED",
+            "NOT_APPLICABLE"
+          ],
+          "title": "Verification",
+          "type": "string"
+        }
+      },
+      "required": [
+        "descriptor",
+        "verification"
+      ],
+      "title": "FactualDescriptorV1",
+      "type": "object"
+    },
+    "LaneCompletionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_status": {
+          "enum": [
+            "TERMINAL",
+            "NONTERMINAL"
+          ],
+          "title": "Execution Status",
+          "type": "string"
+        },
+        "gap_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gap Reason"
+        },
+        "lane": {
+          "enum": [
+            "SUPPORTING_OR_MOTIVATING",
+            "NULL_OR_CONTRARY",
+            "FAILED_REPLICATION",
+            "REGIME_DEPENDENCE",
+            "TRANSACTION_COST_OR_EXECUTION_OBJECTION",
+            "ALTERNATIVE_EXPLANATION",
+            "DATA_MINING_OR_MULTIPLE_TESTING"
+          ],
+          "title": "Lane",
+          "type": "string"
+        },
+        "obligation_status": {
+          "enum": [
+            "SATISFIED",
+            "UNSATISFIED_PROVIDER_FAILURE",
+            "UNSATISFIED_RESOURCE_OR_SAFETY_LIMIT"
+          ],
+          "title": "Obligation Status",
+          "type": "string"
+        },
+        "search_run_refs": {
+          "items": {
+            "$ref": "#/$defs/RecordReferenceV1"
+          },
+          "title": "Search Run Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "lane",
+        "execution_status",
+        "obligation_status",
+        "search_run_refs"
+      ],
+      "title": "LaneCompletionV1",
+      "type": "object"
+    },
+    "MaterialStatementV1": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "enum": [
+            "CLAIM_LINKED",
+            "ALPHAQUEST_EXPLICIT_INFERENCE"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "claim_refs": {
+          "items": {
+            "$ref": "#/$defs/RecordReferenceV1"
+          },
+          "minItems": 1,
+          "title": "Claim Refs",
+          "type": "array"
+        },
+        "inference_rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inference Rationale"
+        },
+        "statement_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Statement Id",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "statement_id",
+        "text",
+        "basis",
+        "claim_refs"
+      ],
+      "title": "MaterialStatementV1",
+      "type": "object"
+    },
     "RecordReferenceV1": {
       "additionalProperties": false,
       "properties": {
@@ -57,6 +343,114 @@
         "record_sha256"
       ],
       "title": "RecordReferenceV1",
+      "type": "object"
+    },
+    "TaxonomyDimensionMappingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "basis_claims": {
+          "items": {
+            "$ref": "#/$defs/RecordReferenceV1"
+          },
+          "minItems": 1,
+          "title": "Basis Claims",
+          "type": "array"
+        },
+        "dimension": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Dimension",
+          "type": "string"
+        },
+        "mapping_basis": {
+          "enum": [
+            "SOURCE_STATED",
+            "ALPHAQUEST_EXPLICIT_INFERENCE"
+          ],
+          "title": "Mapping Basis",
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "taxonomy_codes": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Taxonomy Codes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "dimension",
+        "taxonomy_codes",
+        "mapping_basis",
+        "basis_claims",
+        "rationale"
+      ],
+      "title": "TaxonomyDimensionMappingV1",
+      "type": "object"
+    },
+    "TaxonomyProposalV1": {
+      "additionalProperties": false,
+      "properties": {
+        "classification_status": {
+          "enum": [
+            "CLASSIFIED",
+            "NEEDS_CLASSIFICATION"
+          ],
+          "title": "Classification Status",
+          "type": "string"
+        },
+        "dimension_mappings": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyDimensionMappingV1"
+          },
+          "title": "Dimension Mappings",
+          "type": "array"
+        },
+        "economic_concepts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EconomicConceptsV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "taxonomy_ref": {
+          "$ref": "#/$defs/TaxonomyRefV1"
+        },
+        "unclassified_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "AMBIGUOUS_CAUSAL_MECHANISM",
+                "CONFLICTING_OBSERVATIONS",
+                "INSUFFICIENT_SOURCE_CONTEXT",
+                "MIXED_ECONOMIC_PHENOMENA",
+                "NOVEL_CONCEPT_NOT_IN_TAXONOMY"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unclassified Reason"
+        }
+      },
+      "required": [
+        "classification_status",
+        "taxonomy_ref"
+      ],
+      "title": "TaxonomyProposalV1",
       "type": "object"
     },
     "TaxonomyRefV1": {
@@ -102,9 +496,18 @@
       "title": "Append Sequence",
       "type": "integer"
     },
+    "causal_admission_status": {
+      "const": "NOT_ASSESSED_IN_P3",
+      "default": "NOT_ASSESSED_IN_P3",
+      "enum": [
+        "NOT_ASSESSED_IN_P3"
+      ],
+      "title": "Causal Admission Status",
+      "type": "string"
+    },
     "claim_refs": {
       "items": {
-        "$ref": "#/$defs/RecordReferenceV1"
+        "$ref": "#/$defs/DossierClaimRefV1"
       },
       "minItems": 1,
       "title": "Claim Refs",
@@ -127,9 +530,23 @@
       "title": "Evidence Relation Refs",
       "type": "array"
     },
+    "execution_lineage_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Execution Lineage Id",
+      "type": "string"
+    },
     "freeze_id": {
       "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
       "title": "Freeze Id",
+      "type": "string"
+    },
+    "hypothesis_status": {
+      "const": "NOT_CREATED_IN_P3",
+      "default": "NOT_CREATED_IN_P3",
+      "enum": [
+        "NOT_CREATED_IN_P3"
+      ],
+      "title": "Hypothesis Status",
       "type": "string"
     },
     "idempotency_key": {
@@ -141,6 +558,36 @@
       "pattern": "^[a-f0-9]{64}$",
       "title": "Intent Sha256",
       "type": "string"
+    },
+    "lane_completions": {
+      "items": {
+        "$ref": "#/$defs/LaneCompletionV1"
+      },
+      "maxItems": 7,
+      "minItems": 7,
+      "title": "Lane Completions",
+      "type": "array"
+    },
+    "material_statements": {
+      "items": {
+        "$ref": "#/$defs/MaterialStatementV1"
+      },
+      "minItems": 1,
+      "title": "Material Statements",
+      "type": "array"
+    },
+    "p2_entry_id": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "P2 Entry Id"
     },
     "previous_store_record_sha256": {
       "anyOf": [
@@ -155,10 +602,30 @@
       "default": null,
       "title": "Previous Store Record Sha256"
     },
+    "prior_emission_receipt_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prior Emission Receipt Sha256"
+    },
     "protocol_revision_sha256": {
       "pattern": "^[a-f0-9]{64}$",
       "title": "Protocol Revision Sha256",
       "type": "string"
+    },
+    "quality_descriptors": {
+      "items": {
+        "$ref": "#/$defs/FactualDescriptorV1"
+      },
+      "title": "Quality Descriptors",
+      "type": "array"
     },
     "record_id": {
       "pattern": "^[a-z0-9][a-z0-9_.-]{0,255}$",
@@ -166,6 +633,9 @@
       "type": "string"
     },
     "record_sha256": {
+      "not": {
+        "const": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
       "pattern": "^[a-f0-9]{64}$",
       "title": "Record Sha256",
       "type": "string"
@@ -180,6 +650,15 @@
       "title": "Schema",
       "type": "string"
     },
+    "scientific_validation_status": {
+      "const": "NOT_PERFORMED_IN_P3",
+      "default": "NOT_PERFORMED_IN_P3",
+      "enum": [
+        "NOT_PERFORMED_IN_P3"
+      ],
+      "title": "Scientific Validation Status",
+      "type": "string"
+    },
     "search_completion_status": {
       "enum": [
         "COMPLETE_WITHIN_DECLARED_BOUNDS",
@@ -188,8 +667,8 @@
       "title": "Search Completion Status",
       "type": "string"
     },
-    "taxonomy_ref": {
-      "$ref": "#/$defs/TaxonomyRefV1"
+    "taxonomy_proposal": {
+      "$ref": "#/$defs/TaxonomyProposalV1"
     },
     "unsatisfied_lanes": {
       "items": {
@@ -221,11 +700,15 @@
     "dossier_id",
     "dossier_revision_sha256",
     "protocol_revision_sha256",
+    "execution_lineage_id",
+    "lane_completions",
     "claim_refs",
     "evidence_relation_refs",
+    "quality_descriptors",
+    "material_statements",
     "search_completion_status",
     "unsatisfied_lanes",
-    "taxonomy_ref"
+    "taxonomy_proposal"
   ],
   "title": "DossierFreezeV1",
   "type": "object"

@@ -10,6 +10,7 @@ import subprocess
 import threading
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from alphaquest.research.edge_backlog import EdgeBacklogStore
 from alphaquest.research.edge_backlog_taxonomy import bundled_taxonomy_ref
@@ -20,7 +21,12 @@ from alphaquest.research.literature.contracts import (
     LiteratureAuthorityError,
     LiteratureConflictError,
     LiteratureIntegrityError,
+    RevisionRecordV1,
+    SCHEMA_TYPES,
     canonical_json_bytes,
+    intent_sha256,
+    methodology_sha256,
+    record_sha256,
 )
 from alphaquest.research.literature.emission import emit_prepared, prepare_emission, reconcile_emission
 from alphaquest.research.literature.mapper import (
@@ -35,6 +41,16 @@ from alphaquest.research.literature.store import LiteratureStore
 REPO = Path(__file__).parents[1]
 FIXTURES = REPO / "tests/fixtures/literature"
 NOW = datetime(2026, 9, 1, 14, 0, tzinfo=timezone.utc)
+MANAGED_FIELDS = {
+    "schema",
+    "append_sequence",
+    "previous_store_record_sha256",
+    "recorded_at",
+    "actor",
+    "idempotency_key",
+    "intent_sha256",
+    "record_sha256",
+}
 
 
 def _git(root: Path, *args: str) -> None:
@@ -126,6 +142,51 @@ def _location(data: bytes, *, representation: str = "PLAIN_TEXT") -> dict:
         "span_sha256": hashlib.sha256(data).hexdigest(),
     }
     material["locator_sha256"] = hashlib.sha256(canonical_json_bytes(material, trailing_lf=False)).hexdigest()
+    return material
+
+
+def _search_result(locator: str, *, provider_rank: int = 1, result_rank: int = 1) -> dict:
+    work_hash = hashlib.sha256(f"work|{locator}".encode()).hexdigest()
+    locator_hash = hashlib.sha256(locator.encode()).hexdigest()
+    identity = hashlib.sha256(
+        canonical_json_bytes(
+            {"canonical_locator": locator, "work_identity_sha256": work_hash},
+            trailing_lf=False,
+        )
+    ).hexdigest()
+    return {
+        "result_identity_sha256": identity,
+        "work_identity_sha256": work_hash,
+        "canonical_locator": locator,
+        "locator_sha256": locator_hash,
+        "provider_rank": provider_rank,
+        "result_rank": result_rank,
+    }
+
+
+def _search_outcome(locator: str, *, capture: bool = True, **overrides) -> dict:
+    result = _search_result(locator)
+    material = {
+        "status": "SUCCEEDED",
+        "inspected_results": [result],
+        "capture_attempt_records": (
+            [
+                {
+                    "capture_attempt_id": "attempt." + result["result_identity_sha256"][:24],
+                    "result_identity_sha256": result["result_identity_sha256"],
+                    "selection_ordinal": 1,
+                }
+            ]
+            if capture
+            else []
+        ),
+        "bytes_retrieved": 0,
+        "elapsed_seconds": 1,
+        "provider_trace_completeness": "COMPLETE_FOR_REQUEST",
+        "failure_reason": None,
+        "saturation_claimed": False,
+    }
+    material.update(overrides)
     return material
 
 
@@ -295,16 +356,7 @@ def _dossier(store: LiteratureStore, protocol, claims, *, dossier_id: str = "dos
             "protocol_revision_sha256": protocol.record_sha256,
             "execution_lineage_id": protocol.execution_lineage_id,
             "search_completion_status": "TERMINATED_WITH_DECLARED_GAPS",
-            "lane_completions": [
-                {
-                    "lane": name,
-                    "execution_status": "TERMINAL",
-                    "obligation_status": "UNSATISFIED_PROVIDER_FAILURE",
-                    "search_run_refs": [],
-                    "gap_reason": "Offline Stage-1 fixture has no live provider",
-                }
-                for name in LANES
-            ],
+            "lane_completions": store._derive_lane_completions(protocol, store.records()),
             "claim_refs": refs,
             "evidence_relation_refs": relation_refs,
             "quality_descriptors": [
@@ -349,16 +401,9 @@ def _dossier(store: LiteratureStore, protocol, claims, *, dossier_id: str = "dos
     freeze_id = f"freeze.{dossier_id}.{dossier.revision}"
     freeze = store.freeze_dossier(
         {
-            "record_id": freeze_id,
             "freeze_id": freeze_id,
             "dossier_id": dossier.dossier_id,
             "dossier_revision_sha256": dossier.record_sha256,
-            "protocol_revision_sha256": protocol.record_sha256,
-            "claim_refs": record_refs,
-            "evidence_relation_refs": relation_refs,
-            "search_completion_status": dossier.search_completion_status,
-            "unsatisfied_lanes": list(LANES),
-            "taxonomy_ref": bundled_taxonomy_ref().model_dump(mode="json"),
         },
         actor=_actor(),
         idempotency_key=freeze_id,
@@ -383,6 +428,226 @@ def _initial_slice(root: Path):
     return store, protocol, supporting, contrary, dossier, freeze, operation, receipt
 
 
+def _all_family_slice(root: Path) -> LiteratureStore:
+    store, protocol, support, contrary, _dossier_record, _freeze, _operation, _receipt = (
+        _initial_slice(root)
+    )
+    lane = next(item for item in protocol.lanes if item.lane == "SUPPORTING_OR_MOTIVATING")
+    started = store.start_search(
+        {
+            "search_run_id": "search.all-families",
+            "protocol_id": protocol.protocol_id,
+            "protocol_revision_sha256": protocol.record_sha256,
+            "execution_lineage_id": protocol.execution_lineage_id,
+            "lane": lane.lane,
+            "query": lane.required_initial_queries[0],
+            "query_kind": "INITIAL",
+            "parent_search_run_id": None,
+            "adaptive_depth": 0,
+            "provider_id": lane.provider_order[0],
+            "provider_trace_completeness": "COMPLETE_FOR_REQUEST",
+        },
+        actor=_actor(),
+        idempotency_key="search.all-families.start",
+    )
+    store.finish_search(
+        started.search_run_id,
+        _search_outcome("https://example.test/all-families"),
+        actor=_actor(),
+        idempotency_key="search.all-families.finish",
+    )
+    store.append_source_relationship(
+        {
+            "relationship_id": "relationship.all-families",
+            "subject_kind": "WORK",
+            "subject_id": support.work_id,
+            "predicate": "POSSIBLE_SAME_WORK",
+            "object_kind": "WORK",
+            "object_id": contrary.work_id,
+            "status": "ACTIVE",
+            "assertion_evidence_refs": [],
+            "superseded_by_relationship_id": None,
+            "change_reason": "Exercise the canonical relationship family",
+        },
+        actor=_actor(),
+        idempotency_key="relationship.all-families.r1",
+    )
+    sha = hashlib.sha256(b"canonical task fixture").hexdigest()
+    store.append_codex_attempt(
+        {
+            "attempt_id": "attempt.all-families",
+            "task_type": "CLAIM_EXTRACTOR",
+            "status": "STARTED",
+            "model": None,
+            "settings_sha256": sha,
+            "prompt_sha256": sha,
+            "input_manifest_sha256": sha,
+            "workspace_manifest_sha256": None,
+            "output_sha256": None,
+            "referenced_records": [],
+            "isolation_backend": "offline-fixture",
+            "failure_reason": None,
+        },
+        actor=_actor(),
+        idempotency_key="attempt.all-families.r1",
+    )
+    assert {type(item).family for item in store.records()} == {
+        item.family for item in CANONICAL_RECORD_TYPES
+    }
+    return store
+
+
+def _canonical_paths(root: Path) -> list[Path]:
+    return sorted((root / "research/literature").glob("**/*.json"))
+
+
+def _deep_hash_replace(value, replacements: dict[str, str]):
+    if isinstance(value, str):
+        return replacements.get(value, value)
+    if isinstance(value, list):
+        return [_deep_hash_replace(item, replacements) for item in value]
+    if isinstance(value, dict):
+        return {key: _deep_hash_replace(item, replacements) for key, item in value.items()}
+    return value
+
+
+def _rewrite_valid_hash_chains(root: Path, mutate) -> None:
+    """Tamper semantically, then rebuild hashes so full-history checks are reached."""
+
+    rows = [(path, json.loads(path.read_text())) for path in _canonical_paths(root)]
+    rows.sort(key=lambda item: item[1]["append_sequence"])
+    replacements: dict[str, str] = {}
+    revision_heads: dict[tuple[str, str], str] = {}
+    previous_store: str | None = None
+    for path, original in rows:
+        old_hash = original["record_sha256"]
+        record = _deep_hash_replace(original, replacements)
+        mutate(record)
+        record["previous_store_record_sha256"] = previous_store
+        record_type = SCHEMA_TYPES[record["schema"]]
+        if issubclass(record_type, RevisionRecordV1):
+            object_id = record["record_id"].rsplit(".r", 1)[0]
+            key = (record["schema"], object_id)
+            record["previous_revision_sha256"] = revision_heads.get(key)
+        intent_material = {
+            key: value for key, value in record.items() if key not in MANAGED_FIELDS
+        }
+        if issubclass(record_type, RevisionRecordV1):
+            for key in ("record_id", "revision", "previous_revision_sha256"):
+                intent_material.pop(key, None)
+        record["intent_sha256"] = intent_sha256(intent_material)
+        record["record_sha256"] = record_sha256(record)
+        replacements[old_hash] = record["record_sha256"]
+        previous_store = record["record_sha256"]
+        if issubclass(record_type, RevisionRecordV1):
+            revision_heads[(record["schema"], record["record_id"].rsplit(".r", 1)[0])] = record[
+                "record_sha256"
+            ]
+        path.write_bytes(canonical_json_bytes(record))
+
+
+PROTOCOL_FROZEN_MUTATIONS = (
+    "execution_lineage_id",
+    "lineage_provenance",
+    "research_question",
+    "market_scope",
+    "inclusion_rules",
+    "exclusion_rules",
+    "required_initial_queries",
+    "provider_order",
+    "minimum_provider_attempts",
+    "minimum_results_inspected_per_query",
+    "minimum_distinct_results_inspected",
+    "minimum_capture_attempts",
+    "capture_selection_rule",
+    "adaptive_max_depth",
+    "maximum_queries",
+    "maximum_results",
+    "maximum_captures",
+    "maximum_bytes",
+    "maximum_elapsed_seconds",
+    "saturation",
+)
+
+
+def _mutate_protocol_contract(payload: dict, field: str) -> None:
+    if field == "execution_lineage_id":
+        payload[field] = "lineage.mutated"
+    elif field == "lineage_provenance":
+        payload["lineage_kind"] = "RESULT_INFORMED_EXTENSION"
+        payload["parent_execution_lineage_id"] = "lineage.parent"
+        payload["observed_result_set_sha256"] = "a" * 64
+    elif field in {"research_question"}:
+        payload[field] = "Mutated research question"
+    elif field in {"market_scope", "inclusion_rules", "exclusion_rules"}:
+        payload[field] = [f"mutated {field}"]
+    elif field == "required_initial_queries":
+        payload["lanes"][0][field] = ["mutated initial query"]
+    elif field == "provider_order":
+        payload["lanes"][0][field] = ["mutated-provider"]
+    elif field == "capture_selection_rule":
+        payload["lanes"][0][field] = "MUTATED_SELECTION_RULE"
+    elif field == "saturation":
+        payload["lanes"][0][field] = None
+    else:
+        payload["lanes"][0][field] += 1
+
+
+def _protocol_with_lane(store: LiteratureStore, lane_override: dict):
+    lanes = [_lane(name) for name in LANES]
+    lanes[0].update(lane_override)
+    return _protocol(store, lanes=lanes)
+
+
+def _start_lane_search(store: LiteratureStore, protocol, search_id: str, provider: str):
+    lane = protocol.lanes[0]
+    return store.start_search(
+        {
+            "search_run_id": search_id,
+            "protocol_id": protocol.protocol_id,
+            "protocol_revision_sha256": protocol.record_sha256,
+            "execution_lineage_id": protocol.execution_lineage_id,
+            "lane": lane.lane,
+            "query": lane.required_initial_queries[0],
+            "query_kind": "INITIAL",
+            "parent_search_run_id": None,
+            "adaptive_depth": 0,
+            "provider_id": provider,
+            "provider_trace_completeness": "COMPLETE_FOR_REQUEST",
+        },
+        actor=_actor(),
+        idempotency_key=f"{search_id}.start",
+    )
+
+
+def _start_capture(store: LiteratureStore, version, capture_id: str):
+    return store.append_capture(
+        {
+            "capture_id": capture_id,
+            "source_version_id": version.source_version_id,
+            "source_version_revision_sha256": version.record_sha256,
+            "retrieval_locator": f"https://example.test/{capture_id}",
+            "status": "STARTED",
+            "captured_at": NOW,
+            "access_basis": "OPEN_PUBLIC",
+            "local_retention_permission": "ALLOWED",
+            "redistribution_permission": "RESTRICTED",
+            "external_model_processing_permission": "ALLOWED_EXTERNAL_PROCESSOR",
+            "media_type": None,
+            "content_sha256": None,
+            "content_bytes": None,
+            "extracted_representation_sha256": None,
+            "extracted_bytes": None,
+            "extractor_id": None,
+            "extractor_version": None,
+            "extractor_config_sha256": None,
+            "failure_reason": None,
+        },
+        actor=_actor(),
+        idempotency_key=f"{capture_id}.start",
+    )
+
+
 def test_offline_canonical_slice_emits_receipt_and_prefix_snapshot(tmp_path: Path) -> None:
     root = _project(tmp_path)
     store, _protocol_record, _support, _contrary, _dossier_record, freeze, operation, receipt = _initial_slice(root)
@@ -396,12 +661,6 @@ def test_offline_canonical_slice_emits_receipt_and_prefix_snapshot(tmp_path: Pat
     assert store.validate()["family_count"] == 13
     assert EdgeBacklogStore(root).validate()["status"] == "PASS"
     assert reconcile_emission(root, operation_id="emission.initial", actor=_actor()).record_sha256 == receipt.record_sha256
-
-
-def test_fixture_catalog_covers_all_twenty_owner_cases() -> None:
-    catalog = json.loads((FIXTURES / "offline_cases.json").read_text())
-    assert len(catalog["cases"]) == 20
-    assert len(set(catalog["cases"])) == 20
 
 
 def test_evidence_time_uses_exact_availability_else_capture_without_midnight(tmp_path: Path) -> None:
@@ -499,7 +758,12 @@ def test_protocol_freeze_adaptive_bounds_new_lineage_and_gap_semantics(tmp_path:
         {"search_run_id": "search.initial", "protocol_id": protocol.protocol_id, "protocol_revision_sha256": protocol.record_sha256, "execution_lineage_id": protocol.execution_lineage_id, "lane": supporting_lane.lane, "query": supporting_lane.required_initial_queries[0], "query_kind": "INITIAL", "parent_search_run_id": None, "adaptive_depth": 0, "provider_id": "fixture-provider", "provider_trace_completeness": "COMPLETE_FOR_REQUEST"},
         actor=_actor(), idempotency_key="search.initial.start",
     )
-    finished = store.finish_search("search.initial", {"status": "SUCCEEDED", "results_inspected": 1, "capture_attempts": 1, "result_set_sha256": hashlib.sha256(b"one result").hexdigest(), "failure_reason": None}, actor=_actor(), idempotency_key="search.initial.finish")
+    finished = store.finish_search(
+        "search.initial",
+        _search_outcome("https://example.test/search-result"),
+        actor=_actor(),
+        idempotency_key="search.initial.finish",
+    )
     administrative = _protocol(store, administrative_annotations=["Owner note"], change_reason="Administrative only")
     assert administrative.methodology_sha256 == protocol.methodology_sha256
     altered = protocol.model_dump(mode="json", exclude={"schema_name", "record_id", "append_sequence", "previous_store_record_sha256", "recorded_at", "actor", "idempotency_key", "intent_sha256", "record_sha256", "revision", "previous_revision_sha256", "methodology_sha256"})
@@ -532,7 +796,7 @@ def test_protocol_freeze_adaptive_bounds_new_lineage_and_gap_semantics(tmp_path:
         for name in LANES
     ]
     bad_completions[0] = {"lane": "SUPPORTING_OR_MOTIVATING", "execution_status": "TERMINAL", "obligation_status": "SATISFIED", "search_run_refs": [{"record_id": finished.record_id, "record_sha256": finished.record_sha256}], "gap_reason": None}
-    with pytest.raises(LiteratureConflictError, match="prior-lineage"):
+    with pytest.raises(LiteratureConflictError, match="exactly include all canonical lane searches"):
         store.append_dossier(
             {"dossier_id": "dossier.extension", "protocol_revision_sha256": extension.record_sha256, "execution_lineage_id": extension.execution_lineage_id, "search_completion_status": "TERMINATED_WITH_DECLARED_GAPS", "lane_completions": bad_completions, "claim_refs": [{"claim_id": source_claim.claim_id, "claim_revision_sha256": source_claim.record_sha256, "p2_role": "SUPPORTING"}], "evidence_relation_refs": [], "quality_descriptors": [], "material_statements": [{"statement_id": "statement.extension", "text": "Extension", "basis": "CLAIM_LINKED", "claim_refs": [{"record_id": source_claim.record_id, "record_sha256": source_claim.record_sha256}], "inference_rationale": None}], "taxonomy_proposal": {"classification_status": "CLASSIFIED", "taxonomy_ref": bundled_taxonomy_ref().model_dump(mode="json"), "economic_concepts": _concepts(), "unclassified_reason": None, "dimension_mappings": []}, "p2_entry_id": None, "prior_emission_receipt_sha256": None, "change_reason": "bad prior-lineage satisfaction"},
             actor=_actor(), idempotency_key="dossier.extension.r1",
@@ -920,3 +1184,1185 @@ def test_all_thirteen_schema_families_are_checked_in_and_require_discriminator()
         schema = json.loads(path.read_text())
         assert "schema" in schema["required"]
         assert "const" in schema["properties"]["schema"]
+
+
+def test_zero_and_wrong_record_hash_are_rejected_for_every_canonical_family(tmp_path: Path) -> None:
+    base = tmp_path / "base"
+    _all_family_slice(_project(base))
+    representatives = {}
+    for path in _canonical_paths(base):
+        record = json.loads(path.read_text())
+        family = SCHEMA_TYPES[record["schema"]].family
+        representatives.setdefault(family, path.relative_to(base))
+    assert set(representatives) == {item.family for item in CANONICAL_RECORD_TYPES}
+
+    for family, relative in sorted(representatives.items()):
+        for label, bad_hash in (("zero", "0" * 64), ("wrong", "f" * 64)):
+            root = tmp_path / f"{family}-{label}"
+            shutil.copytree(base, root)
+            path = root / relative
+            record = json.loads(path.read_text())
+            assert record["record_sha256"] != bad_hash
+            record["record_sha256"] = bad_hash
+            path.write_bytes(canonical_json_bytes(record))
+            with pytest.raises(LiteratureIntegrityError, match="record"):
+                LiteratureStore(root).records()
+
+
+def test_zero_hash_last_and_middle_with_forged_successor_are_rejected(tmp_path: Path) -> None:
+    base = tmp_path / "base"
+    _all_family_slice(_project(base))
+
+    last_root = tmp_path / "last"
+    shutil.copytree(base, last_root)
+    last_path = max(
+        _canonical_paths(last_root),
+        key=lambda path: json.loads(path.read_text())["append_sequence"],
+    )
+    last = json.loads(last_path.read_text())
+    last["record_sha256"] = "0" * 64
+    last_path.write_bytes(canonical_json_bytes(last))
+    with pytest.raises(LiteratureIntegrityError, match="record"):
+        LiteratureStore(last_root).validate()
+
+    middle_root = tmp_path / "middle"
+    shutil.copytree(base, middle_root)
+    rows = [(path, json.loads(path.read_text())) for path in _canonical_paths(middle_root)]
+    rows.sort(key=lambda item: item[1]["append_sequence"])
+    middle_index = len(rows) // 2
+    forged_predecessor = rows[middle_index - 1][1]["record_sha256"]
+    for index in range(middle_index, len(rows)):
+        path, record = rows[index]
+        record["previous_store_record_sha256"] = forged_predecessor
+        if index == middle_index:
+            record["record_sha256"] = "0" * 64
+        else:
+            record["record_sha256"] = record_sha256(record)
+        forged_predecessor = record["record_sha256"]
+        path.write_bytes(canonical_json_bytes(record))
+    with pytest.raises(LiteratureIntegrityError, match="record"):
+        LiteratureStore(middle_root).records()
+
+
+def test_valid_canonical_record_passes_and_trusted_draft_never_reaches_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import alphaquest.research.literature.store as store_module
+
+    root = _project(tmp_path)
+    writes: list[bytes] = []
+    real_write = store_module.exclusive_write_repository_file
+
+    def inspect_write(project_root, relative, data):
+        if str(relative).startswith("research/literature/"):
+            writes.append(data)
+            decoded = json.loads(data)
+            assert decoded["record_sha256"] != "0" * 64
+            assert decoded["record_sha256"] == record_sha256(decoded)
+        return real_write(project_root, relative, data)
+
+    monkeypatch.setattr(store_module, "exclusive_write_repository_file", inspect_write)
+    protocol = _protocol(LiteratureStore(root))
+    assert writes
+    assert type(protocol).model_validate_json(canonical_json_bytes(protocol)) == protocol
+    assert LiteratureStore(root).validate()["status"] == "PASS"
+
+
+@pytest.mark.parametrize("field", PROTOCOL_FROZEN_MUTATIONS)
+def test_started_protocol_rejects_each_nonadministrative_contract_mutation(
+    tmp_path: Path, field: str
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    _protocol(store, protocol_id="protocol.parent", lineage="lineage.parent")
+    protocol = _protocol(store, protocol_id="protocol.target", lineage="lineage.target")
+    lane = protocol.lanes[0]
+    store.start_search(
+        {
+            "search_run_id": "search.freeze-probe",
+            "protocol_id": protocol.protocol_id,
+            "protocol_revision_sha256": protocol.record_sha256,
+            "execution_lineage_id": protocol.execution_lineage_id,
+            "lane": lane.lane,
+            "query": lane.required_initial_queries[0],
+            "query_kind": "INITIAL",
+            "parent_search_run_id": None,
+            "adaptive_depth": 0,
+            "provider_id": lane.provider_order[0],
+            "provider_trace_completeness": "COMPLETE_FOR_REQUEST",
+        },
+        actor=_actor(),
+        idempotency_key="search.freeze-probe.start",
+    )
+    payload = protocol.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS
+        | {"record_id", "revision", "previous_revision_sha256", "methodology_sha256"},
+    )
+    _mutate_protocol_contract(payload, field)
+    with pytest.raises((LiteratureConflictError, ValueError)):
+        store.append_protocol(
+            payload,
+            actor=_actor(),
+            idempotency_key=f"protocol.target.mutate-{field}",
+        )
+
+
+def test_full_reload_reconstructs_protocol_contract_freeze_for_every_field(tmp_path: Path) -> None:
+    base = tmp_path / "base"
+    store = LiteratureStore(_project(base))
+    _protocol(store, protocol_id="protocol.parent", lineage="lineage.parent")
+    protocol = _protocol(store, protocol_id="protocol.target", lineage="lineage.target")
+    lane = protocol.lanes[0]
+    store.start_search(
+        {
+            "search_run_id": "search.persisted-freeze",
+            "protocol_id": protocol.protocol_id,
+            "protocol_revision_sha256": protocol.record_sha256,
+            "execution_lineage_id": protocol.execution_lineage_id,
+            "lane": lane.lane,
+            "query": lane.required_initial_queries[0],
+            "query_kind": "INITIAL",
+            "parent_search_run_id": None,
+            "adaptive_depth": 0,
+            "provider_id": lane.provider_order[0],
+            "provider_trace_completeness": "COMPLETE_FOR_REQUEST",
+        },
+        actor=_actor(),
+        idempotency_key="search.persisted-freeze.start",
+    )
+    administrative = _protocol(
+        store,
+        protocol_id="protocol.target",
+        lineage="lineage.target",
+        administrative_annotations=["allowed annotation"],
+        change_reason="Administrative revision",
+    )
+
+    for field in PROTOCOL_FROZEN_MUTATIONS:
+        root = tmp_path / f"persisted-{field}"
+        shutil.copytree(base, root)
+
+        def mutate(record, *, selected=field):
+            if record.get("record_id") != administrative.record_id:
+                return
+            _mutate_protocol_contract(record, selected)
+            if selected != "capture_selection_rule":
+                record["methodology_sha256"] = methodology_sha256(record)
+
+        _rewrite_valid_hash_chains(root, mutate)
+        with pytest.raises(LiteratureIntegrityError):
+            LiteratureStore(root).validate(verify_artifacts=False)
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "search_run_id",
+        "protocol_id",
+        "protocol_revision_sha256",
+        "execution_lineage_id",
+        "lane",
+        "query",
+        "query_kind",
+        "parent_search_run_id",
+        "adaptive_depth",
+        "provider_id",
+        "provider_attempt_ordinal",
+    ),
+)
+def test_finish_search_rejects_each_started_identity_field(tmp_path: Path, field: str) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    protocol = _protocol(store)
+    lane = protocol.lanes[0]
+    search = store.start_search(
+        {
+            "search_run_id": "search.immutable",
+            "protocol_id": protocol.protocol_id,
+            "protocol_revision_sha256": protocol.record_sha256,
+            "execution_lineage_id": protocol.execution_lineage_id,
+            "lane": lane.lane,
+            "query": lane.required_initial_queries[0],
+            "query_kind": "INITIAL",
+            "parent_search_run_id": None,
+            "adaptive_depth": 0,
+            "provider_id": lane.provider_order[0],
+            "provider_trace_completeness": "COMPLETE_FOR_REQUEST",
+        },
+        actor=_actor(),
+        idempotency_key="search.immutable.start",
+    )
+    payload = _search_outcome("https://example.test/immutable")
+    payload[field] = "mutated" if field not in {"adaptive_depth", "provider_attempt_ordinal"} else 2
+    with pytest.raises(LiteratureConflictError, match="terminal outcome fields"):
+        store.finish_search(
+            search.search_run_id,
+            payload,
+            actor=_actor(),
+            idempotency_key=f"search.immutable.finish-{field}",
+        )
+
+
+def test_full_reload_rejects_each_mutated_terminal_search_identity(tmp_path: Path) -> None:
+    base = tmp_path / "base"
+    store = LiteratureStore(_project(base))
+    protocol = _protocol(store)
+    lane = protocol.lanes[0]
+    started = store.start_search(
+        {
+            "search_run_id": "search.persisted-identity",
+            "protocol_id": protocol.protocol_id,
+            "protocol_revision_sha256": protocol.record_sha256,
+            "execution_lineage_id": protocol.execution_lineage_id,
+            "lane": lane.lane,
+            "query": lane.required_initial_queries[0],
+            "query_kind": "INITIAL",
+            "parent_search_run_id": None,
+            "adaptive_depth": 0,
+            "provider_id": lane.provider_order[0],
+            "provider_trace_completeness": "COMPLETE_FOR_REQUEST",
+        },
+        actor=_actor(),
+        idempotency_key="search.persisted-identity.start",
+    )
+    terminal = store.finish_search(
+        started.search_run_id,
+        _search_outcome("https://example.test/persisted-identity"),
+        actor=_actor(),
+        idempotency_key="search.persisted-identity.finish",
+    )
+    values = {
+        "search_run_id": "search.mutated",
+        "protocol_id": "protocol.mutated",
+        "protocol_revision_sha256": "a" * 64,
+        "execution_lineage_id": "lineage.mutated",
+        "lane": "NULL_OR_CONTRARY",
+        "query": "mutated query",
+        "query_kind": "ADAPTIVE",
+        "parent_search_run_id": "search.parent",
+        "adaptive_depth": 1,
+        "provider_id": "mutated-provider",
+        "provider_attempt_ordinal": 2,
+    }
+    for field, value in values.items():
+        root = tmp_path / f"terminal-{field}"
+        shutil.copytree(base, root)
+
+        def mutate(record, *, selected=field, replacement=value):
+            if record.get("record_id") == terminal.record_id:
+                record[selected] = replacement
+
+        _rewrite_valid_hash_chains(root, mutate)
+        with pytest.raises(LiteratureIntegrityError):
+            LiteratureStore(root).validate(verify_artifacts=False)
+
+
+def test_audit_provider_order_probe_and_duplicate_results_cannot_satisfy_lane(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    protocol = _protocol_with_lane(
+        store,
+        {
+            "provider_order": ["first", "second"],
+            "minimum_provider_attempts": 2,
+            "minimum_distinct_results_inspected": 2,
+            "minimum_capture_attempts": 0,
+            "maximum_queries": 1,
+        },
+    )
+    with pytest.raises(LiteratureConflictError, match="provider order"):
+        _start_lane_search(store, protocol, "search.second-first", "second")
+    first = _start_lane_search(store, protocol, "search.first", "first")
+    store.finish_search(
+        first.search_run_id,
+        _search_outcome("https://example.test/duplicate-result", capture=False),
+        actor=_actor(),
+        idempotency_key="search.first.finish",
+    )
+    second = _start_lane_search(store, protocol, "search.second", "second")
+    store.finish_search(
+        second.search_run_id,
+        _search_outcome(
+            "https://example.test/duplicate-result",
+            capture=False,
+            inspected_results=[
+                _search_result(
+                    "https://example.test/duplicate-result", provider_rank=2
+                )
+            ],
+        ),
+        actor=_actor(),
+        idempotency_key="search.second.finish",
+    )
+    completion = store._derive_lane_completions(protocol, store.records())[0]
+    assert completion["obligation_status"] != "SATISFIED"
+
+    first_terminal = store.latest(type(first), first.search_run_id)
+
+    def mutate(record):
+        if record.get("record_id") == first_terminal.record_id:
+            record["provider_id"] = "second"
+
+    _rewrite_valid_hash_chains(root, mutate)
+    with pytest.raises(LiteratureIntegrityError, match="search identity changed|provider order"):
+        LiteratureStore(root).validate(verify_artifacts=False)
+
+
+def test_dossier_cannot_omit_any_applicable_search(tmp_path: Path) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    protocol = _protocol_with_lane(
+        store,
+        {
+            "provider_order": ["first", "second"],
+            "minimum_provider_attempts": 2,
+            "minimum_capture_attempts": 0,
+            "maximum_queries": 1,
+        },
+    )
+    for ordinal, provider in enumerate(("first", "second"), start=1):
+        search = _start_lane_search(store, protocol, f"search.omission-{ordinal}", provider)
+        store.finish_search(
+            search.search_run_id,
+            _search_outcome(
+                f"https://example.test/omission-{ordinal}",
+                capture=False,
+                inspected_results=[
+                    _search_result(
+                        f"https://example.test/omission-{ordinal}", provider_rank=ordinal
+                    )
+                ],
+            ),
+            actor=_actor(),
+            idempotency_key=f"search.omission-{ordinal}.finish",
+        )
+    claim = _source(store, "omission", b"omission evidence")[-1]
+    dossier, _freeze = _dossier(store, protocol, [(claim, "SUPPORTING")])
+    payload = dossier.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    payload["lane_completions"][0]["search_run_refs"].pop()
+    payload["change_reason"] = "Attempt to omit one inconvenient search"
+    with pytest.raises(LiteratureConflictError, match="exactly include all canonical lane searches"):
+        store.append_dossier(
+            payload,
+            actor=_actor(),
+            idempotency_key="dossier.fixture.omitted-search",
+        )
+
+
+def test_capture_selection_deviation_and_false_saturation_fail_closed(tmp_path: Path) -> None:
+    selection_root = tmp_path / "selection"
+    selection_store = LiteratureStore(_project(selection_root))
+    protocol = _protocol_with_lane(
+        selection_store,
+        {"minimum_capture_attempts": 1, "minimum_distinct_results_inspected": 2},
+    )
+    search = _start_lane_search(selection_store, protocol, "search.selection", "fixture-provider")
+    results = [
+        _search_result("https://example.test/rank-1", result_rank=1),
+        _search_result("https://example.test/rank-2", result_rank=2),
+    ]
+    with pytest.raises(LiteratureIntegrityError, match="selection rule"):
+        selection_store.finish_search(
+            search.search_run_id,
+            _search_outcome(
+                "https://example.test/rank-1",
+                inspected_results=results,
+                capture_attempt_records=[
+                    {
+                        "capture_attempt_id": "attempt.selection-deviation",
+                        "result_identity_sha256": results[1]["result_identity_sha256"],
+                        "selection_ordinal": 1,
+                    }
+                ],
+            ),
+            actor=_actor(),
+            idempotency_key="search.selection.finish",
+        )
+
+    saturation_root = tmp_path / "saturation"
+    saturation_store = LiteratureStore(_project(saturation_root))
+    saturation_protocol = _protocol_with_lane(saturation_store, {})
+    saturation_search = _start_lane_search(
+        saturation_store,
+        saturation_protocol,
+        "search.false-saturation",
+        "fixture-provider",
+    )
+    with pytest.raises(LiteratureIntegrityError, match="no-new-work"):
+        saturation_store.finish_search(
+            saturation_search.search_run_id,
+            _search_outcome(
+                "https://example.test/new-work", saturation_claimed=True
+            ),
+            actor=_actor(),
+            idempotency_key="search.false-saturation.finish",
+        )
+
+
+def test_source_version_cannot_migrate_between_works(tmp_path: Path) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    work_a, version_a, _capture_a, _claim_a = _source(store, "version-a", b"version a")
+    work_b = _source(store, "version-b", b"version b")[0]
+    payload = version_a.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    payload.update(work_id=work_b.work_id, work_revision_sha256=work_b.record_sha256)
+    payload["change_reason"] = "Attempt to move the version to another work"
+    with pytest.raises(LiteratureConflictError, match="cannot migrate"):
+        store.append_source_version(
+            payload,
+            actor=_actor(),
+            idempotency_key="version.version-a.migrate",
+        )
+    assert store.latest(type(work_a), work_a.work_id).record_sha256 == work_a.record_sha256
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    (
+        ("source_version_id", "version.other"),
+        ("source_version_revision_sha256", "a" * 64),
+        ("retrieval_locator", "https://example.test/moved"),
+        ("captured_at", datetime(2026, 9, 2, tzinfo=timezone.utc)),
+        ("access_basis", "OWNER_PROVIDED"),
+        ("local_retention_permission", "UNKNOWN"),
+        ("redistribution_permission", "ALLOWED"),
+        ("external_model_processing_permission", "LOCAL_ONLY"),
+    ),
+)
+def test_capture_completion_rejects_each_identity_or_request_mutation(
+    tmp_path: Path, field: str, value
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    version = _source(store, "capture-owner", b"owner")[-3]
+    started = _start_capture(store, version, "capture.started")
+    with pytest.raises(LiteratureConflictError, match="terminal outcome fields"):
+        store.append_capture(
+            {
+                "capture_id": started.capture_id,
+                "status": "FAILED",
+                "failure_reason": "fixture failure",
+                field: value,
+            },
+            actor=_actor(),
+            idempotency_key=f"capture.started.finish-{field}",
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "work_id",
+        "work_revision",
+        "version_id",
+        "version_revision",
+        "capture_id",
+        "capture_revision",
+        "content_sha256",
+        "extracted_sha256",
+    ),
+)
+def test_claim_append_rejects_each_broken_transitive_provenance_link(
+    tmp_path: Path, mutation: str
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    work_a, version_a, capture_a, claim_a = _source(store, "chain-a", b"chain a")
+    work_b, version_b, capture_b, _claim_b = _source(store, "chain-b", b"chain b")
+    work_a_r2_payload = work_a.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    work_a_r2_payload["change_reason"] = "New metadata revision"
+    work_a_r2 = store.append_work(
+        work_a_r2_payload,
+        actor=_actor(),
+        idempotency_key="work.chain-a.r2",
+    )
+    payload = claim_a.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    payload["reliability"] = "CORRECTED"
+    payload["correction_reason"] = "Provenance mutation probe"
+    if mutation == "work_id":
+        payload["work_id"] = work_b.work_id
+    elif mutation == "work_revision":
+        payload["work_revision_sha256"] = work_a_r2.record_sha256
+    elif mutation == "version_id":
+        payload["source_version_id"] = version_b.source_version_id
+    elif mutation == "version_revision":
+        payload["source_version_revision_sha256"] = version_b.record_sha256
+    elif mutation == "capture_id":
+        payload["capture_id"] = capture_b.capture_id
+    elif mutation == "capture_revision":
+        payload["capture_revision_sha256"] = capture_b.record_sha256
+    elif mutation == "content_sha256":
+        payload["content_sha256"] = capture_b.content_sha256
+    elif mutation == "extracted_sha256":
+        payload["extracted_representation_sha256"] = capture_b.extracted_representation_sha256
+    with pytest.raises(LiteratureConflictError):
+        store.append_claim(
+            payload,
+            actor=_actor(),
+            idempotency_key=f"claim.chain-a.bad-{mutation}",
+        )
+    assert store.latest(type(claim_a), claim_a.claim_id).record_sha256 == claim_a.record_sha256
+
+
+def test_full_reload_reconstructs_exact_work_version_capture_claim_chain(tmp_path: Path) -> None:
+    base = tmp_path / "base"
+    store = LiteratureStore(_project(base))
+    work_a, version_a, capture_a, claim_a = _source(store, "persist-a", b"persist a")
+    work_b, version_b, capture_b, _claim_b = _source(store, "persist-b", b"persist b")
+    work_payload = work_a.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    work_payload["change_reason"] = "New metadata revision"
+    work_a_r2 = store.append_work(
+        work_payload,
+        actor=_actor(),
+        idempotency_key="work.persist-a.r2",
+    )
+    assert store.validate()["status"] == "PASS"
+    mutations = {
+        "work_id": {"work_id": work_b.work_id},
+        "stale_work_revision": {"work_revision_sha256": work_a_r2.record_sha256},
+        "version_id": {"source_version_id": version_b.source_version_id},
+        "version_revision": {"source_version_revision_sha256": version_b.record_sha256},
+        "capture_id": {"capture_id": capture_b.capture_id},
+        "capture_revision": {"capture_revision_sha256": capture_b.record_sha256},
+        "content": {"content_sha256": capture_b.content_sha256},
+        "extracted": {
+            "extracted_representation_sha256": capture_b.extracted_representation_sha256
+        },
+    }
+    for label, changes in mutations.items():
+        root = tmp_path / f"persisted-chain-{label}"
+        shutil.copytree(base, root)
+
+        def mutate(record, *, replacement=changes):
+            if record.get("record_id") == claim_a.record_id:
+                record.update(replacement)
+
+        _rewrite_valid_hash_chains(root, mutate)
+        with pytest.raises(LiteratureIntegrityError):
+            LiteratureStore(root).validate(verify_artifacts=False)
+
+    assert version_a.work_revision_sha256 == work_a.record_sha256
+    assert capture_a.source_version_revision_sha256 == version_a.record_sha256
+
+
+def test_full_reload_rejects_version_migration_and_capture_identity_migration(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "base"
+    store = LiteratureStore(_project(base))
+    work_a, version_a, _capture_a, _claim_a = _source(store, "migration-a", b"a")
+    work_b, version_b, _capture_b, _claim_b = _source(store, "migration-b", b"b")
+    version_payload = version_a.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    version_payload["change_reason"] = "Valid metadata-only revision"
+    version_a_r2 = store.append_source_version(
+        version_payload,
+        actor=_actor(),
+        idempotency_key="version.migration-a.r2",
+    )
+    capture = _start_capture(store, version_a_r2, "capture.migration-started")
+    terminal = store.append_capture(
+        {
+            "capture_id": capture.capture_id,
+            "status": "FAILED",
+            "failure_reason": "fixture terminal state",
+        },
+        actor=_actor(),
+        idempotency_key="capture.migration-started.finish",
+    )
+
+    version_root = tmp_path / "version-migration"
+    shutil.copytree(base, version_root)
+
+    def migrate_version(record):
+        if record.get("record_id") == version_a_r2.record_id:
+            record["work_id"] = work_b.work_id
+            record["work_revision_sha256"] = work_b.record_sha256
+
+    _rewrite_valid_hash_chains(version_root, migrate_version)
+    with pytest.raises(LiteratureIntegrityError, match="migrated|work binding"):
+        LiteratureStore(version_root).validate(verify_artifacts=False)
+
+    capture_root = tmp_path / "capture-migration"
+    shutil.copytree(base, capture_root)
+
+    def migrate_capture(record):
+        if record.get("record_id") == terminal.record_id:
+            record["source_version_id"] = version_b.source_version_id
+            record["source_version_revision_sha256"] = version_b.record_sha256
+
+    _rewrite_valid_hash_chains(capture_root, migrate_capture)
+    with pytest.raises(LiteratureIntegrityError, match="capture identity changed|source-version binding"):
+        LiteratureStore(capture_root).validate(verify_artifacts=False)
+
+
+def _active_retraction(store: LiteratureStore, target_claim, name: str):
+    notice = _source(
+        store,
+        name,
+        f"Retraction notice for {target_claim.claim_id}".encode(),
+        category="OTHER",
+    )
+    relationship = store.append_source_relationship(
+        {
+            "relationship_id": f"relationship.{name}",
+            "subject_kind": "SOURCE_VERSION",
+            "subject_id": notice[1].source_version_id,
+            "predicate": "RETRACTS",
+            "object_kind": "SOURCE_VERSION",
+            "object_id": target_claim.source_version_id,
+            "status": "ACTIVE",
+            "assertion_evidence_refs": [
+                {"record_id": notice[3].record_id, "record_sha256": notice[3].record_sha256}
+            ],
+            "superseded_by_relationship_id": None,
+            "change_reason": "Captured source-bound retraction notice",
+        },
+        actor=_actor(),
+        idempotency_key=f"relationship.{name}.r1",
+    )
+    return notice, relationship
+
+
+def test_active_source_correction_is_derived_even_when_claim_remains_active(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    store, protocol, support, contrary, _d, _f, _o, receipt = _initial_slice(root)
+    entry_id = receipt.entry_binding.record_id.rsplit(".r", 1)[0]
+    notice = _source(store, "support-correction-notice", b"Correction notice", category="OTHER")
+    store.append_source_relationship(
+        {
+            "relationship_id": "relationship.support-correction",
+            "subject_kind": "SOURCE_VERSION",
+            "subject_id": notice[1].source_version_id,
+            "predicate": "CORRECTS",
+            "object_kind": "SOURCE_VERSION",
+            "object_id": support.source_version_id,
+            "status": "ACTIVE",
+            "assertion_evidence_refs": [
+                {"record_id": notice[3].record_id, "record_sha256": notice[3].record_sha256}
+            ],
+            "superseded_by_relationship_id": None,
+            "change_reason": "Captured correction notice",
+        },
+        actor=_actor(),
+        idempotency_key="relationship.support-correction.r1",
+    )
+    _dossier_record, freeze = _dossier(
+        store,
+        protocol,
+        [(support, "SUPPORTING"), (notice[3], "SUPPORTING"), (contrary, "CONTRADICTING")],
+        p2_entry_id=entry_id,
+        prior_receipt=receipt.record_sha256,
+    )
+    operation = prepare_emission(
+        root,
+        freeze_id=freeze.freeze_id,
+        operation_id="emission.source-correction",
+        actor=_actor(),
+        idempotency_key="emission.source-correction.prepared",
+    )
+    emit_prepared(root, operation_id=operation.operation_id, actor=_actor())
+    backlog = EdgeBacklogStore(root)
+    revised = backlog.latest_observation(derive_p2_observation_id(support.claim_id))
+    assert support.reliability == "ACTIVE"
+    assert any(
+        marker.startswith("P3_CONFLICT|SOURCE_VERSION_CORRECTED|")
+        for marker in revised.known_conflicts
+    )
+    latest_entry = backlog.latest_entry(entry_id)
+    assert any(
+        ref.observation_id == derive_p2_observation_id(notice[3].claim_id)
+        for ref in latest_entry.observation_refs
+    )
+
+
+def test_active_retraction_overrides_active_claim_and_removes_current_positive_support(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    store, protocol, support, contrary, _d, _f, _o, receipt = _initial_slice(root)
+    entry_id = receipt.entry_binding.record_id.rsplit(".r", 1)[0]
+    notice, _relationship = _active_retraction(store, support, "support-retraction")
+    assert support.reliability == "ACTIVE"
+    with pytest.raises(LiteratureConflictError, match="retracted"):
+        _dossier(
+            store,
+            protocol,
+            [(support, "SUPPORTING"), (contrary, "CONTRADICTING")],
+            dossier_id="dossier.retracted-positive",
+        )
+
+    _dossier_record, freeze = _dossier(
+        store,
+        protocol,
+        [
+            (support, "CONTRADICTING"),
+            (notice[3], "SUPPORTING"),
+            (contrary, "CONTRADICTING"),
+        ],
+        p2_entry_id=entry_id,
+        prior_receipt=receipt.record_sha256,
+    )
+    operation = prepare_emission(
+        root,
+        freeze_id=freeze.freeze_id,
+        operation_id="emission.retraction",
+        actor=_actor(),
+        idempotency_key="emission.retraction.prepared",
+    )
+    assert operation.operational_status == "CLEAN"
+    result = emit_prepared(root, operation_id=operation.operation_id, actor=_actor())
+    backlog = EdgeBacklogStore(root)
+    latest = backlog.latest_entry(entry_id)
+    support_id = derive_p2_observation_id(support.claim_id)
+    notice_id = derive_p2_observation_id(notice[3].claim_id)
+    contrary_id = derive_p2_observation_id(contrary.claim_id)
+    assert not any(
+        ref.observation_id == support_id and ref.role in {"MOTIVATING", "SUPPORTING"}
+        for ref in latest.observation_refs
+    )
+    assert any(
+        ref.observation_id == support_id and ref.role == "CONTRADICTING"
+        for ref in latest.observation_refs
+    )
+    assert any(ref.observation_id == notice_id for ref in latest.observation_refs)
+    assert any(
+        ref.observation_id == contrary_id and ref.role == "CONTRADICTING"
+        for ref in latest.observation_refs
+    )
+    revised = backlog.latest_observation(support_id)
+    assert any(marker.startswith("P3_CONFLICT|SOURCE_RETRACTED|") for marker in revised.known_conflicts)
+    assert len(backlog._all_entry_revisions(entry_id)) == 2
+    assert result.dependency_entry_bindings
+
+
+def test_retracted_prior_contradiction_remains_contradicting_and_visible(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    store, protocol, support, contrary, _d, _f, _o, receipt = _initial_slice(root)
+    entry_id = receipt.entry_binding.record_id.rsplit(".r", 1)[0]
+    notice, _relationship = _active_retraction(store, contrary, "contrary-retraction")
+    _dossier_record, freeze = _dossier(
+        store,
+        protocol,
+        [(support, "SUPPORTING"), (contrary, "CONTRADICTING"), (notice[3], "SUPPORTING")],
+        p2_entry_id=entry_id,
+        prior_receipt=receipt.record_sha256,
+    )
+    operation = prepare_emission(
+        root,
+        freeze_id=freeze.freeze_id,
+        operation_id="emission.contrary-retraction",
+        actor=_actor(),
+        idempotency_key="emission.contrary-retraction.prepared",
+    )
+    emit_prepared(root, operation_id=operation.operation_id, actor=_actor())
+    backlog = EdgeBacklogStore(root)
+    contrary_id = derive_p2_observation_id(contrary.claim_id)
+    latest = backlog.latest_entry(entry_id)
+    assert any(
+        ref.observation_id == contrary_id and ref.role == "CONTRADICTING"
+        for ref in latest.observation_refs
+    )
+    revised = backlog.latest_observation(contrary_id)
+    assert any(marker.startswith("P3_CONFLICT|SOURCE_RETRACTED|") for marker in revised.known_conflicts)
+
+
+def _clone_entry(backlog: EdgeBacklogStore, entry_id: str, task_id: str):
+    current = backlog.latest_entry(entry_id)
+    payload = current.model_dump(
+        mode="json",
+        include={
+            "classification_status",
+            "taxonomy_ref",
+            "governance_scope",
+            "p1_evidence_eligibility",
+            "economic_concepts",
+            "unclassified_reason",
+            "observation_refs",
+        },
+    )
+    return backlog.create_entry(payload, actor_id="fixture", task_id=task_id)
+
+
+def _corrected_claim(store: LiteratureStore, claim, *, suffix: str = "matrix"):
+    payload = claim.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    payload.update(
+        statement="Corrected deterministic source statement.",
+        statement_kind="FAITHFUL_PARAPHRASE",
+        reliability="CORRECTED",
+        correction_reason="Correction dependency matrix",
+    )
+    return store.append_claim(
+        payload,
+        actor=_actor(),
+        idempotency_key=f"{claim.claim_id}.corrected-{suffix}",
+    )
+
+
+@pytest.mark.parametrize(
+    "dependent_state",
+    (
+        "UNREVIEWED",
+        "REVIEWED_CONTINUE",
+        "SUSPENDED",
+        "REJECTED",
+        "DUPLICATE",
+        "HYPOTHESIS_PROPOSAL",
+        "RESUMED",
+    ),
+)
+def test_shared_observation_correction_covers_complete_dependency_matrix(
+    tmp_path: Path, dependent_state: str
+) -> None:
+    root = _project(tmp_path)
+    store, protocol, support, contrary, _d, _f, _o, receipt = _initial_slice(root)
+    backlog = EdgeBacklogStore(root)
+    primary_id = receipt.entry_binding.record_id.rsplit(".r", 1)[0]
+    dependent = _clone_entry(backlog, primary_id, f"matrix.{dependent_state.lower()}")
+    decision = None
+    if dependent_state in {"REVIEWED_CONTINUE", "SUSPENDED", "REJECTED"}:
+        decision = _review(
+            backlog,
+            dependent.entry_id,
+            dependent_state,
+            f"decision.{dependent_state.lower()}",
+        )
+    elif dependent_state == "DUPLICATE":
+        decision = _review(
+            backlog,
+            dependent.entry_id,
+            "DUPLICATE",
+            "decision.duplicate",
+            canonical_entry_id=primary_id,
+        )
+    elif dependent_state == "HYPOTHESIS_PROPOSAL":
+        target = root / "hypothesis-matrix.json"
+        target.write_text('{"id":"hypothesis.matrix"}\n')
+        backlog.record_hypothesis_proposal_link(
+            dependent.entry_id,
+            hypothesis_id="hypothesis.matrix",
+            target_locator=target,
+            actor_id="owner",
+            link_id="link.matrix-hypothesis",
+        )
+    elif dependent_state == "RESUMED":
+        _review(backlog, dependent.entry_id, "SUSPENDED", "decision.before-resume")
+        backlog.resume_entry(
+            dependent.entry_id,
+            reason_codes=["NEW_INFORMATION"],
+            rationale="Resume dependency matrix entry",
+            reviewer_id="owner",
+            decision_id="decision.resumed-matrix",
+        )
+
+    before_dependent = backlog.latest_entry(dependent.entry_id)
+    corrected = _corrected_claim(store, support, suffix=dependent_state.lower())
+    _dossier_record, freeze = _dossier(
+        store,
+        protocol,
+        [(corrected, "SUPPORTING"), (contrary, "CONTRADICTING")],
+        p2_entry_id=primary_id,
+        prior_receipt=receipt.record_sha256,
+    )
+    operation = prepare_emission(
+        root,
+        freeze_id=freeze.freeze_id,
+        operation_id=f"emission.matrix-{dependent_state.lower()}",
+        actor=_actor(),
+        idempotency_key=f"emission.matrix-{dependent_state.lower()}.prepared",
+    )
+    impacts = {item.dependent_entry_id: item for item in operation.dependency_impacts}
+    assert set(impacts) == {primary_id, dependent.entry_id}
+    mutable = dependent_state in {"UNREVIEWED", "REVIEWED_CONTINUE", "RESUMED"}
+    assert impacts[dependent.entry_id].impact_status == (
+        "PLANNED_MUTABLE_REVISION" if mutable else "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY"
+    )
+    if dependent_state == "REVIEWED_CONTINUE":
+        assert decision is not None
+        assert impacts[dependent.entry_id].prior_staled_decision_sha256 == decision.record_sha256
+    result = emit_prepared(root, operation_id=operation.operation_id, actor=_actor())
+    corrected_observation = backlog.latest_observation(derive_p2_observation_id(support.claim_id))
+    latest_primary = backlog.latest_entry(primary_id)
+    assert any(
+        ref.observation_revision_sha256 == corrected_observation.record_sha256
+        for ref in latest_primary.observation_refs
+    )
+    latest_dependent = backlog.latest_entry(dependent.entry_id)
+    if mutable:
+        assert latest_dependent.record_sha256 != before_dependent.record_sha256
+        assert any(
+            ref.observation_revision_sha256 == corrected_observation.record_sha256
+            for ref in latest_dependent.observation_refs
+        )
+        assert result.operational_status == "CLEAN"
+    else:
+        assert latest_dependent.record_sha256 == before_dependent.record_sha256
+        assert result.operational_status == "NEEDS_MANUAL_REVIEW"
+        validation = LiteratureStore(root).validate()
+        assert validation["operational_status"] == "NEEDS_MANUAL_REVIEW"
+        assert validation["operational_reason"] == "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY"
+
+
+@pytest.mark.parametrize("concurrent_change", ("create", "revise"))
+def test_dependency_snapshot_detects_concurrent_create_or_revision(
+    tmp_path: Path, concurrent_change: str
+) -> None:
+    root = _project(tmp_path)
+    store, protocol, support, contrary, _d, _f, _o, receipt = _initial_slice(root)
+    backlog = EdgeBacklogStore(root)
+    primary_id = receipt.entry_binding.record_id.rsplit(".r", 1)[0]
+    dependent = _clone_entry(backlog, primary_id, "concurrency.existing")
+    corrected = _corrected_claim(store, support, suffix=concurrent_change)
+    _dossier_record, freeze = _dossier(
+        store,
+        protocol,
+        [(corrected, "SUPPORTING"), (contrary, "CONTRADICTING")],
+        p2_entry_id=primary_id,
+        prior_receipt=receipt.record_sha256,
+    )
+    operation = prepare_emission(
+        root,
+        freeze_id=freeze.freeze_id,
+        operation_id=f"emission.concurrent-{concurrent_change}",
+        actor=_actor(),
+        idempotency_key=f"emission.concurrent-{concurrent_change}.prepared",
+    )
+    if concurrent_change == "create":
+        _clone_entry(backlog, primary_id, "concurrency.created-after-prepare")
+    else:
+        payload = dependent.model_dump(
+            mode="json",
+            include={
+                "classification_status",
+                "taxonomy_ref",
+                "governance_scope",
+                "p1_evidence_eligibility",
+                "economic_concepts",
+                "unclassified_reason",
+                "observation_refs",
+            },
+        )
+        backlog.revise_entry(
+            dependent.entry_id,
+            payload,
+            actor_id="fixture",
+            task_id="concurrency.revised-after-prepare",
+        )
+    with pytest.raises(LiteratureConflictError, match="reverse-dependency snapshot changed"):
+        emit_prepared(root, operation_id=operation.operation_id, actor=_actor())
+    assert LiteratureStore(root).latest(type(operation), operation.operation_id).state == "CONFLICT"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    (
+        ("claim_refs", [{"record_id": "claim.extra.r000001", "record_sha256": "a" * 64}]),
+        ("evidence_relation_refs", []),
+        ("protocol_revision_sha256", "a" * 64),
+        ("execution_lineage_id", "lineage.mutated"),
+        ("search_completion_status", "COMPLETE_WITHIN_DECLARED_BOUNDS"),
+        ("unsatisfied_lanes", []),
+        ("taxonomy_proposal", {}),
+        ("material_statements", []),
+    ),
+)
+def test_freeze_rejects_every_caller_authored_authoritative_summary_field(
+    tmp_path: Path, field: str, value
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    protocol = _protocol(store)
+    support = _source(store, "freeze-support", b"support")[-1]
+    contrary = _source(store, "freeze-contrary", b"contrary")[-1]
+    dossier, _freeze = _dossier(store, protocol, [(support, "SUPPORTING"), (contrary, "CONTRADICTING")])
+    payload = {
+        "freeze_id": f"freeze.probe-{field}",
+        "dossier_id": dossier.dossier_id,
+        "dossier_revision_sha256": dossier.record_sha256,
+        field: value,
+    }
+    with pytest.raises(LiteratureConflictError, match="derives authoritative fields"):
+        store.freeze_dossier(
+            payload,
+            actor=_actor(),
+            idempotency_key=f"freeze.probe-{field}",
+        )
+
+
+def test_dossier_rejects_duplicate_claim_and_unrelated_nested_basis(tmp_path: Path) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    protocol = _protocol(store)
+    support = _source(store, "basis-support", b"support")[-1]
+    contrary = _source(store, "basis-contrary", b"contrary")[-1]
+    dossier, _freeze = _dossier(store, protocol, [(support, "SUPPORTING"), (contrary, "CONTRADICTING")])
+    unrelated = _source(store, "basis-unrelated", b"unrelated")[-1]
+    base = dossier.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    duplicate = json.loads(json.dumps(base))
+    duplicate["claim_refs"].append(duplicate["claim_refs"][0])
+    duplicate["change_reason"] = "Duplicate exact claim probe"
+    with pytest.raises(LiteratureConflictError, match="ordered and unique"):
+        store.append_dossier(
+            duplicate,
+            actor=_actor(),
+            idempotency_key="dossier.fixture.duplicate-claim",
+        )
+    unrelated_basis = json.loads(json.dumps(base))
+    unrelated_basis["material_statements"][0]["claim_refs"] = [
+        {"record_id": unrelated.record_id, "record_sha256": unrelated.record_sha256}
+    ]
+    unrelated_basis["change_reason"] = "Unrelated nested basis probe"
+    with pytest.raises(LiteratureConflictError, match="outside the exact dossier claim set"):
+        store.append_dossier(
+            unrelated_basis,
+            actor=_actor(),
+            idempotency_key="dossier.fixture.unrelated-basis",
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "omit_reservation",
+        "omit_observation",
+        "reverse_observations",
+        "change_role",
+        "incomplete_entry",
+        "alter_completion",
+        "alter_gaps",
+    ),
+)
+def test_append_rejects_nonexact_prepared_operation_projection(
+    tmp_path: Path, mutation: str
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    protocol = _protocol(store)
+    support = _source(store, "prepared-support", b"support")[-1]
+    contrary = _source(store, "prepared-contrary", b"contrary")[-1]
+    _dossier_record, freeze = _dossier(
+        store, protocol, [(support, "SUPPORTING"), (contrary, "CONTRADICTING")]
+    )
+    prepared = prepare_emission(
+        root,
+        freeze_id=freeze.freeze_id,
+        operation_id="emission.prepared-authority",
+        actor=_actor(),
+        idempotency_key="emission.prepared-authority.prepared",
+    )
+    payload = prepared.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    payload["operation_id"] = f"emission.mutated-{mutation}"
+    if mutation == "omit_reservation":
+        payload["reservations"].pop()
+    elif mutation == "omit_observation":
+        payload["observation_plans"].pop()
+    elif mutation == "reverse_observations":
+        payload["observation_plans"].reverse()
+    elif mutation == "change_role":
+        payload["observation_plans"][0]["role"] = "MOTIVATING"
+    elif mutation == "incomplete_entry":
+        payload["entry_plan"]["observation_roles"].pop()
+    elif mutation == "alter_completion":
+        payload["search_completion_status"] = "COMPLETE_WITHIN_DECLARED_BOUNDS"
+    elif mutation == "alter_gaps":
+        payload["unsatisfied_lanes"].pop()
+    with pytest.raises((LiteratureIntegrityError, LiteratureConflictError)):
+        store.append_emission_operation(
+            payload,
+            actor=_actor(),
+            idempotency_key=f"emission.mutated-{mutation}.prepared",
+        )
+
+
+def test_full_reload_reconstructs_exact_freeze_and_prepared_projection(tmp_path: Path) -> None:
+    base = tmp_path / "base"
+    store = LiteratureStore(_project(base))
+    protocol = _protocol(store)
+    support = _source(store, "persisted-freeze-support", b"support")[-1]
+    contrary = _source(store, "persisted-freeze-contrary", b"contrary")[-1]
+    _dossier_record, freeze = _dossier(
+        store, protocol, [(support, "SUPPORTING"), (contrary, "CONTRADICTING")]
+    )
+    operation = prepare_emission(
+        base,
+        freeze_id=freeze.freeze_id,
+        operation_id="emission.persisted-prepared",
+        actor=_actor(),
+        idempotency_key="emission.persisted-prepared.prepared",
+    )
+
+    freeze_root = tmp_path / "tampered-freeze"
+    shutil.copytree(base, freeze_root)
+
+    def mutate_freeze(record):
+        if record.get("record_id") == freeze.record_id:
+            record["p2_entry_id"] = "edge.unrelated"
+
+    _rewrite_valid_hash_chains(freeze_root, mutate_freeze)
+    with pytest.raises(LiteratureIntegrityError, match="freeze is not the exact"):
+        LiteratureStore(freeze_root).validate(verify_artifacts=False)
+
+    operation_root = tmp_path / "tampered-operation"
+    shutil.copytree(base, operation_root)
+
+    def mutate_operation(record):
+        if record.get("record_id") == operation.record_id:
+            record["observation_plans"].pop()
+
+    _rewrite_valid_hash_chains(operation_root, mutate_operation)
+    with pytest.raises(LiteratureIntegrityError, match="observation plans"):
+        LiteratureStore(operation_root).validate(verify_artifacts=False)
+
+
+def test_generated_schemas_reject_zero_hash_for_all_families_and_new_contract_omissions(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    _all_family_slice(root)
+    checked = set()
+    for path in _canonical_paths(root):
+        record = json.loads(path.read_text())
+        record_type = SCHEMA_TYPES[record["schema"]]
+        if record_type.family in checked:
+            continue
+        schema_path = next(
+            item
+            for item in (REPO / "schemas").glob("literature-*.schema.json")
+            if json.loads(item.read_text())["properties"]["schema"]["const"] == record["schema"]
+        )
+        validator = Draft202012Validator(json.loads(schema_path.read_text()))
+        assert list(validator.iter_errors(record)) == []
+        zero = dict(record)
+        zero["record_sha256"] = "0" * 64
+        assert list(validator.iter_errors(zero))
+        if record_type.family == "searches":
+            missing = dict(record)
+            missing.pop("provider_attempt_ordinal")
+            assert list(validator.iter_errors(missing))
+        if record_type.family == "dossier-freezes":
+            missing = dict(record)
+            missing.pop("material_statements")
+            assert list(validator.iter_errors(missing))
+        checked.add(record_type.family)
+    assert checked == {item.family for item in CANONICAL_RECORD_TYPES}

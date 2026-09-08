@@ -14,7 +14,7 @@ import math
 import re
 from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from alphaquest.research.edge_backlog_taxonomy import EconomicConceptsV1, TaxonomyRefV1
 
@@ -45,6 +45,7 @@ SearchLane = Literal[
     "ALTERNATIVE_EXPLANATION",
     "DATA_MINING_OR_MULTIPLE_TESTING",
 ]
+_TRUSTED_CANONICAL_WRITER_CONTEXT = object()
 
 
 class LiteratureError(RuntimeError):
@@ -147,12 +148,12 @@ class CanonicalRecordV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_envelope(self) -> "CanonicalRecordV1":
+    def validate_envelope(self, info: ValidationInfo) -> "CanonicalRecordV1":
         if self.schema_name != self.schema_literal:
             raise ValueError(f"schema must be {self.schema_literal!r}")
         if (self.append_sequence == 1) != (self.previous_store_record_sha256 is None):
             raise ValueError("store predecessor must be null exactly for append_sequence 1")
-        if self.record_sha256 != "0" * 64 and self.record_sha256 != record_sha256(self):
+        if info.context is not _TRUSTED_CANONICAL_WRITER_CONTEXT and self.record_sha256 != record_sha256(self):
             raise ValueError("record_sha256 does not match canonical record content")
         return self
 
@@ -232,7 +233,44 @@ class ResearchProtocolRevisionV1(RevisionRecordV1):
             raise ValueError("result-informed lineage requires one parent lineage")
         if extension != (self.observed_result_set_sha256 is not None):
             raise ValueError("result-informed lineage requires observed result-set provenance")
+        if self.methodology_sha256 != methodology_sha256(self.model_dump(mode="json")):
+            raise ValueError("methodology_sha256 does not bind the complete execution contract")
         return self
+
+
+class SearchResultInspectionV1(StrictModel):
+    """One stable inspected-result identity with deterministic provider ranking."""
+
+    result_identity_sha256: Sha256
+    work_identity_sha256: Sha256
+    canonical_locator: NonBlank
+    locator_sha256: Sha256
+    provider_rank: Annotated[int, Field(ge=1)]
+    result_rank: Annotated[int, Field(ge=1)]
+
+    @model_validator(mode="after")
+    def validate_result_identity(self) -> "SearchResultInspectionV1":
+        locator_hash = hashlib.sha256(self.canonical_locator.encode("utf-8")).hexdigest()
+        if self.locator_sha256 != locator_hash:
+            raise ValueError("search result locator_sha256 does not match canonical_locator")
+        identity = hashlib.sha256(
+            canonical_json_bytes(
+                {
+                    "canonical_locator": self.canonical_locator,
+                    "work_identity_sha256": self.work_identity_sha256,
+                },
+                trailing_lf=False,
+            )
+        ).hexdigest()
+        if self.result_identity_sha256 != identity:
+            raise ValueError("search result identity is not derived from stable work/locator identity")
+        return self
+
+
+class SearchCaptureAttemptV1(StrictModel):
+    capture_attempt_id: Identifier
+    result_identity_sha256: Sha256
+    selection_ordinal: Annotated[int, Field(ge=1)]
 
 
 class SearchRunRevisionV1(RevisionRecordV1):
@@ -248,12 +286,16 @@ class SearchRunRevisionV1(RevisionRecordV1):
     parent_search_run_id: Identifier | None = None
     adaptive_depth: Annotated[int, Field(ge=0)]
     provider_id: Identifier
+    provider_attempt_ordinal: Annotated[int, Field(ge=1)]
     status: Literal["STARTED", "SUCCEEDED", "PARTIAL", "FAILED", "ABANDONED_AFTER_CRASH"]
     results_inspected: Annotated[int, Field(ge=0)] = 0
     capture_attempts: Annotated[int, Field(ge=0)] = 0
+    inspected_results: list[SearchResultInspectionV1] = Field(default_factory=list)
+    capture_attempt_records: list[SearchCaptureAttemptV1] = Field(default_factory=list)
     bytes_retrieved: Annotated[int, Field(ge=0)] = 0
     elapsed_seconds: Annotated[int, Field(ge=0)] = 0
     result_set_sha256: Sha256 | None = None
+    saturation_claimed: bool = False
     provider_trace_completeness: Literal[
         "COMPLETE_FOR_REQUEST", "PARTIAL_PROVIDER_TRACE", "AGENT_REPORTED_ONLY", "UNAVAILABLE", "UNKNOWN"
     ]
@@ -269,10 +311,33 @@ class SearchRunRevisionV1(RevisionRecordV1):
             raise ValueError("initial queries require adaptive_depth 0")
         if self.status == "STARTED" and self.revision != 1:
             raise ValueError("only the first search revision may be STARTED")
+        if self.results_inspected != len(self.inspected_results):
+            raise ValueError("results_inspected must equal the exact inspected-result record count")
+        if self.capture_attempts != len(self.capture_attempt_records):
+            raise ValueError("capture_attempts must equal the exact capture-attempt record count")
+        if len({item.result_identity_sha256 for item in self.inspected_results}) != len(self.inspected_results):
+            raise ValueError("one search run cannot inspect the same stable result identity twice")
+        if len({item.capture_attempt_id for item in self.capture_attempt_records}) != len(self.capture_attempt_records):
+            raise ValueError("capture attempt identities must be unique inside one search run")
         if self.status == "STARTED" and any(
-            (self.results_inspected, self.capture_attempts, self.bytes_retrieved, self.elapsed_seconds, self.result_set_sha256)
+            (
+                self.results_inspected,
+                self.capture_attempts,
+                self.inspected_results,
+                self.capture_attempt_records,
+                self.bytes_retrieved,
+                self.elapsed_seconds,
+                self.result_set_sha256,
+                self.saturation_claimed,
+            )
         ):
             raise ValueError("STARTED search cannot claim results")
+        if self.status != "STARTED":
+            expected_result_set = hashlib.sha256(
+                canonical_json_bytes(self.inspected_results, trailing_lf=False)
+            ).hexdigest()
+            if self.result_set_sha256 != expected_result_set:
+                raise ValueError("terminal result_set_sha256 must bind the exact inspected-result records")
         if self.status in {"FAILED", "ABANDONED_AFTER_CRASH"} and not self.failure_reason:
             raise ValueError("failed search requires failure_reason")
         return self
@@ -643,6 +708,12 @@ class EdgeDossierRevisionV1(RevisionRecordV1):
             raise ValueError("dossier record_id does not match identity/revision")
         if tuple(sorted(item.lane for item in self.lane_completions)) != tuple(sorted(REQUIRED_SEARCH_LANES)):
             raise ValueError("dossier requires exactly one completion for every lane")
+        claim_identities = [(item.claim_id, item.claim_revision_sha256) for item in self.claim_refs]
+        if len(claim_identities) != len(set(claim_identities)):
+            raise ValueError("dossier claim refs must be ordered and unique")
+        relation_identities = [(item.record_id, item.record_sha256) for item in self.evidence_relation_refs]
+        if len(relation_identities) != len(set(relation_identities)):
+            raise ValueError("dossier evidence-relation refs must be ordered and unique")
         all_satisfied = all(item.obligation_status == "SATISFIED" for item in self.lane_completions)
         if (self.search_completion_status == "COMPLETE_WITHIN_DECLARED_BOUNDS") != all_satisfied:
             raise ValueError("complete search status requires all obligations satisfied")
@@ -658,11 +729,20 @@ class DossierFreezeV1(CanonicalRecordV1):
     dossier_id: Identifier
     dossier_revision_sha256: Sha256
     protocol_revision_sha256: Sha256
-    claim_refs: Annotated[list[RecordReferenceV1], Field(min_length=1)]
+    execution_lineage_id: Identifier
+    lane_completions: Annotated[list[LaneCompletionV1], Field(min_length=7, max_length=7)]
+    claim_refs: Annotated[list[DossierClaimRefV1], Field(min_length=1)]
     evidence_relation_refs: list[RecordReferenceV1]
+    quality_descriptors: list[FactualDescriptorV1]
+    material_statements: Annotated[list[MaterialStatementV1], Field(min_length=1)]
     search_completion_status: Literal["COMPLETE_WITHIN_DECLARED_BOUNDS", "TERMINATED_WITH_DECLARED_GAPS"]
     unsatisfied_lanes: list[SearchLane]
-    taxonomy_ref: TaxonomyRefV1
+    taxonomy_proposal: TaxonomyProposalV1
+    p2_entry_id: Identifier | None = None
+    prior_emission_receipt_sha256: Sha256 | None = None
+    scientific_validation_status: Literal["NOT_PERFORMED_IN_P3"] = "NOT_PERFORMED_IN_P3"
+    hypothesis_status: Literal["NOT_CREATED_IN_P3"] = "NOT_CREATED_IN_P3"
+    causal_admission_status: Literal["NOT_ASSESSED_IN_P3"] = "NOT_ASSESSED_IN_P3"
 
     @model_validator(mode="after")
     def validate_freeze(self) -> "DossierFreezeV1":
@@ -670,6 +750,9 @@ class DossierFreezeV1(CanonicalRecordV1):
             raise ValueError("freeze record_id must equal freeze_id")
         if self.search_completion_status == "COMPLETE_WITHIN_DECLARED_BOUNDS" and self.unsatisfied_lanes:
             raise ValueError("complete freeze cannot report unsatisfied lanes")
+        claim_identities = [(item.claim_id, item.claim_revision_sha256) for item in self.claim_refs]
+        if len(claim_identities) != len(set(claim_identities)):
+            raise ValueError("freeze claim refs must be ordered and unique")
         return self
 
 
@@ -736,6 +819,7 @@ class P2ObservationPlanV1(StrictModel):
     claim_id: Identifier
     claim_revision_sha256: Sha256
     observation_id: Identifier
+    prior_observation_revision_sha256: Sha256 | None = None
     role: Literal["MOTIVATING", "SUPPORTING", "CONTRADICTING"]
     withdrawn_from_current_support: bool = False
     payload_sha256: Sha256
@@ -789,6 +873,30 @@ class P2EntryPlanV1(StrictModel):
     observation_roles: Annotated[list[P2ObservationRolePlanV1], Field(min_length=1)]
 
 
+class P2DependencyImpactV1(StrictModel):
+    affected_observation_id: Identifier
+    affected_observation_revision_sha256: Sha256
+    dependent_entry_id: Identifier
+    dependent_entry_revision_sha256: Sha256
+    dependent_entry_state: Literal[
+        "UNREVIEWED", "REVIEWED_CONTINUE", "REJECTED", "DUPLICATE", "SUSPENDED", "RESUMED"
+    ]
+    relevant_link_chain_sha256: Sha256
+    impact_status: Literal["PLANNED_MUTABLE_REVISION", "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY"]
+    inability_reason: str | None = None
+    prior_staled_decision_sha256: Sha256 | None = None
+    entry_plan: P2EntryPlanV1 | None = None
+
+    @model_validator(mode="after")
+    def validate_dependency_impact(self) -> "P2DependencyImpactV1":
+        mutable = self.impact_status == "PLANNED_MUTABLE_REVISION"
+        if mutable != (self.entry_plan is not None):
+            raise ValueError("mutable dependency impact requires exactly one deterministic entry plan")
+        if mutable == (self.inability_reason is not None):
+            raise ValueError("only unresolved dependency impacts require an inability reason")
+        return self
+
+
 class P2RecordBindingV1(StrictModel):
     record_id: RecordIdentifier
     record_sha256: Sha256
@@ -821,6 +929,8 @@ class P2EmissionOperationRevisionV1(RevisionRecordV1):
     target_entry_id: Identifier | None = None
     target_entry_revision_sha256: Sha256 | None = None
     target_entry_state: Literal["UNREVIEWED", "REVIEWED_CONTINUE", "REJECTED", "DUPLICATE", "SUSPENDED", "RESUMED"] | None = None
+    target_entry_link_chain_sha256: Sha256 | None = None
+    p2_snapshot_before_append_sequence: Annotated[int, Field(ge=1)]
     emission_action: Literal["CREATE_NEW_ENTRY", "REVISE_SAME_ENTRY", "BLOCKED"]
     state: Literal[
         "PREPARED", "OBSERVATIONS_WRITTEN", "ENTRY_WRITTEN", "SNAPSHOT_BOUND", "COMPLETED", "BLOCKED", "CONFLICT"
@@ -828,15 +938,18 @@ class P2EmissionOperationRevisionV1(RevisionRecordV1):
     reservations: Annotated[list[P2EvidenceReservationV1], Field(min_length=1)]
     observation_plans: Annotated[list[P2ObservationPlanV1], Field(min_length=1)]
     entry_plan: P2EntryPlanV1
+    dependency_impacts: list[P2DependencyImpactV1] = Field(default_factory=list)
     search_completion_status: Literal["COMPLETE_WITHIN_DECLARED_BOUNDS", "TERMINATED_WITH_DECLARED_GAPS"]
     unsatisfied_lanes: list[SearchLane]
     observation_bindings: list[P2RecordBindingV1] = Field(default_factory=list)
     entry_binding: P2RecordBindingV1 | None = None
+    dependency_entry_bindings: list[P2RecordBindingV1] = Field(default_factory=list)
     duplicate_snapshot: DuplicateSnapshotBindingV1 | None = None
     prior_staled_decision_sha256: Sha256 | None = None
     receipt_record_sha256: Sha256 | None = None
     blocked_reason: str | None = None
     conflict_reason: str | None = None
+    operational_status: Literal["CLEAN", "NEEDS_MANUAL_REVIEW"] = "CLEAN"
 
     @model_validator(mode="after")
     def validate_operation(self) -> "P2EmissionOperationRevisionV1":
@@ -844,8 +957,20 @@ class P2EmissionOperationRevisionV1(RevisionRecordV1):
             raise ValueError("emission operation record_id mismatch")
         if (self.target_entry_id is None) != (self.target_entry_revision_sha256 is None):
             raise ValueError("target entry identity and exact revision must appear together")
-        if (self.target_entry_id is None) != (self.target_entry_state is None):
-            raise ValueError("target entry identity and state must appear together")
+        target_fields = (
+            self.target_entry_id,
+            self.target_entry_revision_sha256,
+            self.target_entry_state,
+            self.target_entry_link_chain_sha256,
+        )
+        if any(item is None for item in target_fields) and any(item is not None for item in target_fields):
+            raise ValueError("target entry identity, revision, state, and link chain must appear together")
+        unresolved = any(
+            item.impact_status == "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY"
+            for item in self.dependency_impacts
+        )
+        if (self.operational_status == "NEEDS_MANUAL_REVIEW") != unresolved:
+            raise ValueError("operational status must expose unresolved invalid-evidence dependencies")
         if self.state == "BLOCKED" and not self.blocked_reason:
             raise ValueError("blocked operation requires reason")
         if (self.state == "BLOCKED") != (self.emission_action == "BLOCKED"):
@@ -869,9 +994,12 @@ class P2EmissionReceiptV1(CanonicalRecordV1):
     observation_bindings: Annotated[list[P2RecordBindingV1], Field(min_length=1)]
     entry_binding: P2RecordBindingV1
     duplicate_snapshot: DuplicateSnapshotBindingV1
+    dependency_impacts: list[P2DependencyImpactV1] = Field(default_factory=list)
+    dependency_entry_bindings: list[P2RecordBindingV1] = Field(default_factory=list)
     prior_staled_decision_sha256: Sha256 | None = None
     search_completion_status: Literal["COMPLETE_WITHIN_DECLARED_BOUNDS", "TERMINATED_WITH_DECLARED_GAPS"]
     unsatisfied_lanes: list[SearchLane]
+    operational_status: Literal["CLEAN", "NEEDS_MANUAL_REVIEW"] = "CLEAN"
 
     @model_validator(mode="after")
     def validate_receipt(self) -> "P2EmissionReceiptV1":
@@ -903,6 +1031,10 @@ def methodology_sha256(payload: dict[str, Any]) -> str:
     fields = {
         key: payload[key]
         for key in (
+            "execution_lineage_id",
+            "lineage_kind",
+            "parent_execution_lineage_id",
+            "observed_result_set_sha256",
             "research_question",
             "market_scope",
             "inclusion_rules",

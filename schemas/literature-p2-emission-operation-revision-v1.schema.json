@@ -262,6 +262,103 @@
       "title": "EvidenceTimeBindingV1",
       "type": "object"
     },
+    "P2DependencyImpactV1": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_observation_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Affected Observation Id",
+          "type": "string"
+        },
+        "affected_observation_revision_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Affected Observation Revision Sha256",
+          "type": "string"
+        },
+        "dependent_entry_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Dependent Entry Id",
+          "type": "string"
+        },
+        "dependent_entry_revision_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Dependent Entry Revision Sha256",
+          "type": "string"
+        },
+        "dependent_entry_state": {
+          "enum": [
+            "UNREVIEWED",
+            "REVIEWED_CONTINUE",
+            "REJECTED",
+            "DUPLICATE",
+            "SUSPENDED",
+            "RESUMED"
+          ],
+          "title": "Dependent Entry State",
+          "type": "string"
+        },
+        "entry_plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/P2EntryPlanV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "impact_status": {
+          "enum": [
+            "PLANNED_MUTABLE_REVISION",
+            "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY"
+          ],
+          "title": "Impact Status",
+          "type": "string"
+        },
+        "inability_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inability Reason"
+        },
+        "prior_staled_decision_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior Staled Decision Sha256"
+        },
+        "relevant_link_chain_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Relevant Link Chain Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "affected_observation_id",
+        "affected_observation_revision_sha256",
+        "dependent_entry_id",
+        "dependent_entry_revision_sha256",
+        "dependent_entry_state",
+        "relevant_link_chain_sha256",
+        "impact_status"
+      ],
+      "title": "P2DependencyImpactV1",
+      "type": "object"
+    },
     "P2EntryPlanV1": {
       "additionalProperties": false,
       "properties": {
@@ -555,6 +652,19 @@
           "title": "Payload Sha256",
           "type": "string"
         },
+        "prior_observation_revision_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior Observation Revision Sha256"
+        },
         "role": {
           "enum": [
             "MOTIVATING",
@@ -707,6 +817,20 @@
       "default": null,
       "title": "Conflict Reason"
     },
+    "dependency_entry_bindings": {
+      "items": {
+        "$ref": "#/$defs/P2RecordBindingV1"
+      },
+      "title": "Dependency Entry Bindings",
+      "type": "array"
+    },
+    "dependency_impacts": {
+      "items": {
+        "$ref": "#/$defs/P2DependencyImpactV1"
+      },
+      "title": "Dependency Impacts",
+      "type": "array"
+    },
     "duplicate_snapshot": {
       "anyOf": [
         {
@@ -781,6 +905,20 @@
       "title": "Operation Id",
       "type": "string"
     },
+    "operational_status": {
+      "default": "CLEAN",
+      "enum": [
+        "CLEAN",
+        "NEEDS_MANUAL_REVIEW"
+      ],
+      "title": "Operational Status",
+      "type": "string"
+    },
+    "p2_snapshot_before_append_sequence": {
+      "minimum": 1,
+      "title": "P2 Snapshot Before Append Sequence",
+      "type": "integer"
+    },
     "previous_revision_sha256": {
       "anyOf": [
         {
@@ -839,6 +977,9 @@
       "type": "string"
     },
     "record_sha256": {
+      "not": {
+        "const": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
       "pattern": "^[a-f0-9]{64}$",
       "title": "Record Sha256",
       "type": "string"
@@ -899,6 +1040,19 @@
       ],
       "default": null,
       "title": "Target Entry Id"
+    },
+    "target_entry_link_chain_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Entry Link Chain Sha256"
     },
     "target_entry_revision_sha256": {
       "anyOf": [
@@ -963,6 +1117,7 @@
     "operation_id",
     "freeze_id",
     "freeze_record_sha256",
+    "p2_snapshot_before_append_sequence",
     "emission_action",
     "state",
     "reservations",

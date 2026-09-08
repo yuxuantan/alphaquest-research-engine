@@ -37,6 +37,79 @@
       ],
       "title": "ActorProvenanceV1",
       "type": "object"
+    },
+    "SearchCaptureAttemptV1": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_attempt_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Capture Attempt Id",
+          "type": "string"
+        },
+        "result_identity_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Result Identity Sha256",
+          "type": "string"
+        },
+        "selection_ordinal": {
+          "minimum": 1,
+          "title": "Selection Ordinal",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "capture_attempt_id",
+        "result_identity_sha256",
+        "selection_ordinal"
+      ],
+      "title": "SearchCaptureAttemptV1",
+      "type": "object"
+    },
+    "SearchResultInspectionV1": {
+      "additionalProperties": false,
+      "description": "One stable inspected-result identity with deterministic provider ranking.",
+      "properties": {
+        "canonical_locator": {
+          "minLength": 1,
+          "title": "Canonical Locator",
+          "type": "string"
+        },
+        "locator_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Locator Sha256",
+          "type": "string"
+        },
+        "provider_rank": {
+          "minimum": 1,
+          "title": "Provider Rank",
+          "type": "integer"
+        },
+        "result_identity_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Result Identity Sha256",
+          "type": "string"
+        },
+        "result_rank": {
+          "minimum": 1,
+          "title": "Result Rank",
+          "type": "integer"
+        },
+        "work_identity_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Work Identity Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result_identity_sha256",
+        "work_identity_sha256",
+        "canonical_locator",
+        "locator_sha256",
+        "provider_rank",
+        "result_rank"
+      ],
+      "title": "SearchResultInspectionV1",
+      "type": "object"
     }
   },
   "$id": "https://alphaquest.local/schemas/literature-search-run-revision-v1.schema.json",
@@ -61,6 +134,13 @@
       "minimum": 0,
       "title": "Bytes Retrieved",
       "type": "integer"
+    },
+    "capture_attempt_records": {
+      "items": {
+        "$ref": "#/$defs/SearchCaptureAttemptV1"
+      },
+      "title": "Capture Attempt Records",
+      "type": "array"
     },
     "capture_attempts": {
       "default": 0,
@@ -95,6 +175,13 @@
       "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
       "title": "Idempotency Key",
       "type": "string"
+    },
+    "inspected_results": {
+      "items": {
+        "$ref": "#/$defs/SearchResultInspectionV1"
+      },
+      "title": "Inspected Results",
+      "type": "array"
     },
     "intent_sha256": {
       "pattern": "^[a-f0-9]{64}$",
@@ -163,6 +250,11 @@
       "title": "Protocol Revision Sha256",
       "type": "string"
     },
+    "provider_attempt_ordinal": {
+      "minimum": 1,
+      "title": "Provider Attempt Ordinal",
+      "type": "integer"
+    },
     "provider_id": {
       "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
       "title": "Provider Id",
@@ -198,6 +290,9 @@
       "type": "string"
     },
     "record_sha256": {
+      "not": {
+        "const": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
       "pattern": "^[a-f0-9]{64}$",
       "title": "Record Sha256",
       "type": "string"
@@ -230,6 +325,11 @@
       "minimum": 1,
       "title": "Revision",
       "type": "integer"
+    },
+    "saturation_claimed": {
+      "default": false,
+      "title": "Saturation Claimed",
+      "type": "boolean"
     },
     "schema": {
       "const": "alphaquest.literature-search-run-revision/v1",
@@ -272,6 +372,7 @@
     "query_kind",
     "adaptive_depth",
     "provider_id",
+    "provider_attempt_ordinal",
     "status",
     "provider_trace_completeness"
   ],

@@ -90,6 +90,36 @@ def relationship_state_sha256(
     return canonical_source_version_resolution(source_version_id, relationships)[1]
 
 
+def effective_claim_reliability(
+    claim: ClaimExtractionRevisionV1,
+    relationships: Iterable[SourceRelationshipRevisionV1],
+) -> str:
+    """Derive current claim reliability from canonical source relationships."""
+
+    latest: dict[str, SourceRelationshipRevisionV1] = {}
+    relationship_records = list(relationships)
+    for relationship in relationship_records:
+        latest[relationship.relationship_id] = relationship
+    _canonical_id, _state_hash, component = canonical_source_version_resolution(
+        claim.source_version_id, relationship_records
+    )
+    if any(
+        item.status == "ACTIVE"
+        and item.predicate == "RETRACTS"
+        and item.object_id in component
+        for item in latest.values()
+    ):
+        return "SOURCE_RETRACTED"
+    if any(
+        item.status == "ACTIVE"
+        and item.predicate == "CORRECTS"
+        and item.object_id in component
+        for item in latest.values()
+    ):
+        return "SOURCE_VERSION_CORRECTED"
+    return claim.reliability
+
+
 def selected_evidence_time(
     version: SourceVersionIdentityRevisionV1,
     capture: SourceCaptureRevisionV1,
@@ -183,6 +213,7 @@ def map_claim_to_observation(
     role: str,
     reservation: P2EvidenceReservationV1,
     prior_observation: ObservationRevisionV1 | None = None,
+    effective_reliability: str | None = None,
 ) -> P2ObservationPlanV1:
     observation_id = derive_p2_observation_id(claim.claim_id)
     if prior_observation is not None and prior_observation.observation_id != observation_id:
@@ -201,7 +232,8 @@ def map_claim_to_observation(
         content_sha256=reservation.content_sha256,
     )
     known_conflicts = list(prior_observation.known_conflicts) if prior_observation else []
-    withdrawn = claim.reliability == "WITHDRAWN_INVALID"
+    reliability = effective_reliability or claim.reliability
+    withdrawn = reliability == "WITHDRAWN_INVALID"
     if withdrawn:
         if prior_observation is None:
             raise LiteratureConflictError("invalid extraction withdrawal requires its prior P2 observation")
@@ -219,25 +251,41 @@ def map_claim_to_observation(
         marker_code = {
             "CORRECTED": "CLAIM_CORRECTED",
             "SOURCE_RETRACTED": "SOURCE_RETRACTED",
-        }.get(claim.reliability)
+            "SOURCE_VERSION_CORRECTED": "SOURCE_VERSION_CORRECTED",
+        }.get(reliability)
         if marker_code:
             marker = p3_conflict_marker(marker_code, claim)
             if marker not in known_conflicts:
                 known_conflicts.append(marker)
-        payload = P2ObservationPayloadV1(
-            observation_id=observation_id,
-            statement=claim.statement.strip(),
-            statement_kind=claim.statement_kind,
-            evidence_refs=[evidence],
-            known_conflicts=known_conflicts,
-        )
+        if reliability == "SOURCE_RETRACTED" and prior_observation is not None:
+            payload = P2ObservationPayloadV1(
+                observation_id=observation_id,
+                statement=prior_observation.statement,
+                statement_kind=prior_observation.statement_kind,
+                evidence_refs=[item.model_dump(mode="python") for item in prior_observation.evidence_refs],
+                known_conflicts=known_conflicts,
+            )
+        else:
+            payload = P2ObservationPayloadV1(
+                observation_id=observation_id,
+                statement=claim.statement.strip(),
+                statement_kind=claim.statement_kind,
+                evidence_refs=[evidence],
+                known_conflicts=known_conflicts,
+            )
     payload_hash = hashlib.sha256(canonical_json_bytes(payload, trailing_lf=False)).hexdigest()
     return P2ObservationPlanV1(
         claim_id=claim.claim_id,
         claim_revision_sha256=claim.record_sha256,
         observation_id=observation_id,
+        prior_observation_revision_sha256=(
+            prior_observation.record_sha256 if prior_observation is not None else None
+        ),
         role=role,
-        withdrawn_from_current_support=withdrawn and role in {"MOTIVATING", "SUPPORTING"},
+        withdrawn_from_current_support=(
+            reliability in {"WITHDRAWN_INVALID", "SOURCE_RETRACTED"}
+            and role in {"MOTIVATING", "SUPPORTING"}
+        ),
         payload_sha256=payload_hash,
         payload=payload,
     )
@@ -301,6 +349,7 @@ def p2_entry_payload(
 __all__ = [
     "derive_p2_observation_id",
     "derive_p2_source_id",
+    "effective_claim_reliability",
     "canonical_source_version_resolution",
     "canonical_p2_locator",
     "map_claim_to_observation",

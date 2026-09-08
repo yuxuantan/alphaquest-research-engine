@@ -45,6 +45,7 @@ from alphaquest.research.literature.contracts import (
     intent_sha256,
     methodology_sha256,
     record_sha256,
+    _TRUSTED_CANONICAL_WRITER_CONTEXT,
 )
 from alphaquest.research.storage import StorageLayout, load_storage_layout
 from alphaquest.research.literature.security import (
@@ -72,6 +73,52 @@ _MANAGED_FIELDS = {
     "record_sha256",
 }
 _REVISION_MANAGED_FIELDS = {"record_id", "revision", "previous_revision_sha256"}
+_SEARCH_IMMUTABLE_FIELDS = {
+    "search_run_id",
+    "protocol_id",
+    "protocol_revision_sha256",
+    "execution_lineage_id",
+    "lane",
+    "query",
+    "query_kind",
+    "parent_search_run_id",
+    "adaptive_depth",
+    "provider_id",
+    "provider_attempt_ordinal",
+}
+_SEARCH_TERMINAL_FIELDS = {
+    "status",
+    "inspected_results",
+    "capture_attempt_records",
+    "bytes_retrieved",
+    "elapsed_seconds",
+    "provider_trace_completeness",
+    "failure_reason",
+    "saturation_claimed",
+}
+_CAPTURE_IMMUTABLE_FIELDS = {
+    "capture_id",
+    "source_version_id",
+    "source_version_revision_sha256",
+    "retrieval_locator",
+    "captured_at",
+    "access_basis",
+    "local_retention_permission",
+    "redistribution_permission",
+    "external_model_processing_permission",
+}
+_CAPTURE_TERMINAL_FIELDS = {
+    "status",
+    "media_type",
+    "content_sha256",
+    "content_bytes",
+    "extracted_representation_sha256",
+    "extracted_bytes",
+    "extractor_id",
+    "extractor_version",
+    "extractor_config_sha256",
+    "failure_reason",
+}
 _P3_EXACT_REFERENCE_FIELDS = {
     "protocol_revision_sha256",
     "work_revision_sha256",
@@ -156,9 +203,34 @@ class LiteratureStore:
             counts: dict[str, int] = {item.family: 0 for item in CANONICAL_RECORD_TYPES}
             for record in records:
                 counts[type(record).family] += 1
+            latest_operations: dict[str, P2EmissionOperationRevisionV1] = {}
+            for record in records:
+                if isinstance(record, P2EmissionOperationRevisionV1):
+                    latest_operations[record.operation_id] = record
+            unresolved = [
+                {
+                    "operation_id": operation.operation_id,
+                    "affected_observation_id": impact.affected_observation_id,
+                    "affected_observation_revision_sha256": impact.affected_observation_revision_sha256,
+                    "dependent_entry_id": impact.dependent_entry_id,
+                    "dependent_entry_revision_sha256": impact.dependent_entry_revision_sha256,
+                    "dependent_entry_state": impact.dependent_entry_state,
+                    "reason": impact.inability_reason,
+                }
+                for operation in latest_operations.values()
+                for impact in operation.dependency_impacts
+                if impact.impact_status == "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY"
+            ]
             return {
                 "schema": "alphaquest.literature-validation/v1",
                 "status": "PASS",
+                "operational_status": (
+                    "NEEDS_MANUAL_REVIEW" if unresolved else "CURRENT_RESEARCH_CLEAN"
+                ),
+                "operational_reason": (
+                    "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY" if unresolved else None
+                ),
+                "unresolved_dependency_impacts": unresolved,
                 "record_count": len(records),
                 "family_count": len(CANONICAL_RECORD_TYPES),
                 "counts": counts,
@@ -274,8 +346,18 @@ class LiteratureStore:
                 raise LiteratureConflictError("adaptive query parent is outside the frozen lane/lineage")
             if int(material.get("adaptive_depth", 0)) != parent.adaptive_depth + 1:
                 raise LiteratureConflictError("adaptive depth must advance exactly one level from its parent")
-        if len(lane_existing) >= lane.maximum_queries:
+        existing_queries = {item.query for item in lane_existing}
+        if material.get("query") not in existing_queries and len(existing_queries) >= lane.maximum_queries:
             raise LiteratureConflictError("frozen lane query budget is exhausted")
+        same_query_attempts = [item for item in lane_existing if item.query == material.get("query")]
+        expected_ordinal = len(same_query_attempts) + 1
+        supplied_ordinal = int(material.get("provider_attempt_ordinal", expected_ordinal))
+        if supplied_ordinal != expected_ordinal:
+            raise LiteratureConflictError("provider attempt ordinal must be gap-free for one query")
+        if supplied_ordinal > len(lane.provider_order):
+            raise LiteratureConflictError("provider attempt exceeds the frozen provider order")
+        if material.get("provider_id") != lane.provider_order[supplied_ordinal - 1]:
+            raise LiteratureConflictError("provider attempt does not follow the exact frozen provider order")
         material.update(
             {
                 "revision": 1,
@@ -284,9 +366,13 @@ class LiteratureStore:
                 "status": "STARTED",
                 "results_inspected": 0,
                 "capture_attempts": 0,
+                "inspected_results": [],
+                "capture_attempt_records": [],
                 "bytes_retrieved": 0,
                 "elapsed_seconds": 0,
                 "result_set_sha256": None,
+                "saturation_claimed": False,
+                "provider_attempt_ordinal": supplied_ordinal,
                 "failure_reason": None,
             }
         )
@@ -304,30 +390,43 @@ class LiteratureStore:
         previous = self.latest(SearchRunRevisionV1, search_run_id)
         if previous.status != "STARTED":
             raise LiteratureConflictError("search run is already terminal")
+        unexpected = set(payload) - _SEARCH_TERMINAL_FIELDS
+        if unexpected:
+            raise LiteratureConflictError(
+                "finish_search accepts only terminal outcome fields: " + ", ".join(sorted(unexpected))
+            )
         material = previous.model_dump(
             mode="json", by_alias=True, exclude=_MANAGED_FIELDS | {"revision", "previous_revision_sha256", "record_id"}
         )
         material.update(payload)
+        if material.get("status") == "STARTED":
+            raise LiteratureConflictError("finish_search requires a terminal status")
+        inspected = list(material.get("inspected_results", []))
+        capture_attempts = list(material.get("capture_attempt_records", []))
         material.update(
             {
                 "record_id": f"{search_run_id}.r000002",
                 "revision": 2,
                 "previous_revision_sha256": previous.record_sha256,
+                "results_inspected": len(inspected),
+                "capture_attempts": len(capture_attempts),
+                "result_set_sha256": hashlib.sha256(
+                    canonical_json_bytes(inspected, trailing_lf=False)
+                ).hexdigest(),
             }
         )
-        candidate = SearchRunRevisionV1.model_validate_json(
-            canonical_json_bytes({
-                **material,
-                "schema": SearchRunRevisionV1.schema_literal,
-                "append_sequence": 1,
-                "previous_store_record_sha256": None,
-                "recorded_at": recorded_at or _now(),
-                "actor": actor.model_dump(mode="json"),
-                "idempotency_key": idempotency_key,
-                "intent_sha256": "0" * 64,
-                "record_sha256": "0" * 64,
-            })
-        )
+        candidate_material = {
+            **material,
+            "schema": SearchRunRevisionV1.schema_literal,
+            "append_sequence": 1,
+            "previous_store_record_sha256": None,
+            "recorded_at": recorded_at or _now(),
+            "actor": actor.model_dump(mode="json"),
+            "idempotency_key": idempotency_key,
+            "intent_sha256": "0" * 64,
+        }
+        candidate_material["record_sha256"] = record_sha256(candidate_material)
+        candidate = SearchRunRevisionV1.model_validate_json(canonical_json_bytes(candidate_material))
         protocol = self._record_by_hash(candidate.protocol_revision_sha256, ResearchProtocolRevisionV1)
         lane = next(item for item in protocol.lanes if item.lane == candidate.lane)
         terminal = [
@@ -358,6 +457,9 @@ class LiteratureStore:
         work = self._record_by_hash(str(material["work_revision_sha256"]), SourceIdentityRevisionV1)
         if work.work_id != material.get("work_id"):
             raise LiteratureConflictError("source version work ID/hash mismatch")
+        previous = self._latest_optional(SourceVersionIdentityRevisionV1, str(material["source_version_id"]))
+        if previous is not None and material.get("work_id") != previous.work_id:
+            raise LiteratureConflictError("source-version identity cannot migrate to another work")
         return self._append_revision(SourceVersionIdentityRevisionV1, "source_version_id", material, **kwargs)
 
     def append_source_relationship(self, payload: Mapping[str, Any], **kwargs: Any) -> SourceRelationshipRevisionV1:
@@ -378,16 +480,27 @@ class LiteratureStore:
 
     def append_capture(self, payload: Mapping[str, Any], **kwargs: Any) -> SourceCaptureRevisionV1:
         material = dict(payload)
-        assert_no_pnl_repository_reference(str(material["retrieval_locator"]))
         capture_id = str(material["capture_id"])
         previous = self._latest_optional(SourceCaptureRevisionV1, capture_id)
         if previous is not None:
             if previous.status != "STARTED":
                 raise LiteratureConflictError("terminal capture is immutable; recapture requires a new capture_id")
+            unexpected = set(material) - ({"capture_id"} | _CAPTURE_TERMINAL_FIELDS)
+            if unexpected:
+                raise LiteratureConflictError(
+                    "capture completion accepts only terminal outcome fields: "
+                    + ", ".join(sorted(unexpected))
+                )
+            terminal = {key: value for key, value in material.items() if key in _CAPTURE_TERMINAL_FIELDS}
+            material = previous.model_dump(
+                mode="json",
+                by_alias=True,
+                exclude=_MANAGED_FIELDS | {"revision", "previous_revision_sha256", "record_id"},
+            )
+            material.update(terminal)
             if material.get("status") == "STARTED":
                 raise LiteratureConflictError("capture STARTED state cannot be appended twice")
-            for field in ("source_version_id", "source_version_revision_sha256", "retrieval_locator", "captured_at"):
-                material.setdefault(field, getattr(previous, field))
+        assert_no_pnl_repository_reference(str(material["retrieval_locator"]))
         version = self._record_by_hash(str(material["source_version_revision_sha256"]), SourceVersionIdentityRevisionV1)
         if version.source_version_id != material.get("source_version_id"):
             raise LiteratureConflictError("capture source-version ID/hash mismatch")
@@ -400,9 +513,24 @@ class LiteratureStore:
 
     def append_claim(self, payload: Mapping[str, Any], **kwargs: Any) -> ClaimExtractionRevisionV1:
         material = dict(payload)
+        work = self._record_by_hash(str(material["work_revision_sha256"]), SourceIdentityRevisionV1)
+        version = self._record_by_hash(
+            str(material["source_version_revision_sha256"]), SourceVersionIdentityRevisionV1
+        )
         capture = self._record_by_hash(str(material["capture_revision_sha256"]), SourceCaptureRevisionV1)
+        if work.work_id != material.get("work_id"):
+            raise LiteratureConflictError("claim work ID/hash mismatch")
+        if version.source_version_id != material.get("source_version_id"):
+            raise LiteratureConflictError("claim source-version ID/hash mismatch")
+        if version.work_id != work.work_id or version.work_revision_sha256 != work.record_sha256:
+            raise LiteratureConflictError("claim work/source-version provenance chain is inconsistent")
         if capture.capture_id != material.get("capture_id"):
             raise LiteratureConflictError("claim capture ID/hash mismatch")
+        if (
+            capture.source_version_id != version.source_version_id
+            or capture.source_version_revision_sha256 != version.record_sha256
+        ):
+            raise LiteratureConflictError("claim source-version/capture provenance chain is inconsistent")
         if capture.status not in {"FULL_TEXT_CAPTURED", "GENUINE_ABSTRACT_CAPTURED"}:
             raise LiteratureConflictError("claim extraction requires captured full text or a genuine abstract")
         if capture.content_sha256 != material.get("content_sha256"):
@@ -437,46 +565,225 @@ class LiteratureStore:
             raise LiteratureConflictError("retracted/superseded evidence relation cannot be reactivated")
         return self._append_revision(EvidenceRelationRevisionV1, "evidence_relation_id", payload, **kwargs)
 
+    @staticmethod
+    def _current_searches(
+        records: list[CanonicalRecordV1], *, lineage_id: str, lane_name: str
+    ) -> list[SearchRunRevisionV1]:
+        latest: dict[str, SearchRunRevisionV1] = {}
+        for record in records:
+            if (
+                isinstance(record, SearchRunRevisionV1)
+                and record.execution_lineage_id == lineage_id
+                and record.lane == lane_name
+            ):
+                latest[record.search_run_id] = record
+        return sorted(latest.values(), key=lambda item: item.search_run_id)
+
+    @staticmethod
+    def _validate_lane_search_proof(lane: Any, searches: list[SearchRunRevisionV1]) -> bool:
+        attempts_by_query: dict[str, list[SearchRunRevisionV1]] = {}
+        for search in searches:
+            attempts_by_query.setdefault(search.query, []).append(search)
+        for attempts in attempts_by_query.values():
+            ordered = sorted(attempts, key=lambda item: item.provider_attempt_ordinal)
+            ordinals = [item.provider_attempt_ordinal for item in ordered]
+            if ordinals != list(range(1, len(ordered) + 1)):
+                raise LiteratureIntegrityError("provider attempts must be gap-free for each exact query")
+            if len(ordered) > len(lane.provider_order):
+                raise LiteratureIntegrityError("search attempts exceed the frozen provider order")
+            if [item.provider_id for item in ordered] != list(lane.provider_order[: len(ordered)]):
+                raise LiteratureIntegrityError("search attempts violate the exact frozen provider order")
+
+        terminal = [item for item in searches if item.status != "STARTED"]
+        if len(attempts_by_query) > lane.maximum_queries:
+            raise LiteratureIntegrityError("search history exceeds the frozen distinct-query budget")
+        if sum(item.results_inspected for item in terminal) > lane.maximum_results:
+            raise LiteratureIntegrityError("search history exceeds the frozen result budget")
+        if sum(item.capture_attempts for item in terminal) > lane.maximum_captures:
+            raise LiteratureIntegrityError("search history exceeds the frozen capture budget")
+        if sum(item.bytes_retrieved for item in terminal) > lane.maximum_bytes:
+            raise LiteratureIntegrityError("search history exceeds the frozen byte budget")
+        if sum(item.elapsed_seconds for item in terminal) > lane.maximum_elapsed_seconds:
+            raise LiteratureIntegrityError("search history exceeds the frozen elapsed-time budget")
+
+        inspected: list[Any] = []
+        captures: list[Any] = []
+        capture_ids: set[str] = set()
+        for search in terminal:
+            expected_provider_rank = list(lane.provider_order).index(search.provider_id) + 1
+            if any(item.provider_rank != expected_provider_rank for item in search.inspected_results):
+                raise LiteratureIntegrityError("inspected-result provider rank does not match frozen provider order")
+            ranks = [item.result_rank for item in search.inspected_results]
+            if ranks != list(range(1, len(ranks) + 1)):
+                raise LiteratureIntegrityError("inspected-result ranks must be ordered and gap-free per provider attempt")
+            inspected.extend(search.inspected_results)
+            for attempt in search.capture_attempt_records:
+                if attempt.capture_attempt_id in capture_ids:
+                    raise LiteratureIntegrityError("capture-attempt identity is duplicated across the lane")
+                capture_ids.add(attempt.capture_attempt_id)
+                captures.append(attempt)
+        ordered_results = sorted(
+            inspected,
+            key=lambda item: (item.provider_rank, item.result_rank, item.locator_sha256, item.result_identity_sha256),
+        )
+        if [item.selection_ordinal for item in captures] != list(range(1, len(captures) + 1)):
+            raise LiteratureIntegrityError("capture selection ordinals must be lane-global, ordered, and gap-free")
+        if [item.result_identity_sha256 for item in captures] != [
+            item.result_identity_sha256 for item in ordered_results[: len(captures)]
+        ]:
+            raise LiteratureIntegrityError("capture attempts deviate from the frozen deterministic selection rule")
+
+        successful = [item for item in terminal if item.status in {"SUCCEEDED", "PARTIAL"}]
+        successful_initial = {item.query for item in successful if item.query_kind == "INITIAL"}
+        distinct_results = {item.result_identity_sha256 for run in successful for item in run.inspected_results}
+        distinct_capture_results = {
+            item.result_identity_sha256 for run in successful for item in run.capture_attempt_records
+        }
+        per_query_results = {
+            query: {
+                item.result_identity_sha256
+                for run in successful
+                if run.query == query
+                for item in run.inspected_results
+            }
+            for query in lane.required_initial_queries
+        }
+        satisfied = (
+            set(lane.required_initial_queries).issubset(successful_initial)
+            and len(successful) >= lane.minimum_provider_attempts
+            and len(distinct_results) >= lane.minimum_distinct_results_inspected
+            and all(
+                len(per_query_results[query]) >= lane.minimum_results_inspected_per_query
+                for query in lane.required_initial_queries
+            )
+            and len(distinct_capture_results) >= lane.minimum_capture_attempts
+        )
+
+        saturation_claims = [item for item in terminal if item.saturation_claimed]
+        if saturation_claims:
+            if lane.saturation is None or not lane.saturation.enabled:
+                raise LiteratureIntegrityError("search claims saturation without a frozen saturation criterion")
+            if not satisfied:
+                raise LiteratureIntegrityError("saturation cannot be claimed before frozen minimum obligations are met")
+            query_order: list[str] = []
+            for item in sorted(terminal, key=lambda value: (value.append_sequence, value.search_run_id)):
+                if item.query not in query_order:
+                    query_order.append(item.query)
+            if len(query_order) < lane.saturation.minimum_queries_before_check:
+                raise LiteratureIntegrityError("saturation was claimed before the frozen query minimum")
+            seen_work: set[str] = set()
+            no_new_work = 0
+            for query in query_order:
+                works = {
+                    result.work_identity_sha256
+                    for run in terminal
+                    if run.query == query
+                    for result in run.inspected_results
+                }
+                new_work = works - seen_work
+                no_new_work = 0 if new_work else no_new_work + 1
+                seen_work.update(works)
+            if no_new_work < lane.saturation.consecutive_queries_without_new_work:
+                raise LiteratureIntegrityError("claimed saturation does not meet the frozen no-new-work criterion")
+            final_search = max(terminal, key=lambda item: (item.append_sequence, item.search_run_id))
+            if len(saturation_claims) != 1 or saturation_claims[0].search_run_id != final_search.search_run_id:
+                raise LiteratureIntegrityError("only the final applicable search may bind lane saturation")
+        return satisfied
+
+    @classmethod
+    def _derive_lane_completions(
+        cls, protocol: ResearchProtocolRevisionV1, records: list[CanonicalRecordV1]
+    ) -> list[dict[str, Any]]:
+        completions: list[dict[str, Any]] = []
+        for lane in protocol.lanes:
+            searches = cls._current_searches(
+                records, lineage_id=protocol.execution_lineage_id, lane_name=lane.lane
+            )
+            satisfied = cls._validate_lane_search_proof(lane, searches)
+            terminal = all(item.status != "STARTED" for item in searches)
+            provider_failure = any(
+                item.status in {"FAILED", "ABANDONED_AFTER_CRASH"} for item in searches
+            )
+            if satisfied and terminal:
+                obligation = "SATISFIED"
+                gap_reason = None
+            elif provider_failure:
+                obligation = "UNSATISFIED_PROVIDER_FAILURE"
+                gap_reason = "PROVIDER_FAILURE_OR_CRASH"
+            else:
+                obligation = "UNSATISFIED_RESOURCE_OR_SAFETY_LIMIT"
+                gap_reason = "FROZEN_MINIMUM_NOT_MET"
+            completions.append(
+                {
+                    "lane": lane.lane,
+                    "execution_status": "TERMINAL" if terminal else "NONTERMINAL",
+                    "obligation_status": obligation,
+                    "search_run_refs": [
+                        {"record_id": item.record_id, "record_sha256": item.record_sha256}
+                        for item in searches
+                    ],
+                    "gap_reason": gap_reason,
+                }
+            )
+        return completions
+
     def append_dossier(self, payload: Mapping[str, Any], **kwargs: Any) -> EdgeDossierRevisionV1:
         material = dict(payload)
+        records = self.records()
         protocol = self._record_by_hash(str(material["protocol_revision_sha256"]), ResearchProtocolRevisionV1)
         if protocol.execution_lineage_id != material.get("execution_lineage_id"):
             raise LiteratureConflictError("dossier execution lineage does not match protocol")
+        derived_completions = self._derive_lane_completions(protocol, records)
+        if canonical_json_bytes(material.get("lane_completions"), trailing_lf=False) != canonical_json_bytes(
+            derived_completions, trailing_lf=False
+        ):
+            raise LiteratureConflictError("dossier lane completion must exactly include all canonical lane searches")
+        derived_completion_status = (
+            "COMPLETE_WITHIN_DECLARED_BOUNDS"
+            if all(item["obligation_status"] == "SATISFIED" for item in derived_completions)
+            else "TERMINATED_WITH_DECLARED_GAPS"
+        )
+        if material.get("search_completion_status") != derived_completion_status:
+            raise LiteratureConflictError("dossier completion status is not derived from exact lane evidence")
+        claim_set: set[tuple[str, str]] = set()
+        relationships = [item for item in records if isinstance(item, SourceRelationshipRevisionV1)]
+        from alphaquest.research.literature.mapper import effective_claim_reliability
+
         for reference in material["claim_refs"]:
             claim = self._record_by_hash(str(reference["claim_revision_sha256"]), ClaimExtractionRevisionV1)
             if claim.claim_id != reference["claim_id"]:
                 raise LiteratureConflictError("dossier claim ID/hash mismatch")
+            identity = (claim.record_id, claim.record_sha256)
+            if identity in claim_set:
+                raise LiteratureConflictError("dossier claim references must be exactly ordered and unique")
+            claim_set.add(identity)
+            if (
+                effective_claim_reliability(claim, relationships) == "SOURCE_RETRACTED"
+                and reference["p2_role"] in {"MOTIVATING", "SUPPORTING"}
+            ):
+                raise LiteratureConflictError("actively retracted source evidence cannot remain current positive support")
+
+        def require_dossier_claim(reference: Mapping[str, Any]) -> None:
+            identity = (str(reference["record_id"]), str(reference["record_sha256"]))
+            if identity not in claim_set:
+                raise LiteratureConflictError("nested dossier basis claim is outside the exact dossier claim set")
+
         for statement in material["material_statements"]:
             for reference in statement["claim_refs"]:
-                self._record_by_hash(str(reference["record_sha256"]), ClaimExtractionRevisionV1)
+                require_dossier_claim(reference)
         for reference in material["evidence_relation_refs"]:
             relation = self._record_by_hash(str(reference["record_sha256"]), EvidenceRelationRevisionV1)
             if relation.record_id != reference["record_id"]:
                 raise LiteratureConflictError("dossier evidence-relation ID/hash mismatch")
+            for claim_reference in relation.claim_refs:
+                if (claim_reference.record_id, claim_reference.record_sha256) not in claim_set:
+                    raise LiteratureConflictError("dossier evidence relation uses a claim outside the dossier")
         for descriptor in material["quality_descriptors"]:
             for reference in descriptor["basis_claims"]:
-                self._record_by_hash(str(reference["record_sha256"]), ClaimExtractionRevisionV1)
+                require_dossier_claim(reference)
         for mapping in material["taxonomy_proposal"]["dimension_mappings"]:
             for reference in mapping["basis_claims"]:
-                self._record_by_hash(str(reference["record_sha256"]), ClaimExtractionRevisionV1)
-        lane_protocols = {item.lane: item for item in protocol.lanes}
-        for completion in material["lane_completions"]:
-            lane_name = completion["lane"]
-            lane_protocol = lane_protocols[lane_name]
-            searches: list[SearchRunRevisionV1] = []
-            for reference in completion["search_run_refs"]:
-                search = self._record_by_hash(str(reference["record_sha256"]), SearchRunRevisionV1)
-                if search.record_id != reference["record_id"]:
-                    raise LiteratureConflictError("lane search reference ID/hash mismatch")
-                if search.execution_lineage_id != protocol.execution_lineage_id or search.lane != lane_name:
-                    raise LiteratureConflictError("prior-lineage or cross-lane searches cannot satisfy this protocol")
-                searches.append(search)
-            terminal = all(item.status != "STARTED" for item in searches)
-            if (completion["execution_status"] == "TERMINAL") != terminal:
-                raise LiteratureConflictError("lane execution status does not match referenced search records")
-            satisfied = self._lane_obligation_satisfied(lane_protocol, searches)
-            if (completion["obligation_status"] == "SATISFIED") != satisfied:
-                raise LiteratureConflictError("lane obligation status does not match frozen protocol minimums")
+                require_dossier_claim(reference)
         previous = self._latest_optional(EdgeDossierRevisionV1, str(material["dossier_id"]))
         if material.get("p2_entry_id") is not None:
             receipt = self._record_by_hash(
@@ -496,23 +803,6 @@ class LiteratureStore:
     def append_codex_attempt(self, payload: Mapping[str, Any], **kwargs: Any) -> CodexTaskAttemptRevisionV1:
         return self._append_revision(CodexTaskAttemptRevisionV1, "attempt_id", payload, **kwargs)
 
-    @staticmethod
-    def _lane_obligation_satisfied(lane: Any, searches: list[SearchRunRevisionV1]) -> bool:
-        terminal = [item for item in searches if item.status in {"SUCCEEDED", "PARTIAL"}]
-        initial_queries = {item.query for item in terminal if item.query_kind == "INITIAL"}
-        return (
-            set(lane.required_initial_queries).issubset(initial_queries)
-            and len(terminal) >= lane.minimum_provider_attempts
-            and sum(item.results_inspected for item in terminal)
-            >= lane.minimum_distinct_results_inspected
-            and all(
-                item.results_inspected >= lane.minimum_results_inspected_per_query
-                for item in terminal
-                if item.query_kind == "INITIAL"
-            )
-            and sum(item.capture_attempts for item in terminal) >= lane.minimum_capture_attempts
-        )
-
     def freeze_dossier(
         self,
         payload: Mapping[str, Any],
@@ -521,30 +811,66 @@ class LiteratureStore:
         idempotency_key: str,
         recorded_at: datetime | None = None,
     ) -> DossierFreezeV1:
-        material = dict(payload)
-        dossier = self._record_by_hash(str(material["dossier_revision_sha256"]), EdgeDossierRevisionV1)
-        if dossier.dossier_id != material.get("dossier_id"):
+        supplied = dict(payload)
+        allowed = {"freeze_id", "dossier_id", "dossier_revision_sha256"}
+        unexpected = set(supplied) - allowed
+        if unexpected:
+            raise LiteratureConflictError(
+                "freeze_dossier derives authoritative fields; unexpected caller fields: "
+                + ", ".join(sorted(unexpected))
+            )
+        dossier = self._record_by_hash(str(supplied["dossier_revision_sha256"]), EdgeDossierRevisionV1)
+        if dossier.dossier_id != supplied.get("dossier_id"):
             raise LiteratureConflictError("freeze dossier ID/hash mismatch")
-        if dossier.protocol_revision_sha256 != material.get("protocol_revision_sha256"):
-            raise LiteratureConflictError("freeze protocol binding does not match dossier")
-        expected_claims = {(item.claim_id, item.claim_revision_sha256) for item in dossier.claim_refs}
-        actual_claims = {(_object_id(item["record_id"]), item["record_sha256"]) for item in material["claim_refs"]}
-        if expected_claims != actual_claims:
-            raise LiteratureConflictError("freeze claim set does not match dossier")
-        expected_relations = {
-            (item.record_id, item.record_sha256) for item in dossier.evidence_relation_refs
-        }
-        actual_relations = {
-            (item["record_id"], item["record_sha256"]) for item in material["evidence_relation_refs"]
-        }
-        if expected_relations != actual_relations:
-            raise LiteratureConflictError("freeze evidence-relation set does not match dossier")
-        expected_unsatisfied = sorted(
-            item.lane for item in dossier.lane_completions if item.obligation_status != "SATISFIED"
-        )
-        if sorted(material["unsatisfied_lanes"]) != expected_unsatisfied:
-            raise LiteratureConflictError("freeze unsatisfied lanes do not match dossier completion evidence")
+        from alphaquest.research.literature.mapper import effective_claim_reliability
+
+        current_records = self.records()
+        relationships = [
+            item for item in current_records if isinstance(item, SourceRelationshipRevisionV1)
+        ]
+        records_by_hash = {item.record_sha256: item for item in current_records}
+        for reference in dossier.claim_refs:
+            claim = records_by_hash.get(reference.claim_revision_sha256)
+            if (
+                isinstance(claim, ClaimExtractionRevisionV1)
+                and effective_claim_reliability(claim, relationships) == "SOURCE_RETRACTED"
+                and reference.p2_role in {"MOTIVATING", "SUPPORTING"}
+            ):
+                raise LiteratureConflictError("cannot freeze actively retracted positive evidence")
+        material = self._dossier_freeze_material(dossier, freeze_id=str(supplied["freeze_id"]))
         return self._append(DossierFreezeV1, material, actor, idempotency_key, recorded_at)
+
+    @staticmethod
+    def _dossier_freeze_material(
+        dossier: EdgeDossierRevisionV1, *, freeze_id: str
+    ) -> dict[str, Any]:
+        return {
+            "record_id": freeze_id,
+            "freeze_id": freeze_id,
+            "dossier_id": dossier.dossier_id,
+            "dossier_revision_sha256": dossier.record_sha256,
+            "protocol_revision_sha256": dossier.protocol_revision_sha256,
+            "execution_lineage_id": dossier.execution_lineage_id,
+            "lane_completions": [item.model_dump(mode="json") for item in dossier.lane_completions],
+            "claim_refs": [item.model_dump(mode="json") for item in dossier.claim_refs],
+            "evidence_relation_refs": [
+                item.model_dump(mode="json") for item in dossier.evidence_relation_refs
+            ],
+            "quality_descriptors": [
+                item.model_dump(mode="json") for item in dossier.quality_descriptors
+            ],
+            "material_statements": [item.model_dump(mode="json") for item in dossier.material_statements],
+            "search_completion_status": dossier.search_completion_status,
+            "unsatisfied_lanes": [
+                item.lane for item in dossier.lane_completions if item.obligation_status != "SATISFIED"
+            ],
+            "taxonomy_proposal": dossier.taxonomy_proposal.model_dump(mode="json"),
+            "p2_entry_id": dossier.p2_entry_id,
+            "prior_emission_receipt_sha256": dossier.prior_emission_receipt_sha256,
+            "scientific_validation_status": dossier.scientific_validation_status,
+            "hypothesis_status": dossier.hypothesis_status,
+            "causal_admission_status": dossier.causal_admission_status,
+        }
 
     def append_emission_operation(self, payload: Mapping[str, Any], **kwargs: Any) -> P2EmissionOperationRevisionV1:
         return self._append_revision(P2EmissionOperationRevisionV1, "operation_id", payload, **kwargs)
@@ -628,10 +954,12 @@ class LiteratureStore:
                 "actor": actor.model_dump(mode="json"),
                 "idempotency_key": idempotency_key,
                 "intent_sha256": "0" * 64,
-                "record_sha256": "0" * 64,
             }
+            material["record_sha256"] = record_sha256(material)
             try:
-                provisional = record_type.model_validate_json(canonical_json_bytes(material))
+                provisional = record_type.model_validate_json(
+                    canonical_json_bytes(material), context=_TRUSTED_CANONICAL_WRITER_CONTEXT
+                )
             except ValidationError as exc:
                 raise LiteratureConflictError(str(exc)) from exc
             intent = intent_sha256(_record_intent_material(provisional))
@@ -643,10 +971,11 @@ class LiteratureStore:
                 return record  # type: ignore[return-value]
             material = provisional.model_dump(mode="json", by_alias=True)
             material["intent_sha256"] = intent
-            draft = record_type.model_validate_json(canonical_json_bytes(material))
-            sealed_material = draft.model_dump(mode="json", by_alias=True)
-            sealed_material["record_sha256"] = record_sha256(sealed_material)
-            record = record_type.model_validate_json(canonical_json_bytes(sealed_material))
+            material["record_sha256"] = record_sha256(material)
+            try:
+                record = record_type.model_validate_json(canonical_json_bytes(material))
+            except ValidationError as exc:
+                raise LiteratureConflictError(str(exc)) from exc
             if isinstance(record, RevisionRecordV1):
                 self._validate_pending_revision(record, records)
             self._validate_cross_record_state([*records, record])
@@ -679,6 +1008,16 @@ class LiteratureStore:
         if not prior:
             if record.state not in {"PREPARED", "BLOCKED"}:
                 raise LiteratureConflictError("first emission operation revision must be PREPARED or BLOCKED")
+            if (
+                record.observation_bindings
+                or record.entry_binding is not None
+                or record.dependency_entry_bindings
+                or record.duplicate_snapshot is not None
+                or record.receipt_record_sha256 is not None
+            ):
+                raise LiteratureConflictError(
+                    "first emission operation revision cannot claim post-prepare bindings"
+                )
             return
         previous = prior[-1]
         assert isinstance(previous, P2EmissionOperationRevisionV1)
@@ -689,13 +1028,17 @@ class LiteratureStore:
             "target_entry_id",
             "target_entry_revision_sha256",
             "target_entry_state",
+            "target_entry_link_chain_sha256",
+            "p2_snapshot_before_append_sequence",
             "emission_action",
             "reservations",
             "observation_plans",
             "entry_plan",
+            "dependency_impacts",
             "search_completion_status",
             "unsatisfied_lanes",
             "prior_staled_decision_sha256",
+            "operational_status",
         }
         for field in immutable:
             if getattr(record, field) != getattr(previous, field):
@@ -713,11 +1056,40 @@ class LiteratureStore:
             raise LiteratureConflictError(
                 f"invalid emission state transition: {previous.state} -> {record.state}"
             )
-        if record.state == "OBSERVATIONS_WRITTEN" and len(record.observation_bindings) != len(record.observation_plans):
-            raise LiteratureConflictError("observation stage requires one exact binding per plan")
-        if record.state in {"ENTRY_WRITTEN", "SNAPSHOT_BOUND", "COMPLETED"} and record.entry_binding is None:
+        observation_written_states = {
+            "OBSERVATIONS_WRITTEN",
+            "ENTRY_WRITTEN",
+            "SNAPSHOT_BOUND",
+            "COMPLETED",
+        }
+        binding_state = previous.state if record.state == "CONFLICT" else record.state
+        actual_observation_ids = [
+            item.record_id.rsplit(".r", 1)[0] for item in record.observation_bindings
+        ]
+        expected_observation_ids = [item.observation_id for item in record.observation_plans]
+        if binding_state in observation_written_states:
+            if actual_observation_ids != expected_observation_ids:
+                raise LiteratureConflictError(
+                    "observation stage requires the exact ordered binding for every plan"
+                )
+        elif record.observation_bindings:
+            raise LiteratureConflictError("observation bindings cannot exist before observation writing")
+        if binding_state in {"ENTRY_WRITTEN", "SNAPSHOT_BOUND", "COMPLETED"} and record.entry_binding is None:
             raise LiteratureConflictError("entry-written stage requires an exact P2 entry binding")
-        if record.state in {"SNAPSHOT_BOUND", "COMPLETED"} and record.duplicate_snapshot is None:
+        expected_dependency_entries = sorted({
+            item.dependent_entry_id
+            for item in record.dependency_impacts
+            if item.impact_status == "PLANNED_MUTABLE_REVISION"
+        })
+        actual_dependency_entries = [
+            item.record_id.rsplit(".r", 1)[0] for item in record.dependency_entry_bindings
+        ]
+        if binding_state in {"ENTRY_WRITTEN", "SNAPSHOT_BOUND", "COMPLETED"}:
+            if actual_dependency_entries != expected_dependency_entries:
+                raise LiteratureConflictError("entry-written stage lacks exact dependency correction bindings")
+        elif record.dependency_entry_bindings:
+            raise LiteratureConflictError("dependency bindings cannot exist before entry-written state")
+        if binding_state in {"SNAPSHOT_BOUND", "COMPLETED"} and record.duplicate_snapshot is None:
             raise LiteratureConflictError("snapshot-bound stage requires an exact duplicate snapshot")
 
     def _record_relative(self, record: CanonicalRecordV1) -> str:
@@ -774,6 +1146,8 @@ class LiteratureStore:
                 raise LiteratureIntegrityError(f"invalid canonical P3 record {relative}: {exc}") from exc
             if raw != canonical_json_bytes(record):
                 raise LiteratureIntegrityError(f"noncanonical P3 record bytes: {relative}")
+            if decoded.get("record_sha256") != record_sha256(decoded):
+                raise LiteratureIntegrityError(f"persisted P3 record hash mismatch: {relative}")
             expected = self._record_relative(record)
             if relative != expected:
                 raise LiteratureIntegrityError(f"record path/identity mismatch: {relative} != {expected}")
@@ -812,9 +1186,247 @@ class LiteratureStore:
         self._validate_cross_record_state(records)
         return records
 
+    def _validate_protocol_search_history(self, records: list[CanonicalRecordV1]) -> None:
+        records_by_hash = {item.record_sha256: item for item in records}
+        protocol_revisions: dict[str, list[ResearchProtocolRevisionV1]] = {}
+        protocols_by_lineage: dict[str, list[ResearchProtocolRevisionV1]] = {}
+        search_revisions: dict[str, list[SearchRunRevisionV1]] = {}
+        for record in records:
+            if isinstance(record, ResearchProtocolRevisionV1):
+                protocol_revisions.setdefault(record.protocol_id, []).append(record)
+                protocols_by_lineage.setdefault(record.execution_lineage_id, []).append(record)
+            elif isinstance(record, SearchRunRevisionV1):
+                search_revisions.setdefault(record.search_run_id, []).append(record)
+
+        for history in protocol_revisions.values():
+            lineage = history[0].execution_lineage_id
+            if any(item.execution_lineage_id != lineage for item in history):
+                raise LiteratureIntegrityError("persisted protocol revision migrated execution lineage")
+        for protocol in [item for history in protocol_revisions.values() for item in history]:
+            if protocol.lineage_kind != "RESULT_INFORMED_EXTENSION":
+                continue
+            parent = protocol.parent_execution_lineage_id
+            if (
+                parent == protocol.execution_lineage_id
+                or parent not in protocols_by_lineage
+            ):
+                raise LiteratureIntegrityError(
+                    "persisted result-informed extension lacks a distinct existing parent lineage"
+                )
+        for lineage, history in protocols_by_lineage.items():
+            started = [
+                item
+                for item in records
+                if isinstance(item, SearchRunRevisionV1)
+                and item.execution_lineage_id == lineage
+                and item.revision == 1
+            ]
+            if started:
+                first_started = min(started, key=lambda item: item.append_sequence)
+                frozen = records_by_hash.get(first_started.protocol_revision_sha256)
+                if not isinstance(frozen, ResearchProtocolRevisionV1):
+                    raise LiteratureIntegrityError("STARTED search lacks exact protocol revision")
+                if any(
+                    item.append_sequence > first_started.append_sequence
+                    and item.methodology_sha256 != frozen.methodology_sha256
+                    for item in history
+                ):
+                    raise LiteratureIntegrityError("non-administrative protocol field changed after STARTED")
+                for item in started:
+                    exact_protocol = records_by_hash.get(item.protocol_revision_sha256)
+                    if (
+                        not isinstance(exact_protocol, ResearchProtocolRevisionV1)
+                        or exact_protocol.methodology_sha256 != frozen.methodology_sha256
+                    ):
+                        raise LiteratureIntegrityError(
+                            "search started under a competing execution contract in one lineage"
+                        )
+
+        for search_id, history in search_revisions.items():
+            if len(history) not in {1, 2} or history[0].revision != 1 or history[0].status != "STARTED":
+                raise LiteratureIntegrityError(f"search history must begin with exactly one STARTED revision: {search_id}")
+            if len(history) == 2:
+                started, terminal = history
+                if terminal.revision != 2 or terminal.status == "STARTED":
+                    raise LiteratureIntegrityError("search revision 2 must be terminal")
+                for field in _SEARCH_IMMUTABLE_FIELDS:
+                    if getattr(terminal, field) != getattr(started, field):
+                        raise LiteratureIntegrityError(f"persisted search identity changed: {field}")
+            current = history[-1]
+            protocol = records_by_hash.get(current.protocol_revision_sha256)
+            if not isinstance(protocol, ResearchProtocolRevisionV1):
+                raise LiteratureIntegrityError("search has no exact protocol revision")
+            if (
+                current.protocol_id != protocol.protocol_id
+                or current.execution_lineage_id != protocol.execution_lineage_id
+                or current.lane not in {item.lane for item in protocol.lanes}
+            ):
+                raise LiteratureIntegrityError("search identity does not match exact frozen protocol")
+
+        for lineage, history in protocols_by_lineage.items():
+            protocol = history[0]
+            for lane in protocol.lanes:
+                searches = self._current_searches(records, lineage_id=lineage, lane_name=lane.lane)
+                self._validate_lane_search_proof(lane, searches)
+
+    def _validate_source_provenance_history(self, records: list[CanonicalRecordV1]) -> None:
+        records_by_hash = {item.record_sha256: item for item in records}
+        versions: dict[str, list[SourceVersionIdentityRevisionV1]] = {}
+        captures: dict[str, list[SourceCaptureRevisionV1]] = {}
+        relationships: dict[str, list[SourceRelationshipRevisionV1]] = {}
+        for record in records:
+            if isinstance(record, SourceVersionIdentityRevisionV1):
+                versions.setdefault(record.source_version_id, []).append(record)
+                work = records_by_hash.get(record.work_revision_sha256)
+                if not isinstance(work, SourceIdentityRevisionV1) or work.work_id != record.work_id:
+                    raise LiteratureIntegrityError("source version has an invalid exact work binding")
+            elif isinstance(record, SourceCaptureRevisionV1):
+                captures.setdefault(record.capture_id, []).append(record)
+                version = records_by_hash.get(record.source_version_revision_sha256)
+                if (
+                    not isinstance(version, SourceVersionIdentityRevisionV1)
+                    or version.source_version_id != record.source_version_id
+                ):
+                    raise LiteratureIntegrityError("capture has an invalid exact source-version binding")
+            elif isinstance(record, SourceRelationshipRevisionV1):
+                relationships.setdefault(record.relationship_id, []).append(record)
+            elif isinstance(record, ClaimExtractionRevisionV1):
+                work = records_by_hash.get(record.work_revision_sha256)
+                version = records_by_hash.get(record.source_version_revision_sha256)
+                capture = records_by_hash.get(record.capture_revision_sha256)
+                if not isinstance(work, SourceIdentityRevisionV1) or work.work_id != record.work_id:
+                    raise LiteratureIntegrityError("claim has an invalid exact work binding")
+                if (
+                    not isinstance(version, SourceVersionIdentityRevisionV1)
+                    or version.source_version_id != record.source_version_id
+                    or version.work_id != work.work_id
+                    or version.work_revision_sha256 != work.record_sha256
+                ):
+                    raise LiteratureIntegrityError("claim work-to-version provenance is inconsistent")
+                if (
+                    not isinstance(capture, SourceCaptureRevisionV1)
+                    or capture.capture_id != record.capture_id
+                    or capture.source_version_id != version.source_version_id
+                    or capture.source_version_revision_sha256 != version.record_sha256
+                    or capture.content_sha256 != record.content_sha256
+                    or capture.extracted_representation_sha256
+                    != record.extracted_representation_sha256
+                ):
+                    raise LiteratureIntegrityError("claim version-to-capture/hash provenance is inconsistent")
+        for history in versions.values():
+            if any(item.work_id != history[0].work_id for item in history):
+                raise LiteratureIntegrityError("persisted source version migrated to another work")
+        for history in captures.values():
+            first = history[0]
+            for later in history[1:]:
+                for field in _CAPTURE_IMMUTABLE_FIELDS:
+                    if getattr(later, field) != getattr(first, field):
+                        raise LiteratureIntegrityError(f"persisted capture identity changed: {field}")
+        for history in relationships.values():
+            first = history[0]
+            for later in history[1:]:
+                for field in ("subject_kind", "subject_id", "predicate", "object_kind", "object_id"):
+                    if getattr(later, field) != getattr(first, field):
+                        raise LiteratureIntegrityError(f"persisted source relationship identity changed: {field}")
+
+    def _validate_dossier_history(self, records: list[CanonicalRecordV1]) -> None:
+        records_by_hash = {item.record_sha256: item for item in records}
+        from alphaquest.research.literature.mapper import effective_claim_reliability
+
+        for record in records:
+            if isinstance(record, EdgeDossierRevisionV1):
+                protocol = records_by_hash.get(record.protocol_revision_sha256)
+                if not isinstance(protocol, ResearchProtocolRevisionV1):
+                    raise LiteratureIntegrityError("dossier has no exact protocol revision")
+                prior_records = [item for item in records if item.append_sequence < record.append_sequence]
+                expected_completions = self._derive_lane_completions(protocol, prior_records)
+                actual_completions = [item.model_dump(mode="json") for item in record.lane_completions]
+                if actual_completions != expected_completions:
+                    raise LiteratureIntegrityError("persisted dossier omits or alters canonical lane searches")
+                expected_status = (
+                    "COMPLETE_WITHIN_DECLARED_BOUNDS"
+                    if all(item["obligation_status"] == "SATISFIED" for item in expected_completions)
+                    else "TERMINATED_WITH_DECLARED_GAPS"
+                )
+                if record.search_completion_status != expected_status:
+                    raise LiteratureIntegrityError("persisted dossier completion status is not derived")
+                claim_set = {
+                    (f"{item.claim_id}.r{records_by_hash[item.claim_revision_sha256].revision:06d}", item.claim_revision_sha256)
+                    for item in record.claim_refs
+                    if isinstance(records_by_hash.get(item.claim_revision_sha256), ClaimExtractionRevisionV1)
+                }
+                if len(claim_set) != len(record.claim_refs):
+                    raise LiteratureIntegrityError("dossier has duplicate or unresolved exact claim references")
+                relationships = [
+                    item
+                    for item in prior_records
+                    if isinstance(item, SourceRelationshipRevisionV1)
+                ]
+                for reference in record.claim_refs:
+                    claim = records_by_hash.get(reference.claim_revision_sha256)
+                    if not isinstance(claim, ClaimExtractionRevisionV1) or claim.claim_id != reference.claim_id:
+                        raise LiteratureIntegrityError("dossier claim identity/hash mismatch")
+                    if (
+                        effective_claim_reliability(claim, relationships) == "SOURCE_RETRACTED"
+                        and reference.p2_role in {"MOTIVATING", "SUPPORTING"}
+                    ):
+                        raise LiteratureIntegrityError("retracted source remains positive in persisted dossier")
+                nested_refs = [
+                    reference
+                    for descriptor in record.quality_descriptors
+                    for reference in descriptor.basis_claims
+                ] + [
+                    reference
+                    for statement in record.material_statements
+                    for reference in statement.claim_refs
+                ] + [
+                    reference
+                    for mapping in record.taxonomy_proposal.dimension_mappings
+                    for reference in mapping.basis_claims
+                ]
+                if any((item.record_id, item.record_sha256) not in claim_set for item in nested_refs):
+                    raise LiteratureIntegrityError("nested dossier basis claim is outside exact claim set")
+            elif isinstance(record, DossierFreezeV1):
+                dossier = records_by_hash.get(record.dossier_revision_sha256)
+                if not isinstance(dossier, EdgeDossierRevisionV1) or dossier.dossier_id != record.dossier_id:
+                    raise LiteratureIntegrityError("dossier freeze has no exact dossier revision")
+                expected = self._dossier_freeze_material(dossier, freeze_id=record.freeze_id)
+                actual = record.model_dump(mode="json", by_alias=True, exclude=_MANAGED_FIELDS)
+                if actual != expected:
+                    raise LiteratureIntegrityError("dossier freeze is not the exact deterministic dossier derivation")
+                relationships = [
+                    item
+                    for item in records
+                    if isinstance(item, SourceRelationshipRevisionV1)
+                    and item.append_sequence < record.append_sequence
+                ]
+                for reference in dossier.claim_refs:
+                    claim = records_by_hash.get(reference.claim_revision_sha256)
+                    if (
+                        isinstance(claim, ClaimExtractionRevisionV1)
+                        and effective_claim_reliability(claim, relationships) == "SOURCE_RETRACTED"
+                        and reference.p2_role in {"MOTIVATING", "SUPPORTING"}
+                    ):
+                        raise LiteratureIntegrityError("freeze retained retracted evidence as current support")
+
     def _validate_cross_record_state(self, records: list[CanonicalRecordV1]) -> None:
+        self._validate_protocol_search_history(records)
+        self._validate_source_provenance_history(records)
+        self._validate_dossier_history(records)
         hashes = {record.record_sha256 for record in records}
         records_by_hash = {record.record_sha256: record for record in records}
+        operation_histories: dict[str, list[P2EmissionOperationRevisionV1]] = {}
+        for record in records:
+            if isinstance(record, P2EmissionOperationRevisionV1):
+                operation_histories.setdefault(record.operation_id, []).append(record)
+        for history in operation_histories.values():
+            for index, record in enumerate(history):
+                try:
+                    self._validate_emission_transition(record, list(history[:index]))
+                except LiteratureConflictError as exc:
+                    raise LiteratureIntegrityError(
+                        f"persisted emission transition is invalid: {exc}"
+                    ) from exc
 
         def require_reference(reference: Any, expected: type[CanonicalRecordV1] | None = None) -> CanonicalRecordV1:
             target = records_by_hash.get(reference.record_sha256)
@@ -866,7 +1478,9 @@ class LiteratureStore:
                         require_reference(reference, ClaimExtractionRevisionV1)
             elif isinstance(record, DossierFreezeV1):
                 for reference in record.claim_refs:
-                    require_reference(reference, ClaimExtractionRevisionV1)
+                    claim = records_by_hash.get(reference.claim_revision_sha256)
+                    if not isinstance(claim, ClaimExtractionRevisionV1) or claim.claim_id != reference.claim_id:
+                        raise LiteratureIntegrityError("freeze claim identity/hash mismatch")
                 for reference in record.evidence_relation_refs:
                     require_reference(reference, EvidenceRelationRevisionV1)
             elif isinstance(record, CodexTaskAttemptRevisionV1):
@@ -914,103 +1528,256 @@ class LiteratureStore:
                 "observation_bindings",
                 "entry_binding",
                 "duplicate_snapshot",
+                "dependency_impacts",
+                "dependency_entry_bindings",
                 "prior_staled_decision_sha256",
                 "search_completion_status",
                 "unsatisfied_lanes",
+                "operational_status",
             ):
                 if getattr(record, field) != getattr(operation, field):
                     raise LiteratureIntegrityError(f"emission receipt does not repeat operation field: {field}")
 
-    @staticmethod
     def _validate_prepared_emission(
+        self,
         operation: P2EmissionOperationRevisionV1,
         records: list[CanonicalRecordV1],
         records_by_hash: dict[str, CanonicalRecordV1],
     ) -> None:
+        from alphaquest.research.edge_backlog import EdgeBacklogStore
+        from alphaquest.research.literature.emission import (
+            _dependency_impacts,
+            _hypothesis_link_at_prefix,
+            _with_new_dossier_observations,
+        )
         from alphaquest.research.literature.mapper import (
-            canonical_p2_locator,
             canonical_source_version_resolution,
-            derive_p2_observation_id,
-            derive_p2_source_id,
-            p2_source_kind_for_work,
-            selected_evidence_time,
+            effective_claim_reliability,
+            map_claim_to_observation,
+            map_dossier_entry,
+            reserve_p2_evidence,
         )
 
         freeze = records_by_hash.get(operation.freeze_record_sha256)
         if not isinstance(freeze, DossierFreezeV1) or freeze.freeze_id != operation.freeze_id:
             raise LiteratureIntegrityError("prepared emission freeze identity/hash mismatch")
+        dossier = records_by_hash.get(freeze.dossier_revision_sha256)
+        if not isinstance(dossier, EdgeDossierRevisionV1):
+            raise LiteratureIntegrityError("prepared emission freeze lacks its exact dossier")
+        if operation.search_completion_status != dossier.search_completion_status:
+            raise LiteratureIntegrityError("prepared operation altered dossier search completion status")
+        expected_unsatisfied = [
+            item.lane for item in dossier.lane_completions if item.obligation_status != "SATISFIED"
+        ]
+        if operation.unsatisfied_lanes != expected_unsatisfied:
+            raise LiteratureIntegrityError("prepared operation altered exact dossier lane gaps")
         relationships = [
             item
             for item in records
             if isinstance(item, SourceRelationshipRevisionV1)
             and item.append_sequence < operation.append_sequence
         ]
-        reservation_by_source = {item.p2_source_id: item for item in operation.reservations}
-        for reservation in operation.reservations:
-            capture = records_by_hash.get(reservation.terminal_capture_revision_sha256)
-            if not isinstance(capture, SourceCaptureRevisionV1) or capture.capture_id != reservation.capture_id:
-                raise LiteratureIntegrityError("P2 evidence reservation capture identity/hash mismatch")
-            if capture.status not in {"FULL_TEXT_CAPTURED", "GENUINE_ABSTRACT_CAPTURED"}:
-                raise LiteratureIntegrityError("P2 evidence reservation capture is not terminal evidence")
+        earlier_reservations: dict[str, Any] = {}
+        for record in records:
             if (
-                capture.content_sha256 != reservation.content_sha256
-                or capture.extracted_representation_sha256 != reservation.extracted_representation_sha256
+                isinstance(record, P2EmissionOperationRevisionV1)
+                and record.revision == 1
+                and record.append_sequence < operation.append_sequence
             ):
-                raise LiteratureIntegrityError("P2 evidence reservation bytes do not match its capture")
-            if reservation.p2_source_id != derive_p2_source_id(reservation.canonical_source_version_id):
-                raise LiteratureIntegrityError("P2 source ID is not derived from canonical source-version identity")
-            if reservation.reservation_operation_id == operation.operation_id:
-                version = records_by_hash.get(capture.source_version_revision_sha256)
-                if not isinstance(version, SourceVersionIdentityRevisionV1):
-                    raise LiteratureIntegrityError("reservation capture has no exact source-version record")
-                work = records_by_hash.get(version.work_revision_sha256)
-                if not isinstance(work, SourceIdentityRevisionV1):
-                    raise LiteratureIntegrityError("reservation source version has no exact work record")
-                canonical_id, relationship_hash, _component = canonical_source_version_resolution(
-                    capture.source_version_id, relationships
+                for reservation in record.reservations:
+                    earlier_reservations.setdefault(
+                        reservation.canonical_source_version_id, reservation
+                    )
+        backlog = EdgeBacklogStore(self.project_root)
+        resolved_claims = []
+        for reference in dossier.claim_refs:
+            claim = records_by_hash.get(reference.claim_revision_sha256)
+            if not isinstance(claim, ClaimExtractionRevisionV1) or claim.claim_id != reference.claim_id:
+                raise LiteratureIntegrityError("prepared plan dossier claim identity/hash mismatch")
+            capture = records_by_hash.get(claim.capture_revision_sha256)
+            version = records_by_hash.get(claim.source_version_revision_sha256)
+            work = records_by_hash.get(claim.work_revision_sha256)
+            if not isinstance(capture, SourceCaptureRevisionV1):
+                raise LiteratureIntegrityError("prepared claim lacks exact capture")
+            if not isinstance(version, SourceVersionIdentityRevisionV1):
+                raise LiteratureIntegrityError("prepared claim lacks exact source version")
+            if not isinstance(work, SourceIdentityRevisionV1):
+                raise LiteratureIntegrityError("prepared claim lacks exact work")
+            canonical_id, _state_hash, component = canonical_source_version_resolution(
+                version.source_version_id, relationships
+            )
+            resolved_claims.append(
+                (
+                    canonical_id,
+                    version.source_version_id != canonical_id,
+                    version.source_version_id,
+                    capture.capture_id,
+                    claim.claim_id,
+                    reference,
+                    claim,
+                    capture,
+                    version,
+                    work,
+                    component,
                 )
-                if (
-                    canonical_id != reservation.canonical_source_version_id
-                    or relationship_hash != reservation.relationship_state_sha256
-                    or canonical_p2_locator(work, capture) != reservation.canonical_locator
-                    or p2_source_kind_for_work(work) != reservation.source_kind
-                    or selected_evidence_time(version, capture) != reservation.evidence_time
-                ):
-                    raise LiteratureIntegrityError("first P2 reservation does not match frozen SAME_VERSION_AS state")
-        planned_roles = []
-        for plan in operation.observation_plans:
-            claim = records_by_hash.get(plan.claim_revision_sha256)
-            if not isinstance(claim, ClaimExtractionRevisionV1) or claim.claim_id != plan.claim_id:
-                raise LiteratureIntegrityError("P2 observation plan claim identity/hash mismatch")
-            if plan.observation_id != derive_p2_observation_id(claim.claim_id):
-                raise LiteratureIntegrityError("logical P3 claim did not map to deterministic P2 observation ID")
-            expected_payload_sha = hashlib.sha256(
-                canonical_json_bytes(plan.payload, trailing_lf=False)
-            ).hexdigest()
-            if plan.payload_sha256 != expected_payload_sha:
-                raise LiteratureIntegrityError("P2 observation plan payload hash is invalid")
-            evidence_sources = {item.source_id for item in plan.payload.evidence_refs}
-            if not evidence_sources or not evidence_sources.issubset(reservation_by_source):
-                raise LiteratureIntegrityError("P2 observation plan is not covered by prepared reservations")
-            for source_id in evidence_sources:
-                reservation = reservation_by_source[source_id]
-                if any(
-                    item.content_sha256 != reservation.content_sha256
-                    or item.locator != reservation.canonical_locator
-                    or item.evidence_time != reservation.evidence_time.evidence_time
-                    for item in plan.payload.evidence_refs
-                    if item.source_id == source_id
-                ):
-                    raise LiteratureIntegrityError("P2 observation evidence differs from its reservation")
-            if not plan.withdrawn_from_current_support:
-                planned_roles.append((plan.observation_id, plan.role))
-        current_roles = [
-            (item.observation_id, item.role)
-            for item in operation.entry_plan.observation_roles
-            if item.frozen_revision_sha256 is None
-        ]
-        if planned_roles != current_roles:
-            raise LiteratureIntegrityError("P2 entry plan roles do not match current observation plans")
+            )
+        expected_reservations: dict[str, Any] = {}
+        expected_plans = []
+        for (
+            canonical_id,
+            _noncanonical,
+            _version_id,
+            _capture_id,
+            _claim_id,
+            reference,
+            claim,
+            capture,
+            version,
+            work,
+            component,
+        ) in sorted(resolved_claims, key=lambda item: item[:5]):
+            candidates = [
+                item
+                for key, item in earlier_reservations.items()
+                if key == canonical_id or key in component
+            ]
+            if len(candidates) > 1:
+                raise LiteratureIntegrityError("relationship state merges incompatible prior reservations")
+            existing = expected_reservations.get(canonical_id) or next(iter(candidates), None)
+            reservation = reserve_p2_evidence(
+                operation_id=operation.operation_id,
+                work=work,
+                version=version,
+                capture=capture,
+                relationships=relationships,
+                existing=existing,
+            )
+            expected_reservations[canonical_id] = reservation
+            try:
+                prior_observation = backlog.latest_observation_at_prefix(
+                    f"obs.p3.{hashlib.sha256(f'alphaquest-p3-claim|{claim.claim_id}'.encode()).hexdigest()[:32]}",
+                    operation.p2_snapshot_before_append_sequence,
+                )
+            except FileNotFoundError:
+                prior_observation = None
+            expected_plans.append(
+                map_claim_to_observation(
+                    claim=claim,
+                    role=reference.p2_role,
+                    reservation=reservation,
+                    prior_observation=prior_observation,
+                    effective_reliability=effective_claim_reliability(claim, relationships),
+                )
+            )
+        if list(operation.reservations) != list(expected_reservations.values()):
+            raise LiteratureIntegrityError("prepared reservations are not the complete exact dossier derivation")
+        if list(operation.observation_plans) != expected_plans:
+            raise LiteratureIntegrityError("prepared observation plans are not the complete exact dossier derivation")
+
+        if operation.target_entry_id is None:
+            expected_action = "CREATE_NEW_ENTRY"
+            expected_target_sha = expected_target_state = expected_link_chain = expected_stale = None
+            target_entry = None
+        else:
+            try:
+                target_entry = backlog.latest_entry_at_prefix(
+                    operation.target_entry_id, operation.p2_snapshot_before_append_sequence
+                )
+            except FileNotFoundError as exc:
+                raise LiteratureIntegrityError("prepared target entry did not exist at its P2 prefix") from exc
+            expected_target_sha = target_entry.record_sha256
+            expected_target_state = backlog.entry_state_at_prefix(
+                target_entry.entry_id, operation.p2_snapshot_before_append_sequence
+            )
+            expected_link_chain = backlog.entry_link_chain_sha256_at_prefix(
+                target_entry.entry_id, operation.p2_snapshot_before_append_sequence
+            )
+            bound = dossier.p2_entry_id == target_entry.entry_id
+            has_hypothesis = _hypothesis_link_at_prefix(
+                backlog, target_entry.entry_id, operation.p2_snapshot_before_append_sequence
+            )
+            if expected_target_state == "SUSPENDED" or (
+                bound and (has_hypothesis or expected_target_state in {"REJECTED", "DUPLICATE"})
+            ):
+                expected_action = "BLOCKED"
+            elif has_hypothesis or expected_target_state in {"REJECTED", "DUPLICATE"}:
+                expected_action = "CREATE_NEW_ENTRY"
+            else:
+                expected_action = "REVISE_SAME_ENTRY"
+            decisions = [
+                item
+                for item in backlog.decisions(target_entry.entry_id)
+                if item.append_sequence < operation.p2_snapshot_before_append_sequence
+            ]
+            expected_stale = (
+                decisions[-1].record_sha256
+                if decisions
+                and expected_target_state != "UNREVIEWED"
+                and expected_action == "REVISE_SAME_ENTRY"
+                else None
+            )
+        if (
+            operation.emission_action != expected_action
+            or operation.target_entry_revision_sha256 != expected_target_sha
+            or operation.target_entry_state != expected_target_state
+            or operation.target_entry_link_chain_sha256 != expected_link_chain
+            or operation.prior_staled_decision_sha256 != expected_stale
+        ):
+            raise LiteratureIntegrityError("prepared target action is not the exact P2 prefix derivation")
+
+        expected_entry_plan = map_dossier_entry(dossier, expected_plans)
+        if expected_action == "REVISE_SAME_ENTRY" and target_entry is not None:
+            preserved = [
+                {
+                    "observation_id": item.observation_id,
+                    "role": "CONTRADICTING",
+                    "frozen_revision_sha256": item.observation_revision_sha256,
+                }
+                for item in target_entry.observation_refs
+                if item.role == "CONTRADICTING"
+            ]
+            expected_entry_plan = expected_entry_plan.model_copy(
+                update={
+                    "observation_roles": [
+                        *expected_entry_plan.observation_roles,
+                        *[type(expected_entry_plan.observation_roles[0]).model_validate(item) for item in preserved],
+                    ]
+                }
+            )
+        expected_impacts = _dependency_impacts(
+            backlog,
+            expected_plans,
+            before_append_sequence=operation.p2_snapshot_before_append_sequence,
+        )
+        if expected_action == "REVISE_SAME_ENTRY" and target_entry is not None:
+            target_impact = next(
+                (
+                    item
+                    for item in expected_impacts
+                    if item.dependent_entry_id == target_entry.entry_id
+                    and item.impact_status == "PLANNED_MUTABLE_REVISION"
+                ),
+                None,
+            )
+            if target_impact is not None:
+                assert target_impact.entry_plan is not None
+                expected_entry_plan = _with_new_dossier_observations(
+                    target_impact.entry_plan, expected_plans
+                )
+        if operation.entry_plan != expected_entry_plan:
+            raise LiteratureIntegrityError("prepared entry plan is not the exact dossier/P2 derivation")
+        if list(operation.dependency_impacts) != expected_impacts:
+            raise LiteratureIntegrityError("prepared reverse-dependency snapshot is incomplete or altered")
+        expected_operational = (
+            "NEEDS_MANUAL_REVIEW"
+            if any(
+                item.impact_status == "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY"
+                for item in expected_impacts
+            )
+            else "CLEAN"
+        )
+        if operation.operational_status != expected_operational:
+            raise LiteratureIntegrityError("prepared operation hides unresolved dependency impact")
 
 
 def _walk_key_values(value: Any) -> Iterator[tuple[str, Any]]:

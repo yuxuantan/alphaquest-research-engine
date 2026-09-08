@@ -42,6 +42,13 @@ no-follow, and idempotency-keyed. Canonical metadata is rooted at
 `research/literature`; immutable artifacts are rooted at
 `run-store/literature` and addressed by SHA-256.
 
+Persisted records never accept the all-zero construction placeholder. The
+trusted writer alone may use construction context while applying model
+defaults; it computes the final intent and record hashes and then performs
+ordinary strict validation before writing. Loading independently recomputes
+every record hash before global or per-object predecessor validation. The
+checked-in schemas also reject an all-zero `record_sha256`.
+
 The checked-in JSON Schemas are generated from the strict runtime contracts:
 
 ```bash
@@ -53,9 +60,15 @@ PYTHONPATH=src python3 tools/generate_literature_schemas.py
 A protocol declares all seven mandatory lanes, initial queries, ordered
 providers, minimum obligations, maximum query/result/capture/byte/time budgets,
 capture-selection rule, adaptive-depth budget, and optional saturation rule.
-After the first `STARTED` search in a lineage, every methodology-controlling
-field is immutable; administrative annotations alone may change. Adaptive
-children must remain in the frozen policy and resource envelope.
+The execution-contract hash covers the lineage kind and parent/result
+provenance as well as the research scope, rules, lanes, queries, ordered
+providers, minima, maxima, selection and saturation policy. After the first
+`STARTED` search in a lineage, every non-administrative field is immutable;
+administrative annotations and their change reason alone may change. Search
+revision 2 accepts only terminal outcome fields and retains the exact revision
+1 protocol, lineage, lane, query, parent, depth, provider and provider-attempt
+ordinal. Adaptive children must remain in the frozen policy and resource
+envelope.
 
 Additional work prompted by observed results uses a distinct lineage labeled
 `RESULT_INFORMED_EXTENSION`, with an existing parent lineage and observed
@@ -70,6 +83,15 @@ otherwise it is `TERMINATED_WITH_DECLARED_GAPS`. A gapped dossier can still
 produce a tentative P2 entry when it has a valid current claim. The freeze,
 operation, and receipt retain all gaps.
 
+Each terminal search binds the exact stable identities and ranks of inspected
+results, the exact selected capture attempts and lane-global selection
+ordinals, and a result-set hash over those records. Completion is reconstructed
+from every current search in the exact lineage and lane. Provider attempts are
+gap-free and follow the frozen order per query; distinct-result and
+distinct-capture minima use identities rather than summed counters. Saturation
+is accepted only after the minimum obligations and the frozen consecutive
+no-new-work criterion are both demonstrated by the canonical query history.
+
 ## Source binding and evidence time
 
 P2 source IDs are derived from canonical P3 source-version IDs. P2 publication
@@ -83,6 +105,13 @@ The reservation remains immutable even if emission fails, and later operations
 repeat it exactly. Byte-identical recapture can prove equivalence and use it;
 byte-different content cannot. Concurrent different reservations conflict.
 Later relationship corrections do not rewrite earlier receipts.
+
+Source-version revisions remain attached to their original work. Capture
+completion uses a closed terminal-field allowlist and cannot change the bound
+source-version or retrieval-request identity. Claim append and full reload both
+reconstruct the exact work revision to source-version revision to terminal
+capture revision chain, including raw-content and extracted-representation
+hashes.
 
 `evidence_time` is the verified timezone-aware exact public-availability
 instant when one exists, otherwise the exact frozen capture timestamp.
@@ -130,10 +159,31 @@ Source corrections and retractions use new source-version records, additive
 markers. Cross-paper disagreement remains separate observations plus an
 `EvidenceRelationRevisionV1`, never a collapsed conflict string.
 
+Current reliability is derived from the latest active relationship state. An
+active `RETRACTS` relationship overrides an otherwise `ACTIVE` claim: the
+affected P2 observation is revised with a `SOURCE_RETRACTED` marker, it cannot
+remain current motivating/supporting evidence, and the captured retraction
+notice remains separate source-bound evidence. Existing contradictory
+references are retained at their exact historical revisions and the revised
+conflicted observation is added rather than replacing that history.
+
+Before a correction is prepared, P3 freezes a P2 append prefix and enumerates
+every current entry that references the affected exact observation revision.
+Eligible entries receive deterministic normal P2 revisions; a stale
+`REVIEWED_CONTINUE` decision SHA is preserved. Suspended, terminal, duplicate,
+or hypothesis-linked entries are not mutated. Their exact entry revision,
+lifecycle state, link-chain hash and inability reason are recorded as
+`UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY`, and `literature validate` reports
+`operational_status: NEEDS_MANUAL_REVIEW` while structural history remains
+valid. A dependency created or revised after preparation makes the operation
+conflict instead of permitting incomplete correction.
+
 ## Recovery sequence
 
-1. Freeze the dossier.
-2. Append `PREPARED` with immutable reservations and typed P2 plans. There are
+1. Freeze the dossier by supplying only its ID and exact revision hash; every
+   authoritative freeze field is derived and copied exactly.
+2. Append `PREPARED` with immutable reservations, complete exact observation
+   and entry projections, lane gaps, and the reverse-dependency snapshot. There are
    still zero P2 writes.
 3. Append or reconcile logical P2 observations.
 4. Recheck the exact prepared P2 revision, lifecycle state, and hypothesis
