@@ -1077,6 +1077,17 @@ class EdgeBacklogStore:
         return matches[0]
 
     @_transactional(exclusive=False)
+    def observation_revisions(self, observation_id: str) -> list[ObservationRevisionV1]:
+        """Return the complete append-only revision chain for one observation."""
+
+        revisions = self._all_observation_revisions(
+            _require_identifier(observation_id, "observation_id")
+        )
+        if not revisions:
+            raise FileNotFoundError(f"observation not found: {observation_id}")
+        return revisions
+
+    @_transactional(exclusive=False)
     def latest_entry(self, entry_id: str) -> EdgeBacklogEntryRevisionV1:
         paths = self._entry_paths(_require_identifier(entry_id, "entry_id"))
         if not paths:

@@ -91,6 +91,12 @@ gap-free and follow the frozen order per query; distinct-result and
 distinct-capture minima use identities rather than summed counters. Saturation
 is accepted only after the minimum obligations and the frozen consecutive
 no-new-work criterion are both demonstrated by the canonical query history.
+Every capture attempt must name a result inspected by that same search run.
+Only `SUCCEEDED` and honestly encoded `PARTIAL` runs contribute results or
+captures to completion; a `FAILED` run cannot donate captured work to another
+run. Selected attempts have unique, contiguous explicit ordinals, and the
+frozen provider-rank, result-rank, locator-hash rule must reproduce that exact
+order independently of search-run IDs.
 
 ## Source binding and evidence time
 
@@ -167,6 +173,15 @@ notice remains separate source-bound evidence. Existing contradictory
 references are retained at their exact historical revisions and the revised
 conflicted observation is added rather than replacing that history.
 
+For current use, every logical claim has exactly one head revision. A new
+dossier may use a claim as `MOTIVATING` or `SUPPORTING` only when it names that
+exact head and the head is currently eligible for positive support. Historical
+dossiers and freezes remain immutable and byte-valid after a correction or
+withdrawal, but `literature validate` exposes each freeze's separate current
+emission eligibility. Preparation and recovery recheck the claim heads, so a
+formerly valid freeze becomes `STALE_INELIGIBLE` and cannot emit after its
+positive evidence is superseded or invalidated.
+
 Before a correction is prepared, P3 freezes a P2 append prefix and enumerates
 every current entry that references the affected exact observation revision.
 Eligible entries receive deterministic normal P2 revisions; a stale
@@ -177,6 +192,11 @@ lifecycle state, link-chain hash and inability reason are recorded as
 `operational_status: NEEDS_MANUAL_REVIEW` while structural history remains
 valid. A dependency created or revised after preparation makes the operation
 conflict instead of permitting incomplete correction.
+The operational validator also derives these dependencies directly from the
+current logical claim heads and current P2 entries. It reports required or
+governance-blocked correction even when no correction operation has yet been
+prepared, and returns to `CURRENT_RESEARCH_CLEAN` only after mutable positive
+dependencies have actually been revised.
 
 ## Recovery sequence
 
@@ -193,7 +213,18 @@ conflict instead of permitting incomplete correction.
 6. Append the receipt and mark the operation `COMPLETED`.
 
 A crash after any step is recoverable from exact task-authored P2 records and
-the journal. State changes and payload collisions become conflicts.
+the journal. State changes and payload collisions become conflicts. Full P3
+validation resolves each written observation and entry binding in P2 and
+reconstructs the complete duplicate snapshot at the exact prefix, including
+the historical universe and ordered candidate bindings. Missing P2 authority
+is an explicit semantic-dependency failure, never an ordinary validation pass.
+Once a binding or snapshot enters the journal it is immutable across later
+stages.
+
+Search and capture start/completion calls check idempotency before lifecycle
+rejection. An identical retry, including after reload, returns the original
+canonical record. Reusing a key for changed intent, another object, family, or
+phase is a hard conflict and never creates another revision.
 
 ## CLI
 

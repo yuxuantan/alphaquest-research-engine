@@ -319,6 +319,20 @@ class SearchRunRevisionV1(RevisionRecordV1):
             raise ValueError("one search run cannot inspect the same stable result identity twice")
         if len({item.capture_attempt_id for item in self.capture_attempt_records}) != len(self.capture_attempt_records):
             raise ValueError("capture attempt identities must be unique inside one search run")
+        inspected_identities = {
+            item.result_identity_sha256 for item in self.inspected_results
+        }
+        if any(
+            item.result_identity_sha256 not in inspected_identities
+            for item in self.capture_attempt_records
+        ):
+            raise ValueError(
+                "capture attempts must reference results inspected by the same search run"
+            )
+        if self.status in {"FAILED", "ABANDONED_AFTER_CRASH"} and self.capture_attempt_records:
+            raise ValueError(
+                "failed search runs cannot contribute capture attempts; use PARTIAL for usable results"
+            )
         if self.status == "STARTED" and any(
             (
                 self.results_inspected,

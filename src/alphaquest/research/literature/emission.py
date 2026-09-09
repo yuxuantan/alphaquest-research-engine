@@ -299,6 +299,7 @@ def prepare_emission(
     freeze = next((item for item in records if isinstance(item, DossierFreezeV1) and item.freeze_id == freeze_id), None)
     if freeze is None:
         raise LiteratureConflictError(f"dossier freeze not found: {freeze_id}")
+    literature.assert_freeze_emission_eligible(freeze)
     dossier = _by_hash(records, freeze.dossier_revision_sha256, EdgeDossierRevisionV1)
     if dossier.p2_entry_id is not None:
         if target_entry_id is not None and target_entry_id != dossier.p2_entry_id:
@@ -593,6 +594,10 @@ def emit_prepared(
     if operation.state == "COMPLETED":
         records = literature.records()
         return _by_hash(records, str(operation.receipt_record_sha256), P2EmissionReceiptV1)
+    freeze = _by_hash(
+        literature.records(), operation.freeze_record_sha256, DossierFreezeV1
+    )
+    literature.assert_freeze_emission_eligible(freeze)
 
     if operation.state == "PREPARED":
         bindings: list[dict[str, str]] = []
