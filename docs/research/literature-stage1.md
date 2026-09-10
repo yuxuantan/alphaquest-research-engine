@@ -49,6 +49,26 @@ ordinary strict validation before writing. Loading independently recomputes
 every record hash before global or per-object predecessor validation. The
 checked-in schemas also reject an all-zero `record_sha256`.
 
+Revision numbers evolve one logical object; they do not rename a different
+object into an existing stable ID. The semantic-identity boundary is explicit:
+
+| Revision family | Immutable semantic identity | Permitted evolution |
+| --- | --- | --- |
+| protocol | execution lineage/kind/parent/result provenance, research question, market scope | methodology before execution; administrative annotation after execution |
+| search | protocol/lineage/lane/query/parent/depth/provider/attempt identity | one `STARTED` to terminal outcome transition |
+| source work | established strong identifiers, or a retained locator anchor when no strong identifier exists | title, authors, additional locators/identifiers, identity status |
+| source version | work ID, version kind, established strong identifiers; label when no strong identifier exists | bound work metadata revision, availability and descriptive metadata |
+| source relationship | subject kind/ID, predicate, object kind/ID | evidence, lifecycle status, replacement binding |
+| capture | source-version/request/access identity | one `STARTED` to terminal capture outcome |
+| claim | intellectual work ID | proposition, reliability and provenance only through the allowed recapture/version transitions below |
+| evidence relation | predicate, ordered logical claim IDs, direct/inferred basis | rationale, exact current claim revisions, lifecycle status, replacement binding |
+| dossier | protocol logical ID and execution lineage; P2 entry ID once emitted | current claims, relations, descriptors, taxonomy and lifecycle-linked synthesis |
+| P2 emission operation | complete prepared transaction identity and outputs already written at each stage | only the closed forward state machine and its stage-specific derived bindings |
+
+Append APIs and full persisted reload independently enforce the same identity
+boundaries. Thus recomputing every record and predecessor hash cannot disguise
+semantic migration.
+
 The checked-in JSON Schemas are generated from the strict runtime contracts:
 
 ```bash
@@ -93,8 +113,13 @@ is accepted only after the minimum obligations and the frozen consecutive
 no-new-work criterion are both demonstrated by the canonical query history.
 Every capture attempt must name a result inspected by that same search run.
 Only `SUCCEEDED` and honestly encoded `PARTIAL` runs contribute results or
-captures to completion; a `FAILED` run cannot donate captured work to another
-run. Selected attempts have unique, contiguous explicit ordinals, and the
+captures to completion. Recorded results on a `PARTIAL` run are its explicitly
+usable subset. `FAILED` and `ABANDONED_AFTER_CRASH` runs remain auditable but
+contribute no result/work identities, captures, query ordering, minima, or
+saturation state, and they cannot claim saturation. Saturation is recomputed
+from the ordered eligible-run sequence; its sole claimant must be the final
+eligible search, even when failed runs occur before, between, or after eligible
+runs. Selected attempts have unique, contiguous explicit ordinals, and the
 frozen provider-rank, result-rank, locator-hash rule must reproduce that exact
 order independently of search-run IDs.
 
@@ -118,6 +143,15 @@ source-version or retrieval-request identity. Claim append and full reload both
 reconstruct the exact work revision to source-version revision to terminal
 capture revision chain, including raw-content and extracted-representation
 hashes.
+
+One logical claim ID remains anchored to one intellectual work. A recapture of
+the same source-version identity may advance that claim only when the content
+and extracted bytes are identical. A different source-version identity may
+advance it only as `CORRECTED`, when a current `REVISION_OF`,
+`PUBLISHED_SUCCESSOR_OF`, or `CORRECTS` relationship connects the new version
+to the immediately prior version. Unrelated works or unconnected versions
+require a new claim ID. This keeps the claim-derived P2 observation ID tied to
+one source-claim history rather than turning it into a generic container.
 
 `evidence_time` is the verified timezone-aware exact public-availability
 instant when one exists, otherwise the exact frozen capture timestamp.
@@ -165,6 +199,16 @@ Source corrections and retractions use new source-version records, additive
 markers. Cross-paper disagreement remains separate observations plus an
 `EvidenceRelationRevisionV1`, never a collapsed conflict string.
 
+An evidence-relation ID freezes its predicate, ordered logical claim endpoints,
+and source-stated versus AlphaQuest-inferred basis at revision 1. Current
+dossiers must bind the exact `ACTIVE` relation head and exact current endpoint
+claim revisions at their append prefix. Historical dossiers continue to
+validate against their historical prefix, but a historical freeze becomes
+stale for new emission when a referenced relation is later revised, retracted,
+or superseded. `SUPERSEDED` requires one already-existing `ACTIVE`,
+semantically separate replacement relation; missing, self, terminal, and cyclic
+replacement paths fail closed.
+
 Current reliability is derived from the latest active relationship state. An
 active `RETRACTS` relationship overrides an otherwise `ACTIVE` claim: the
 affected P2 observation is revised with a `SOURCE_RETRACTED` marker, it cannot
@@ -210,7 +254,8 @@ dependencies have actually been revised.
    links, then create or revise the entry.
 5. Compute a self-excluding duplicate snapshot at `before_append_sequence`, so
    later P2 records cannot leak into its universe.
-6. Append the receipt and mark the operation `COMPLETED`.
+6. Validate and publish the receipt plus owning `COMPLETED` revision as one
+   locked pair.
 
 A crash after any step is recoverable from exact task-authored P2 records and
 the journal. State changes and payload collisions become conflicts. Full P3
@@ -220,6 +265,17 @@ the historical universe and ordered candidate bindings. Missing P2 authority
 is an explicit semantic-dependency failure, never an ordinary validation pass.
 Once a binding or snapshot enters the journal it is immutable across later
 stages.
+
+A receipt is not trusted merely because its bytes and referenced snapshot are
+valid. Full reload reconstructs ownership from canonical history: every
+completed operation owns exactly one receipt, every receipt belongs to exactly
+one completed operation, and that receipt binds the operation's immediately
+preceding exact `SNAPSHOT_BOUND` revision. Freeze, reservations, observations,
+entry, dependency impacts and bindings, duplicate snapshot, gaps, and
+operational status must repeat that revision exactly. Orphans, duplicates,
+cross-operation swaps, early receipt bindings, and receipts for older operation
+revisions are invalid. Retrying an already completed emission runs this same
+full ownership validation before returning its receipt.
 
 Search and capture start/completion calls check idempotency before lifecycle
 rejection. An identical retry, including after reload, returns the original

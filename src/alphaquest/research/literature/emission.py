@@ -817,23 +817,33 @@ def emit_prepared(
 
     if operation.state == "SNAPSHOT_BOUND":
         receipt_id = "receipt." + hashlib.sha256(operation.operation_id.encode()).hexdigest()[:32]
-        receipt = literature.append_emission_receipt(
-            {
+        receipt, _completion = literature.complete_emission_operation(
+            operation_id=operation.operation_id,
+            snapshot_revision_sha256=operation.record_sha256,
+            receipt_payload={
                 "record_id": receipt_id,
                 "receipt_id": receipt_id,
                 "operation_id": operation.operation_id,
                 "operation_revision_sha256": operation.record_sha256,
                 "freeze_id": operation.freeze_id,
                 "freeze_record_sha256": operation.freeze_record_sha256,
-                "reservations": [item.model_dump(mode="json") for item in operation.reservations],
-                "observation_bindings": [item.model_dump(mode="json") for item in operation.observation_bindings],
+                "reservations": [
+                    item.model_dump(mode="json") for item in operation.reservations
+                ],
+                "observation_bindings": [
+                    item.model_dump(mode="json")
+                    for item in operation.observation_bindings
+                ],
                 "entry_binding": operation.entry_binding.model_dump(mode="json"),
-                "duplicate_snapshot": operation.duplicate_snapshot.model_dump(mode="json"),
+                "duplicate_snapshot": operation.duplicate_snapshot.model_dump(
+                    mode="json"
+                ),
                 "dependency_impacts": [
                     item.model_dump(mode="json") for item in operation.dependency_impacts
                 ],
                 "dependency_entry_bindings": [
-                    item.model_dump(mode="json") for item in operation.dependency_entry_bindings
+                    item.model_dump(mode="json")
+                    for item in operation.dependency_entry_bindings
                 ],
                 "prior_staled_decision_sha256": operation.prior_staled_decision_sha256,
                 "search_completion_status": operation.search_completion_status,
@@ -841,15 +851,8 @@ def emit_prepared(
                 "operational_status": operation.operational_status,
             },
             actor=actor,
-            idempotency_key=f"{operation.operation_id}.receipt",
-        )
-        _advance(
-            literature,
-            operation,
-            state="COMPLETED",
-            actor=actor,
-            suffix="completed",
-            receipt_record_sha256=receipt.record_sha256,
+            receipt_idempotency_key=f"{operation.operation_id}.receipt",
+            completion_idempotency_key=f"{operation.operation_id}.completed",
         )
         return receipt
     raise LiteratureConflictError(f"unsupported recoverable emission state: {operation.state}")

@@ -336,9 +336,19 @@ def _dossier(store: LiteratureStore, protocol, claims, *, dossier_id: str = "dos
     record_refs = [{"record_id": claim.record_id, "record_sha256": claim.record_sha256} for claim, _ in claims]
     relation_refs = []
     if len(record_refs) >= 2:
+        relation_identity = hashlib.sha256(
+            canonical_json_bytes(
+                {
+                    "relationship": "CONTRADICTS",
+                    "claim_ids": [claim.claim_id for claim, _ in claims[:2]],
+                    "relationship_basis": "ALPHAQUEST_EXPLICIT_INFERENCE",
+                }
+            )
+        ).hexdigest()[:16]
+        relation_id = f"relation.{dossier_id}.{relation_identity}"
         relation = store.append_evidence_relation(
             {
-                "evidence_relation_id": f"relation.{dossier_id}",
+                "evidence_relation_id": relation_id,
                 "relationship": "CONTRADICTS",
                 "claim_refs": record_refs[:2],
                 "relationship_basis": "ALPHAQUEST_EXPLICIT_INFERENCE",
@@ -347,7 +357,7 @@ def _dossier(store: LiteratureStore, protocol, claims, *, dossier_id: str = "dos
                 "superseded_by_relation_id": None,
             },
             actor=_actor(),
-            idempotency_key=f"relation.{dossier_id}.r{1 if p2_entry_id is None else 2}",
+            idempotency_key=f"{relation_id}.r{1 if p2_entry_id is None else 2}",
         )
         relation_refs = [{"record_id": relation.record_id, "record_sha256": relation.record_sha256}]
     dossier = store.append_dossier(
@@ -544,6 +554,65 @@ def _rewrite_valid_hash_chains(root: Path, mutate) -> None:
                 "record_sha256"
             ]
         path.write_bytes(canonical_json_bytes(record))
+
+
+def _append_raw_receipt(root: Path, payload: dict) -> dict:
+    """Append a fully hashed receipt fixture without invoking semantic APIs."""
+
+    rows = [json.loads(path.read_text()) for path in _canonical_paths(root)]
+    rows.sort(key=lambda item: item["append_sequence"])
+    material = {
+        **payload,
+        "schema": "alphaquest.literature-p2-emission-receipt/v1",
+        "append_sequence": len(rows) + 1,
+        "previous_store_record_sha256": rows[-1]["record_sha256"] if rows else None,
+        "recorded_at": NOW.isoformat().replace("+00:00", "Z"),
+        "actor": _actor().model_dump(mode="json"),
+        "idempotency_key": payload["receipt_id"] + ".raw",
+        "intent_sha256": "0" * 64,
+    }
+    material["record_sha256"] = record_sha256(material)
+    intent_material = {
+        key: value for key, value in material.items() if key not in MANAGED_FIELDS
+    }
+    material["intent_sha256"] = intent_sha256(intent_material)
+    material["record_sha256"] = record_sha256(material)
+    destination = (
+        root
+        / "research/literature/p2-emission-receipts"
+        / f"{material['record_id']}.json"
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(canonical_json_bytes(material))
+    return material
+
+
+def _receipt_payload_from_operation(operation, receipt_id: str) -> dict:
+    return {
+        "record_id": receipt_id,
+        "receipt_id": receipt_id,
+        "operation_id": operation.operation_id,
+        "operation_revision_sha256": operation.record_sha256,
+        "freeze_id": operation.freeze_id,
+        "freeze_record_sha256": operation.freeze_record_sha256,
+        "reservations": [item.model_dump(mode="json") for item in operation.reservations],
+        "observation_bindings": [
+            item.model_dump(mode="json") for item in operation.observation_bindings
+        ],
+        "entry_binding": operation.entry_binding.model_dump(mode="json"),
+        "duplicate_snapshot": operation.duplicate_snapshot.model_dump(mode="json"),
+        "dependency_impacts": [
+            item.model_dump(mode="json") for item in operation.dependency_impacts
+        ],
+        "dependency_entry_bindings": [
+            item.model_dump(mode="json")
+            for item in operation.dependency_entry_bindings
+        ],
+        "prior_staled_decision_sha256": operation.prior_staled_decision_sha256,
+        "search_completion_status": operation.search_completion_status,
+        "unsatisfied_lanes": list(operation.unsatisfied_lanes),
+        "operational_status": operation.operational_status,
+    }
 
 
 PROTOCOL_FROZEN_MUTATIONS = (
@@ -2428,7 +2497,7 @@ def test_current_claim_head_invalidates_dependencies_stale_dossier_and_old_freez
     )
     assert old_eligibility["emission_eligibility"] == "STALE_INELIGIBLE"
 
-    with pytest.raises(LiteratureConflictError, match="eligible logical claim head"):
+    with pytest.raises(LiteratureConflictError, match="exact current claim heads"):
         _dossier(
             store,
             protocol,
@@ -3054,3 +3123,1422 @@ def test_full_validation_fails_explicitly_when_p2_snapshot_dependency_is_unavail
         LiteratureIntegrityError, match="P2_SEMANTIC_DEPENDENCY_UNAVAILABLE"
     ):
         LiteratureStore(root).validate(verify_artifacts=False)
+
+
+def _two_completed_emissions(root: Path):
+    store, protocol, _support, _contrary, _dossier_record, _freeze, _operation, first = (
+        _initial_slice(root)
+    )
+    second_claim = _source(store, "receipt-second", b"second receipt evidence")[-1]
+    _second_dossier, second_freeze = _dossier(
+        store,
+        protocol,
+        [(second_claim, "SUPPORTING")],
+        dossier_id="dossier.receipt-second",
+    )
+    second_operation = prepare_emission(
+        root,
+        freeze_id=second_freeze.freeze_id,
+        operation_id="emission.receipt-second",
+        actor=_actor(),
+        idempotency_key="emission.receipt-second.prepared",
+    )
+    second = emit_prepared(
+        root, operation_id=second_operation.operation_id, actor=_actor()
+    )
+    return first, second
+
+
+def test_completed_operation_cannot_reference_another_operations_receipt(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    first, second = _two_completed_emissions(root)
+
+    def swap_receipt(record):
+        if (
+            record.get("operation_id") == second.operation_id
+            and record.get("state") == "COMPLETED"
+        ):
+            record["receipt_record_sha256"] = first.record_sha256
+
+    _rewrite_valid_hash_chains(root, swap_receipt)
+    with pytest.raises(LiteratureIntegrityError, match="own exactly one|immediately preceding"):
+        LiteratureStore(root).validate(verify_artifacts=False)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "freeze",
+        "reservations",
+        "observation_bindings",
+        "entry_binding",
+        "duplicate_snapshot",
+        "dependency_impacts",
+        "operational_status",
+    ),
+)
+def test_receipt_must_repeat_exact_transaction_outputs(
+    tmp_path: Path, mutation: str
+) -> None:
+    root = _project(tmp_path)
+    store, protocol, support, contrary, _dossier_record, _freeze, _operation, receipt = (
+        _initial_slice(root)
+    )
+    if mutation == "dependency_impacts":
+        corrected_payload = support.model_dump(
+            mode="json",
+            exclude=MANAGED_FIELDS
+            | {"record_id", "revision", "previous_revision_sha256"},
+        )
+        corrected_payload.update(
+            statement="Corrected transaction output",
+            statement_kind="FAITHFUL_PARAPHRASE",
+            reliability="CORRECTED",
+            correction_reason="Exercise dependency receipt binding",
+        )
+        corrected = store.append_claim(
+            corrected_payload,
+            actor=_actor(),
+            idempotency_key="claim.receipt-dependency.corrected",
+        )
+        entry_id = receipt.entry_binding.record_id.rsplit(".r", 1)[0]
+        _dossier_record, freeze = _dossier(
+            store,
+            protocol,
+            [(corrected, "SUPPORTING"), (contrary, "CONTRADICTING")],
+            p2_entry_id=entry_id,
+            prior_receipt=receipt.record_sha256,
+        )
+        operation = prepare_emission(
+            root,
+            freeze_id=freeze.freeze_id,
+            operation_id="emission.receipt-dependency",
+            actor=_actor(),
+            idempotency_key="emission.receipt-dependency.prepared",
+        )
+        receipt = emit_prepared(root, operation_id=operation.operation_id, actor=_actor())
+        assert receipt.dependency_impacts
+
+    def mutate_receipt(record):
+        if record.get("record_id") != receipt.record_id:
+            return
+        if mutation == "freeze":
+            record["freeze_id"] = "freeze.unrelated"
+        elif mutation == "reservations":
+            record["reservations"].reverse()
+        elif mutation == "observation_bindings":
+            record["observation_bindings"].reverse()
+        elif mutation == "entry_binding":
+            record["entry_binding"]["record_id"] = "edge.unrelated.r000001"
+        elif mutation == "duplicate_snapshot":
+            record["duplicate_snapshot"]["snapshot_sha256"] = "a" * 64
+        elif mutation == "dependency_impacts":
+            current = record["dependency_impacts"][0]["dependent_entry_state"]
+            record["dependency_impacts"][0]["dependent_entry_state"] = (
+                "REVIEWED_CONTINUE" if current != "REVIEWED_CONTINUE" else "UNREVIEWED"
+            )
+        else:
+            record["operational_status"] = "NEEDS_MANUAL_REVIEW"
+
+    _rewrite_valid_hash_chains(root, mutate_receipt)
+    with pytest.raises(LiteratureIntegrityError, match="receipt does not repeat"):
+        LiteratureStore(root).validate(verify_artifacts=False)
+
+
+def test_completed_operation_owns_exactly_one_receipt_and_rejects_orphans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    duplicate_root = tmp_path / "duplicate"
+    store, _protocol_record, _support, _contrary, _dossier_record, _freeze, _operation, receipt = (
+        _initial_slice(_project(duplicate_root))
+    )
+    snapshot = store.get(
+        next(
+            item.record_id
+            for item in store.records()
+            if getattr(item, "operation_id", None) == receipt.operation_id
+            and getattr(item, "state", None) == "SNAPSHOT_BOUND"
+        )
+    )
+    _append_raw_receipt(
+        duplicate_root,
+        _receipt_payload_from_operation(snapshot, "receipt.duplicate-owner"),
+    )
+    with pytest.raises(LiteratureIntegrityError, match="exactly one receipt"):
+        LiteratureStore(duplicate_root).validate(verify_artifacts=False)
+
+    orphan_root = tmp_path / "orphan"
+    orphan_store = LiteratureStore(_project(orphan_root))
+    protocol = _protocol(orphan_store)
+    claim = _source(orphan_store, "orphan", b"orphan receipt evidence")[-1]
+    _dossier_record, freeze = _dossier(
+        orphan_store, protocol, [(claim, "SUPPORTING")]
+    )
+    operation = prepare_emission(
+        orphan_root,
+        freeze_id=freeze.freeze_id,
+        operation_id="emission.orphan",
+        actor=_actor(),
+        idempotency_key="emission.orphan.prepared",
+    )
+
+    def stop_before_completion(*_args, **_kwargs):
+        raise RuntimeError("stop before receipt/completion pair")
+
+    monkeypatch.setattr(
+        LiteratureStore, "complete_emission_operation", stop_before_completion
+    )
+    with pytest.raises(RuntimeError, match="stop before"):
+        emit_prepared(orphan_root, operation_id=operation.operation_id, actor=_actor())
+    snapshot = LiteratureStore(orphan_root).latest(
+        type(operation), operation.operation_id
+    )
+    assert snapshot.state == "SNAPSHOT_BOUND"
+    _append_raw_receipt(
+        orphan_root,
+        _receipt_payload_from_operation(snapshot, "receipt.orphan"),
+    )
+    with pytest.raises(LiteratureIntegrityError, match="orphan"):
+        LiteratureStore(orphan_root).validate(verify_artifacts=False)
+
+
+def test_receipt_cannot_bind_a_nonfinal_operation_revision_or_appear_early(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "base"
+    store, _protocol_record, _support, _contrary, _dossier_record, _freeze, operation, receipt = (
+        _initial_slice(_project(base))
+    )
+    early_root = tmp_path / "early"
+    shutil.copytree(base, early_root)
+
+    def attach_early(record):
+        if (
+            record.get("operation_id") == operation.operation_id
+            and record.get("state") == "ENTRY_WRITTEN"
+        ):
+            record["receipt_record_sha256"] = receipt.record_sha256
+
+    _rewrite_valid_hash_chains(early_root, attach_early)
+    with pytest.raises(LiteratureIntegrityError, match="receipt binding"):
+        LiteratureStore(early_root).validate(verify_artifacts=False)
+
+    wrong_revision_root = tmp_path / "wrong-revision"
+    shutil.copytree(base, wrong_revision_root)
+    prepared_sha = next(
+        item.record_sha256
+        for item in store.records()
+        if getattr(item, "operation_id", None) == operation.operation_id
+        and getattr(item, "state", None) == "PREPARED"
+    )
+
+    def bind_older_revision(record):
+        if record.get("record_id") == receipt.record_id:
+            record["operation_revision_sha256"] = prepared_sha
+
+    _rewrite_valid_hash_chains(wrong_revision_root, bind_older_revision)
+    with pytest.raises(LiteratureIntegrityError, match="SNAPSHOT_BOUND"):
+        LiteratureStore(wrong_revision_root).validate(verify_artifacts=False)
+
+
+def test_completed_emission_retry_revalidates_receipt_ownership(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    _store, _protocol_record, _support, _contrary, _dossier_record, _freeze, operation, receipt = (
+        _initial_slice(root)
+    )
+    assert (
+        emit_prepared(root, operation_id=operation.operation_id, actor=_actor()).record_sha256
+        == receipt.record_sha256
+    )
+
+
+def _start_adaptive_search(
+    store: LiteratureStore,
+    protocol,
+    *,
+    search_id: str,
+    query: str,
+    parent,
+    depth: int,
+):
+    lane = protocol.lanes[0]
+    return store.start_search(
+        {
+            "search_run_id": search_id,
+            "protocol_id": protocol.protocol_id,
+            "protocol_revision_sha256": protocol.record_sha256,
+            "execution_lineage_id": protocol.execution_lineage_id,
+            "lane": lane.lane,
+            "query": query,
+            "query_kind": "ADAPTIVE",
+            "parent_search_run_id": parent.search_run_id,
+            "adaptive_depth": depth,
+            "provider_id": "fixture-provider",
+            "provider_trace_completeness": "COMPLETE_FOR_REQUEST",
+        },
+        actor=_actor(),
+        idempotency_key=f"{search_id}.start",
+    )
+
+
+@pytest.mark.parametrize(
+    "failed_locator,final_locator",
+    (
+        ("https://example.test/work-b", "https://example.test/work-b"),
+        ("https://example.test/work-c", "https://example.test/work-b"),
+    ),
+)
+def test_failed_search_between_eligible_runs_cannot_manufacture_saturation(
+    tmp_path: Path, failed_locator: str, final_locator: str
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    protocol = _protocol_with_lane(
+        store,
+        {
+            "minimum_capture_attempts": 0,
+            "maximum_queries": 3,
+            "adaptive_max_depth": 2,
+            "saturation": {
+                "enabled": True,
+                "minimum_queries_before_check": 2,
+                "consecutive_queries_without_new_work": 1,
+            },
+        },
+    )
+    first = _start_lane_search(
+        store, protocol, "search.saturation-first", "fixture-provider"
+    )
+    first = store.finish_search(
+        first.search_run_id,
+        _search_outcome("https://example.test/work-a", capture=False),
+        actor=_actor(),
+        idempotency_key="search.saturation-first.finish",
+    )
+    failed = _start_adaptive_search(
+        store,
+        protocol,
+        search_id="search.saturation-failed",
+        query="failed intermediate query",
+        parent=first,
+        depth=1,
+    )
+    failed = store.finish_search(
+        failed.search_run_id,
+        _search_outcome(
+            failed_locator,
+            capture=False,
+            status="FAILED",
+            failure_reason="provider failed after returning untrusted results",
+        ),
+        actor=_actor(),
+        idempotency_key="search.saturation-failed.finish",
+    )
+    final = _start_adaptive_search(
+        store,
+        protocol,
+        search_id="search.saturation-final",
+        query="final eligible query",
+        parent=failed,
+        depth=2,
+    )
+    with pytest.raises(LiteratureIntegrityError, match="no-new-work"):
+        store.finish_search(
+            final.search_run_id,
+            _search_outcome(
+                final_locator, capture=False, saturation_claimed=True
+            ),
+            actor=_actor(),
+            idempotency_key="search.saturation-final.finish",
+        )
+
+
+def test_failed_searches_before_and_after_eligible_history_do_not_contribute(
+    tmp_path: Path,
+) -> None:
+    before_root = tmp_path / "before"
+    store = LiteratureStore(_project(before_root))
+    protocol = _protocol_with_lane(
+        store,
+        {
+            "provider_order": ["first", "second"],
+            "minimum_provider_attempts": 1,
+            "minimum_distinct_results_inspected": 2,
+            "minimum_capture_attempts": 0,
+            "maximum_queries": 1,
+        },
+    )
+    failed = _start_lane_search(store, protocol, "search.before-failed", "first")
+    store.finish_search(
+        failed.search_run_id,
+        _search_outcome(
+            "https://example.test/failed-only-work",
+            capture=False,
+            status="FAILED",
+            failure_reason="failed before eligible result",
+        ),
+        actor=_actor(),
+        idempotency_key="search.before-failed.finish",
+    )
+    succeeded = _start_lane_search(
+        store, protocol, "search.before-success", "second"
+    )
+    store.finish_search(
+        succeeded.search_run_id,
+        _search_outcome(
+            "https://example.test/only-eligible-work",
+            capture=False,
+            inspected_results=[
+                _search_result(
+                    "https://example.test/only-eligible-work", provider_rank=2
+                )
+            ],
+        ),
+        actor=_actor(),
+        idempotency_key="search.before-success.finish",
+    )
+    assert (
+        store._derive_lane_completions(protocol, store.records())[0][
+            "obligation_status"
+        ]
+        != "SATISFIED"
+    )
+
+    after_root = tmp_path / "after"
+    after_store = LiteratureStore(_project(after_root))
+    after_protocol = _protocol_with_lane(
+        after_store,
+        {
+            "minimum_capture_attempts": 0,
+            "maximum_queries": 3,
+            "adaptive_max_depth": 2,
+            "saturation": {
+                "enabled": True,
+                "minimum_queries_before_check": 2,
+                "consecutive_queries_without_new_work": 1,
+            },
+        },
+    )
+    first = _start_lane_search(
+        after_store, after_protocol, "search.after-first", "fixture-provider"
+    )
+    first = after_store.finish_search(
+        first.search_run_id,
+        _search_outcome("https://example.test/stable-work", capture=False),
+        actor=_actor(),
+        idempotency_key="search.after-first.finish",
+    )
+    saturated = _start_adaptive_search(
+        after_store,
+        after_protocol,
+        search_id="search.after-saturated",
+        query="eligible saturation query",
+        parent=first,
+        depth=1,
+    )
+    saturated = after_store.finish_search(
+        saturated.search_run_id,
+        _search_outcome(
+            "https://example.test/stable-work",
+            capture=False,
+            saturation_claimed=True,
+        ),
+        actor=_actor(),
+        idempotency_key="search.after-saturated.finish",
+    )
+    failed_after = _start_adaptive_search(
+        after_store,
+        after_protocol,
+        search_id="search.after-failed",
+        query="failed after saturation",
+        parent=saturated,
+        depth=2,
+    )
+    after_store.finish_search(
+        failed_after.search_run_id,
+        _search_outcome(
+            "https://example.test/new-failed-work",
+            capture=False,
+            status="FAILED",
+            failure_reason="failed after eligible saturation",
+        ),
+        actor=_actor(),
+        idempotency_key="search.after-failed.finish",
+    )
+    assert after_store.validate(verify_artifacts=False)["status"] == "PASS"
+
+
+@pytest.mark.parametrize("status", ("FAILED", "ABANDONED_AFTER_CRASH"))
+def test_failed_or_abandoned_search_cannot_claim_saturation(
+    tmp_path: Path, status: str
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    protocol = _protocol_with_lane(store, {"minimum_capture_attempts": 0})
+    search = _start_lane_search(
+        store, protocol, f"search.invalid-saturation-{status.lower()}", "fixture-provider"
+    )
+    with pytest.raises(LiteratureConflictError, match="cannot claim saturation"):
+        store.finish_search(
+            search.search_run_id,
+            _search_outcome(
+                "https://example.test/failed-saturation",
+                capture=False,
+                status=status,
+                failure_reason="terminal failure",
+                saturation_claimed=True,
+            ),
+            actor=_actor(),
+            idempotency_key=f"{search.search_run_id}.finish",
+        )
+
+
+def test_partial_runs_on_both_sides_of_failure_use_only_usable_results(
+    tmp_path: Path,
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    protocol = _protocol_with_lane(
+        store,
+        {
+            "minimum_capture_attempts": 0,
+            "maximum_queries": 3,
+            "adaptive_max_depth": 2,
+            "saturation": {
+                "enabled": True,
+                "minimum_queries_before_check": 2,
+                "consecutive_queries_without_new_work": 1,
+            },
+        },
+    )
+    first = _start_lane_search(
+        store, protocol, "search.partial-first", "fixture-provider"
+    )
+    first = store.finish_search(
+        first.search_run_id,
+        _search_outcome(
+            "https://example.test/partial-work", capture=False, status="PARTIAL"
+        ),
+        actor=_actor(),
+        idempotency_key="search.partial-first.finish",
+    )
+    failed = _start_adaptive_search(
+        store,
+        protocol,
+        search_id="search.partial-failed",
+        query="failed between partials",
+        parent=first,
+        depth=1,
+    )
+    failed = store.finish_search(
+        failed.search_run_id,
+        _search_outcome(
+            "https://example.test/failed-new-work",
+            capture=False,
+            status="FAILED",
+            failure_reason="unusable provider result",
+        ),
+        actor=_actor(),
+        idempotency_key="search.partial-failed.finish",
+    )
+    final = _start_adaptive_search(
+        store,
+        protocol,
+        search_id="search.partial-final",
+        query="final partial query",
+        parent=failed,
+        depth=2,
+    )
+    store.finish_search(
+        final.search_run_id,
+        _search_outcome(
+            "https://example.test/partial-work",
+            capture=False,
+            status="PARTIAL",
+            saturation_claimed=True,
+        ),
+        actor=_actor(),
+        idempotency_key="search.partial-final.finish",
+    )
+    assert store.validate(verify_artifacts=False)["status"] == "PASS"
+
+
+def test_full_reload_recomputes_saturation_from_only_eligible_searches(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    protocol = _protocol_with_lane(
+        store,
+        {
+            "minimum_capture_attempts": 0,
+            "maximum_queries": 3,
+            "adaptive_max_depth": 2,
+            "saturation": {
+                "enabled": True,
+                "minimum_queries_before_check": 2,
+                "consecutive_queries_without_new_work": 1,
+            },
+        },
+    )
+    first = _start_lane_search(
+        store, protocol, "search.reload-first", "fixture-provider"
+    )
+    first = store.finish_search(
+        first.search_run_id,
+        _search_outcome("https://example.test/reload-a", capture=False),
+        actor=_actor(),
+        idempotency_key="search.reload-first.finish",
+    )
+    failed = _start_adaptive_search(
+        store,
+        protocol,
+        search_id="search.reload-failed",
+        query="reload failed query",
+        parent=first,
+        depth=1,
+    )
+    failed = store.finish_search(
+        failed.search_run_id,
+        _search_outcome(
+            "https://example.test/reload-b",
+            capture=False,
+            status="FAILED",
+            failure_reason="unusable result",
+        ),
+        actor=_actor(),
+        idempotency_key="search.reload-failed.finish",
+    )
+    final = _start_adaptive_search(
+        store,
+        protocol,
+        search_id="search.reload-final",
+        query="reload final query",
+        parent=failed,
+        depth=2,
+    )
+    final = store.finish_search(
+        final.search_run_id,
+        _search_outcome(
+            "https://example.test/reload-a",
+            capture=False,
+            saturation_claimed=True,
+        ),
+        actor=_actor(),
+        idempotency_key="search.reload-final.finish",
+    )
+
+    def make_final_discover_failed_work(record):
+        if record.get("record_id") != final.record_id:
+            return
+        result = _search_result("https://example.test/reload-b")
+        record["inspected_results"] = [result]
+        record["result_set_sha256"] = hashlib.sha256(
+            canonical_json_bytes([result], trailing_lf=False)
+        ).hexdigest()
+
+    _rewrite_valid_hash_chains(root, make_final_discover_failed_work)
+    with pytest.raises(LiteratureIntegrityError, match="no-new-work"):
+        LiteratureStore(root).validate(verify_artifacts=False)
+
+
+def _relation_payload(relation) -> dict:
+    return relation.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+
+
+def test_retracted_relation_head_blocks_historical_relation_reuse_and_old_freeze(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    protocol = _protocol(store)
+    first = _source(store, "relation-head-first", b"first relation claim")[-1]
+    second = _source(store, "relation-head-second", b"second relation claim")[-1]
+    historical_dossier, historical_freeze = _dossier(
+        store,
+        protocol,
+        [(first, "SUPPORTING"), (second, "CONTRADICTING")],
+        dossier_id="dossier.relation-head",
+    )
+    active = store.get(historical_dossier.evidence_relation_refs[0].record_id)
+    retracted_payload = _relation_payload(active)
+    retracted_payload.update(
+        status="RETRACTED",
+        superseded_by_relation_id=None,
+        rationale="Relation withdrawn without rewriting its history.",
+    )
+    retracted = store.append_evidence_relation(
+        retracted_payload,
+        actor=_actor(),
+        idempotency_key="relation.relation-head.retracted",
+    )
+    assert retracted.status == "RETRACTED"
+    assert store.validate(verify_artifacts=False)["status"] == "PASS"
+
+    payload = historical_dossier.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    payload.update(
+        dossier_id="dossier.relation-head-resurrection",
+        p2_entry_id=None,
+        prior_emission_receipt_sha256=None,
+        change_reason="Attempt to resurrect a historical ACTIVE relation revision",
+    )
+    with pytest.raises(LiteratureConflictError, match="exact ACTIVE eligible head"):
+        store.append_dossier(
+            payload,
+            actor=_actor(),
+            idempotency_key="dossier.relation-head-resurrection.r1",
+        )
+    with pytest.raises(LiteratureConflictError, match="stale for new P2 emission"):
+        prepare_emission(
+            root,
+            freeze_id=historical_freeze.freeze_id,
+            operation_id="emission.retracted-relation-freeze",
+            actor=_actor(),
+            idempotency_key="emission.retracted-relation-freeze.prepared",
+        )
+
+
+def test_relation_with_historical_claim_endpoint_is_not_current_dossier_meaning(
+    tmp_path: Path,
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    protocol = _protocol(store)
+    first = _source(store, "relation-claim-head-first", b"first")[-1]
+    second = _source(store, "relation-claim-head-second", b"second")[-1]
+    dossier, _freeze = _dossier(
+        store,
+        protocol,
+        [(first, "SUPPORTING"), (second, "CONTRADICTING")],
+        dossier_id="dossier.relation-claim-head",
+    )
+    corrected_payload = first.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    corrected_payload.update(
+        statement="Corrected first claim",
+        statement_kind="FAITHFUL_PARAPHRASE",
+        reliability="CORRECTED",
+        correction_reason="Current endpoint revision changed",
+    )
+    corrected = store.append_claim(
+        corrected_payload,
+        actor=_actor(),
+        idempotency_key="claim.relation-claim-head-first.r2",
+    )
+    payload = dossier.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    payload.update(
+        dossier_id="dossier.relation-stale-claim-endpoint",
+        claim_refs=[
+            {
+                "claim_id": corrected.claim_id,
+                "claim_revision_sha256": corrected.record_sha256,
+                "p2_role": "SUPPORTING",
+            },
+            {
+                "claim_id": second.claim_id,
+                "claim_revision_sha256": second.record_sha256,
+                "p2_role": "CONTRADICTING",
+            },
+        ],
+        material_statements=[
+            {
+                "statement_id": "statement.relation-stale-claim-endpoint",
+                "text": "Current claims cannot resurrect a relation with an old endpoint.",
+                "basis": "CLAIM_LINKED",
+                "claim_refs": [
+                    {
+                        "record_id": corrected.record_id,
+                        "record_sha256": corrected.record_sha256,
+                    },
+                    {
+                        "record_id": second.record_id,
+                        "record_sha256": second.record_sha256,
+                    },
+                ],
+                "inference_rationale": None,
+            }
+        ],
+        p2_entry_id=None,
+        prior_emission_receipt_sha256=None,
+        change_reason="Attempt stale relation endpoint reuse",
+    )
+    payload["taxonomy_proposal"]["dimension_mappings"] = []
+    with pytest.raises(LiteratureConflictError, match="exact ACTIVE eligible head"):
+        store.append_dossier(
+            payload,
+            actor=_actor(),
+            idempotency_key="dossier.relation-stale-claim-endpoint.r1",
+        )
+@pytest.mark.parametrize("mutation", ("relationship", "endpoints", "basis"))
+def test_evidence_relation_semantic_identity_cannot_migrate(
+    tmp_path: Path, mutation: str
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    first = _source(store, "relation-identity-first", b"first")[-1]
+    second = _source(store, "relation-identity-second", b"second")[-1]
+    third = _source(store, "relation-identity-third", b"third")[-1]
+    relation = store.append_evidence_relation(
+        {
+            "evidence_relation_id": "relation.identity",
+            "relationship": "CONTRADICTS",
+            "claim_refs": [
+                {"record_id": first.record_id, "record_sha256": first.record_sha256},
+                {"record_id": second.record_id, "record_sha256": second.record_sha256},
+            ],
+            "relationship_basis": "ALPHAQUEST_EXPLICIT_INFERENCE",
+            "rationale": "Initial relation identity",
+            "status": "ACTIVE",
+            "superseded_by_relation_id": None,
+        },
+        actor=_actor(),
+        idempotency_key="relation.identity.r1",
+    )
+    payload = _relation_payload(relation)
+    payload["rationale"] = "Attempted semantic migration"
+    if mutation == "relationship":
+        payload["relationship"] = "REPLICATES"
+    elif mutation == "endpoints":
+        payload["claim_refs"] = [
+            {"record_id": third.record_id, "record_sha256": third.record_sha256},
+            {"record_id": second.record_id, "record_sha256": second.record_sha256},
+        ]
+    else:
+        payload["relationship_basis"] = "SOURCE_STATED"
+    with pytest.raises(LiteratureConflictError, match="semantic identity|endpoint identities"):
+        store.append_evidence_relation(
+            payload,
+            actor=_actor(),
+            idempotency_key=f"relation.identity.{mutation}",
+        )
+
+
+def test_evidence_relation_allows_status_only_revision_and_exact_supersession(
+    tmp_path: Path,
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    first = _source(store, "relation-status-first", b"first")[-1]
+    second = _source(store, "relation-status-second", b"second")[-1]
+    refs = [
+        {"record_id": first.record_id, "record_sha256": first.record_sha256},
+        {"record_id": second.record_id, "record_sha256": second.record_sha256},
+    ]
+    original = store.append_evidence_relation(
+        {
+            "evidence_relation_id": "relation.status-original",
+            "relationship": "CONTRADICTS",
+            "claim_refs": refs,
+            "relationship_basis": "ALPHAQUEST_EXPLICIT_INFERENCE",
+            "rationale": "Original relation",
+            "status": "ACTIVE",
+            "superseded_by_relation_id": None,
+        },
+        actor=_actor(),
+        idempotency_key="relation.status-original.r1",
+    )
+    status_only_payload = _relation_payload(original)
+    status_only_payload["rationale"] = "Additional provenance without identity change"
+    status_only = store.append_evidence_relation(
+        status_only_payload,
+        actor=_actor(),
+        idempotency_key="relation.status-original.r2",
+    )
+    replacement = store.append_evidence_relation(
+        {
+            "evidence_relation_id": "relation.status-replacement",
+            "relationship": "REPLICATES",
+            "claim_refs": refs,
+            "relationship_basis": "ALPHAQUEST_EXPLICIT_INFERENCE",
+            "rationale": "Semantically separate replacement",
+            "status": "ACTIVE",
+            "superseded_by_relation_id": None,
+        },
+        actor=_actor(),
+        idempotency_key="relation.status-replacement.r1",
+    )
+    superseded_payload = _relation_payload(status_only)
+    superseded_payload.update(
+        status="SUPERSEDED",
+        superseded_by_relation_id=replacement.evidence_relation_id,
+        rationale="Replaced by a separately identified assertion",
+    )
+    superseded = store.append_evidence_relation(
+        superseded_payload,
+        actor=_actor(),
+        idempotency_key="relation.status-original.r3",
+    )
+    assert superseded.status == "SUPERSEDED"
+    assert store.validate(verify_artifacts=False)["status"] == "PASS"
+
+
+@pytest.mark.parametrize("replacement_kind", ("missing", "self", "non_active"))
+def test_evidence_relation_rejects_invalid_superseding_identity(
+    tmp_path: Path, replacement_kind: str
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    first = _source(store, "bad-supersede-first", b"first")[-1]
+    second = _source(store, "bad-supersede-second", b"second")[-1]
+    refs = [
+        {"record_id": first.record_id, "record_sha256": first.record_sha256},
+        {"record_id": second.record_id, "record_sha256": second.record_sha256},
+    ]
+
+    def add_relation(relation_id: str, relationship: str = "CONTRADICTS"):
+        return store.append_evidence_relation(
+            {
+                "evidence_relation_id": relation_id,
+                "relationship": relationship,
+                "claim_refs": refs,
+                "relationship_basis": "ALPHAQUEST_EXPLICIT_INFERENCE",
+                "rationale": relation_id,
+                "status": "ACTIVE",
+                "superseded_by_relation_id": None,
+            },
+            actor=_actor(),
+            idempotency_key=f"{relation_id}.r1",
+        )
+
+    original = add_relation("relation.bad-supersede")
+    if replacement_kind == "missing":
+        replacement_id = "relation.does-not-exist"
+    elif replacement_kind == "self":
+        replacement_id = original.evidence_relation_id
+    else:
+        replacement = add_relation("relation.non-active", "REPLICATES")
+        replacement_payload = _relation_payload(replacement)
+        replacement_payload.update(status="RETRACTED", rationale="Not active")
+        store.append_evidence_relation(
+            replacement_payload,
+            actor=_actor(),
+            idempotency_key="relation.non-active.r2",
+        )
+        replacement_id = replacement.evidence_relation_id
+    payload = _relation_payload(original)
+    payload.update(
+        status="SUPERSEDED", superseded_by_relation_id=replacement_id
+    )
+    with pytest.raises(LiteratureConflictError, match="supersed"):
+        store.append_evidence_relation(
+            payload,
+            actor=_actor(),
+            idempotency_key=f"relation.bad-supersede.{replacement_kind}",
+        )
+
+
+def test_full_reload_rejects_rehashed_evidence_relation_identity_migration(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    first = _source(store, "relation-rehash-first", b"first")[-1]
+    second = _source(store, "relation-rehash-second", b"second")[-1]
+    relation = store.append_evidence_relation(
+        {
+            "evidence_relation_id": "relation.rehash",
+            "relationship": "CONTRADICTS",
+            "claim_refs": [
+                {"record_id": first.record_id, "record_sha256": first.record_sha256},
+                {"record_id": second.record_id, "record_sha256": second.record_sha256},
+            ],
+            "relationship_basis": "ALPHAQUEST_EXPLICIT_INFERENCE",
+            "rationale": "r1",
+            "status": "ACTIVE",
+            "superseded_by_relation_id": None,
+        },
+        actor=_actor(),
+        idempotency_key="relation.rehash.r1",
+    )
+    payload = _relation_payload(relation)
+    payload["rationale"] = "valid status-only update"
+    second_revision = store.append_evidence_relation(
+        payload,
+        actor=_actor(),
+        idempotency_key="relation.rehash.r2",
+    )
+
+    def migrate(record):
+        if record.get("record_id") == second_revision.record_id:
+            record["relationship"] = "REPLICATES"
+
+    _rewrite_valid_hash_chains(root, migrate)
+    with pytest.raises(LiteratureIntegrityError, match="semantic identity"):
+        LiteratureStore(root).validate(verify_artifacts=False)
+
+
+def test_full_reload_rejects_dossier_pinned_to_historical_active_relation(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    protocol = _protocol(store)
+    first = _source(store, "relation-prefix-first", b"first")[-1]
+    second = _source(store, "relation-prefix-second", b"second")[-1]
+    dossier, _freeze = _dossier(
+        store,
+        protocol,
+        [(first, "SUPPORTING"), (second, "CONTRADICTING")],
+        dossier_id="dossier.relation-prefix",
+    )
+    relation_r1 = store.get(dossier.evidence_relation_refs[0].record_id)
+    relation_payload = _relation_payload(relation_r1)
+    relation_payload["rationale"] = "Current status-only relation head"
+    relation_r2 = store.append_evidence_relation(
+        relation_payload,
+        actor=_actor(),
+        idempotency_key="relation.dossier.relation-prefix.r2",
+    )
+    dossier_payload = dossier.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    dossier_payload.update(
+        evidence_relation_refs=[
+            {
+                "record_id": relation_r2.record_id,
+                "record_sha256": relation_r2.record_sha256,
+            }
+        ],
+        change_reason="Bind the exact current relation head",
+    )
+    dossier_r2 = store.append_dossier(
+        dossier_payload,
+        actor=_actor(),
+        idempotency_key="dossier.relation-prefix.r2",
+    )
+
+    def pin_historical(record):
+        if record.get("record_id") == dossier_r2.record_id:
+            record["evidence_relation_refs"] = [
+                {
+                    "record_id": relation_r1.record_id,
+                    "record_sha256": relation_r1.record_sha256,
+                }
+            ]
+
+    _rewrite_valid_hash_chains(root, pin_historical)
+    with pytest.raises(LiteratureIntegrityError, match="stale or ineligible evidence relation"):
+        LiteratureStore(root).validate(verify_artifacts=False)
+
+
+def _capture_for_version(store: LiteratureStore, version, name: str, text: bytes):
+    content_sha = store.put_artifact(text, kind="artifacts")
+    extracted_sha = store.put_artifact(text, kind="extracted")
+    return store.append_capture(
+        {
+            "capture_id": f"capture.{name}",
+            "source_version_id": version.source_version_id,
+            "source_version_revision_sha256": version.record_sha256,
+            "retrieval_locator": f"https://example.test/{name}",
+            "status": "FULL_TEXT_CAPTURED",
+            "captured_at": NOW,
+            "access_basis": "OPEN_PUBLIC",
+            "local_retention_permission": "ALLOWED",
+            "redistribution_permission": "RESTRICTED",
+            "external_model_processing_permission": "ALLOWED_EXTERNAL_PROCESSOR",
+            "media_type": "text/plain",
+            "content_sha256": content_sha,
+            "content_bytes": len(text),
+            "extracted_representation_sha256": extracted_sha,
+            "extracted_bytes": len(text),
+            "extractor_id": "fixture-extractor",
+            "extractor_version": "1",
+            "extractor_config_sha256": hashlib.sha256(
+                b"fixture extractor config"
+            ).hexdigest(),
+            "failure_reason": None,
+        },
+        actor=_actor(),
+        idempotency_key=f"capture.{name}.r1",
+    )
+
+
+def _new_version_for_work(store: LiteratureStore, work, name: str):
+    return store.append_source_version(
+        {
+            "source_version_id": f"version.{name}",
+            "work_id": work.work_id,
+            "work_revision_sha256": work.record_sha256,
+            "version_kind": "WORKING_PAPER_REVISION",
+            "version_label": name,
+            "strong_identifiers": {"version": name},
+            "public_availability": {
+                "original_value": "2026-09-01T14:00:00Z",
+                "parsed_value": "2026-09-01T14:00:00Z",
+                "precision": "EXACT_INSTANT",
+                "verification": "VERIFIED",
+                "timezone_basis": "UTC",
+                "provenance_record_ids": [],
+            },
+            "identity_status": "VERIFIED_STRONG",
+            "change_reason": "Explicit later source version",
+        },
+        actor=_actor(),
+        idempotency_key=f"version.{name}.r1",
+    )
+
+
+def _claim_revision_payload(claim, capture, work, version, text: bytes) -> dict:
+    payload = claim.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    payload.update(
+        work_id=work.work_id,
+        work_revision_sha256=work.record_sha256,
+        source_version_id=version.source_version_id,
+        source_version_revision_sha256=version.record_sha256,
+        capture_id=capture.capture_id,
+        capture_revision_sha256=capture.record_sha256,
+        content_sha256=capture.content_sha256,
+        extracted_representation_sha256=capture.extracted_representation_sha256,
+        location=_location(text),
+        statement=text.decode(),
+        statement_kind="SOURCE_QUOTE",
+        reliability="CORRECTED",
+        correction_reason="Explicit provenance-aware correction",
+    )
+    return payload
+
+
+def test_claim_same_version_allows_byte_identical_recapture_but_rejects_drift(
+    tmp_path: Path,
+) -> None:
+    compatible_root = tmp_path / "compatible"
+    store = LiteratureStore(_project(compatible_root))
+    work, version, _capture, claim = _source(
+        store, "claim-compatible", b"stable claim bytes"
+    )
+    recapture = _capture_for_version(
+        store, version, "claim-compatible-recapture", b"stable claim bytes"
+    )
+    corrected = store.append_claim(
+        _claim_revision_payload(
+            claim, recapture, work, version, b"stable claim bytes"
+        ),
+        actor=_actor(),
+        idempotency_key="claim.claim-compatible.r2",
+    )
+    assert corrected.capture_id == recapture.capture_id
+    assert store.validate(verify_artifacts=False)["status"] == "PASS"
+
+    incompatible_root = tmp_path / "incompatible"
+    bad_store = LiteratureStore(_project(incompatible_root))
+    bad_work, bad_version, _bad_capture, bad_claim = _source(
+        bad_store, "claim-incompatible", b"original claim bytes"
+    )
+    changed_capture = _capture_for_version(
+        bad_store, bad_version, "claim-incompatible-recapture", b"changed claim bytes"
+    )
+    with pytest.raises(LiteratureConflictError, match="byte-identical"):
+        bad_store.append_claim(
+            _claim_revision_payload(
+                bad_claim,
+                changed_capture,
+                bad_work,
+                bad_version,
+                b"changed claim bytes",
+            ),
+            actor=_actor(),
+            idempotency_key="claim.claim-incompatible.r2",
+        )
+
+
+def test_claim_version_correction_requires_relationship_and_preserves_p2_identity(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    store, protocol, support, contrary, _dossier_record, _freeze, _operation, receipt = (
+        _initial_slice(root)
+    )
+    work = next(
+        item
+        for item in store.records()
+        if getattr(item, "work_id", None) == support.work_id
+        and item.record_sha256 == support.work_revision_sha256
+    )
+    new_version = _new_version_for_work(store, work, "support-v2")
+    new_capture = _capture_for_version(
+        store, new_version, "support-v2", b"corrected source claim"
+    )
+    payload = _claim_revision_payload(
+        support, new_capture, work, new_version, b"corrected source claim"
+    )
+    with pytest.raises(LiteratureConflictError, match="authoritative correction"):
+        store.append_claim(
+            payload,
+            actor=_actor(),
+            idempotency_key="claim.supporting.v2-without-relation",
+        )
+    store.append_source_relationship(
+        {
+            "relationship_id": "relationship.support-v2-revision",
+            "subject_kind": "SOURCE_VERSION",
+            "subject_id": new_version.source_version_id,
+            "predicate": "REVISION_OF",
+            "object_kind": "SOURCE_VERSION",
+            "object_id": support.source_version_id,
+            "status": "ACTIVE",
+            "assertion_evidence_refs": [],
+            "superseded_by_relationship_id": None,
+            "change_reason": "Authoritative source-version lineage",
+        },
+        actor=_actor(),
+        idempotency_key="relationship.support-v2-revision.r1",
+    )
+    corrected = store.append_claim(
+        payload,
+        actor=_actor(),
+        idempotency_key="claim.supporting.v2",
+    )
+    entry_id = receipt.entry_binding.record_id.rsplit(".r", 1)[0]
+    _dossier_record, freeze = _dossier(
+        store,
+        protocol,
+        [(corrected, "SUPPORTING"), (contrary, "CONTRADICTING")],
+        p2_entry_id=entry_id,
+        prior_receipt=receipt.record_sha256,
+    )
+    operation = prepare_emission(
+        root,
+        freeze_id=freeze.freeze_id,
+        operation_id="emission.support-v2",
+        actor=_actor(),
+        idempotency_key="emission.support-v2.prepared",
+    )
+    emit_prepared(root, operation_id=operation.operation_id, actor=_actor())
+    observation_id = derive_p2_observation_id(support.claim_id)
+    revisions = EdgeBacklogStore(root)._all_observation_revisions(observation_id)
+    assert len(revisions) == 2
+    assert revisions[-1].statement == corrected.statement
+
+
+def test_claim_id_cannot_migrate_to_unrelated_work_even_when_corrected(
+    tmp_path: Path,
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    _work_a, _version_a, _capture_a, claim_a = _source(
+        store, "claim-work-a", b"claim a"
+    )
+    work_b, version_b, capture_b, _claim_b = _source(
+        store, "claim-work-b", b"claim b"
+    )
+    with pytest.raises(LiteratureConflictError, match="intellectual work"):
+        store.append_claim(
+            _claim_revision_payload(
+                claim_a, capture_b, work_b, version_b, b"claim b"
+            ),
+            actor=_actor(),
+            idempotency_key="claim.claim-work-a.migrated",
+        )
+
+
+def test_full_reload_rejects_rehashed_claim_work_migration(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    work_a, version_a, _capture_a, claim_a = _source(
+        store, "claim-rehash-a", b"claim a"
+    )
+    work_b, version_b, capture_b, _claim_b = _source(
+        store, "claim-rehash-b", b"claim b"
+    )
+    compatible = _capture_for_version(
+        store, version_a, "claim-rehash-a-recapture", b"claim a"
+    )
+    claim_a_r2 = store.append_claim(
+        _claim_revision_payload(
+            claim_a, compatible, work_a, version_a, b"claim a"
+        ),
+        actor=_actor(),
+        idempotency_key="claim.claim-rehash-a.r2",
+    )
+    def migrate(record):
+        if record.get("record_id") == claim_a_r2.record_id:
+            record.update(
+                work_id=work_b.work_id,
+                work_revision_sha256=work_b.record_sha256,
+                source_version_id=version_b.source_version_id,
+                source_version_revision_sha256=version_b.record_sha256,
+                capture_id=capture_b.capture_id,
+                capture_revision_sha256=capture_b.record_sha256,
+                content_sha256=capture_b.content_sha256,
+                extracted_representation_sha256=capture_b.extracted_representation_sha256,
+                location=_location(b"claim b"),
+                statement="claim b",
+            )
+
+    _rewrite_valid_hash_chains(root, migrate)
+    with pytest.raises(LiteratureIntegrityError, match="intellectual work"):
+        LiteratureStore(root).validate(verify_artifacts=False)
+
+
+def test_semantic_identity_sweep_preserves_metadata_corrections_but_blocks_migration(
+    tmp_path: Path,
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    protocol = _protocol(store)
+    protocol_payload = protocol.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS
+        | {"record_id", "revision", "previous_revision_sha256", "methodology_sha256"},
+    )
+    protocol_payload["research_question"] = "A different logical research question"
+    with pytest.raises(LiteratureConflictError, match="semantic identity"):
+        store.append_protocol(
+            protocol_payload,
+            actor=_actor(),
+            idempotency_key="protocol.fixture.identity-migration",
+        )
+
+    work, version, _capture, _claim = _source(
+        store, "identity-sweep", b"identity sweep"
+    )
+    work_payload = work.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    work_payload.update(
+        title="Corrected title metadata",
+        authors=["Corrected Author Metadata"],
+        locators=[*work.locators, "https://example.test/identity-sweep-mirror"],
+        change_reason="Legitimate descriptive metadata correction",
+    )
+    corrected_work = store.append_work(
+        work_payload,
+        actor=_actor(),
+        idempotency_key="work.identity-sweep.r2",
+    )
+    bad_work_payload = corrected_work.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    bad_work_payload["strong_identifiers"] = {"doi": "10.0000/unrelated"}
+    with pytest.raises(LiteratureConflictError, match="strong identifier"):
+        store.append_work(
+            bad_work_payload,
+            actor=_actor(),
+            idempotency_key="work.identity-sweep.bad-r3",
+        )
+
+    version_payload = version.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    version_payload.update(
+        work_revision_sha256=corrected_work.record_sha256,
+        version_label="Corrected display label",
+        change_reason="Legitimate version metadata correction",
+    )
+    corrected_version = store.append_source_version(
+        version_payload,
+        actor=_actor(),
+        idempotency_key="version.identity-sweep.r2",
+    )
+    bad_version_payload = corrected_version.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    bad_version_payload["version_kind"] = "CORRECTION_NOTICE"
+    with pytest.raises(LiteratureConflictError, match="kind is immutable"):
+        store.append_source_version(
+            bad_version_payload,
+            actor=_actor(),
+            idempotency_key="version.identity-sweep.bad-r3",
+        )
+
+
+def test_full_reload_rejects_source_relation_and_dossier_identity_migration(
+    tmp_path: Path,
+) -> None:
+    relation_root = tmp_path / "source-relation"
+    relation_store = LiteratureStore(_project(relation_root))
+    first = _source(relation_store, "source-relation-first", b"first")
+    second = _source(relation_store, "source-relation-second", b"second")
+    relationship = relation_store.append_source_relationship(
+        {
+            "relationship_id": "relationship.rehash-identity",
+            "subject_kind": "SOURCE_VERSION",
+            "subject_id": first[1].source_version_id,
+            "predicate": "CORRECTS",
+            "object_kind": "SOURCE_VERSION",
+            "object_id": second[1].source_version_id,
+            "status": "ACTIVE",
+            "assertion_evidence_refs": [],
+            "superseded_by_relationship_id": None,
+            "change_reason": "r1",
+        },
+        actor=_actor(),
+        idempotency_key="relationship.rehash-identity.r1",
+    )
+    relationship_payload = relationship.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    bad_relationship_payload = dict(relationship_payload)
+    bad_relationship_payload["predicate"] = "RETRACTS"
+    with pytest.raises(LiteratureConflictError, match="assertion cannot change"):
+        relation_store.append_source_relationship(
+            bad_relationship_payload,
+            actor=_actor(),
+            idempotency_key="relationship.rehash-identity.bad-r2",
+        )
+    relationship_payload["change_reason"] = "status-only provenance update"
+    relationship_r2 = relation_store.append_source_relationship(
+        relationship_payload,
+        actor=_actor(),
+        idempotency_key="relationship.rehash-identity.r2",
+    )
+
+    def migrate_relationship(record):
+        if record.get("record_id") == relationship_r2.record_id:
+            record["predicate"] = "RETRACTS"
+
+    _rewrite_valid_hash_chains(relation_root, migrate_relationship)
+    with pytest.raises(LiteratureIntegrityError, match="relationship identity"):
+        LiteratureStore(relation_root).validate(verify_artifacts=False)
+
+    dossier_root = tmp_path / "dossier"
+    dossier_store = LiteratureStore(_project(dossier_root))
+    first_protocol = _protocol(dossier_store)
+    claim = _source(dossier_store, "dossier-identity", b"dossier identity")[-1]
+    dossier, _freeze = _dossier(
+        dossier_store, first_protocol, [(claim, "SUPPORTING")]
+    )
+    second_protocol = _protocol(
+        dossier_store,
+        protocol_id="protocol.same-lineage-other-identity",
+        lineage=first_protocol.execution_lineage_id,
+    )
+    dossier_payload = dossier.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS | {"record_id", "revision", "previous_revision_sha256"},
+    )
+    migrated_payload = dict(dossier_payload)
+    migrated_payload["protocol_revision_sha256"] = second_protocol.record_sha256
+    with pytest.raises(LiteratureConflictError, match="another protocol"):
+        dossier_store.append_dossier(
+            migrated_payload,
+            actor=_actor(),
+            idempotency_key="dossier.fixture.bad-protocol-r2",
+        )
+    dossier_payload["change_reason"] = "Valid same-protocol dossier revision"
+    dossier_r2 = dossier_store.append_dossier(
+        dossier_payload,
+        actor=_actor(),
+        idempotency_key="dossier.fixture.r2.identity",
+    )
+
+    def migrate_dossier(record):
+        if record.get("record_id") == dossier_r2.record_id:
+            record["protocol_revision_sha256"] = second_protocol.record_sha256
+
+    _rewrite_valid_hash_chains(dossier_root, migrate_dossier)
+    with pytest.raises(LiteratureIntegrityError, match="another protocol"):
+        LiteratureStore(dossier_root).validate(verify_artifacts=False)

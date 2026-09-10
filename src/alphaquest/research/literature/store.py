@@ -119,6 +119,42 @@ _CAPTURE_TERMINAL_FIELDS = {
     "extractor_config_sha256",
     "failure_reason",
 }
+_PROTOCOL_IDENTITY_FIELDS = {
+    "execution_lineage_id",
+    "lineage_kind",
+    "parent_execution_lineage_id",
+    "observed_result_set_sha256",
+    "research_question",
+    "market_scope",
+}
+_SOURCE_RELATION_IDENTITY_FIELDS = (
+    "subject_kind",
+    "subject_id",
+    "predicate",
+    "object_kind",
+    "object_id",
+)
+_EVIDENCE_RELATION_IDENTITY_FIELDS = ("relationship", "relationship_basis")
+_CLAIM_VERSION_TRANSITION_PREDICATES = {
+    "REVISION_OF",
+    "PUBLISHED_SUCCESSOR_OF",
+    "CORRECTS",
+}
+_RECEIPT_OPERATION_FIELDS = (
+    "operation_id",
+    "freeze_id",
+    "freeze_record_sha256",
+    "reservations",
+    "observation_bindings",
+    "entry_binding",
+    "duplicate_snapshot",
+    "dependency_impacts",
+    "dependency_entry_bindings",
+    "prior_staled_decision_sha256",
+    "search_completion_status",
+    "unsatisfied_lanes",
+    "operational_status",
+)
 _POSITIVE_P2_ROLES = {"MOTIVATING", "SUPPORTING"}
 _INELIGIBLE_POSITIVE_CLAIM_STATES = {"WITHDRAWN_INVALID", "SOURCE_RETRACTED"}
 _P3_EXACT_REFERENCE_FIELDS = {
@@ -320,6 +356,86 @@ class LiteratureStore:
                 heads[record.claim_id] = record
         return heads
 
+    @staticmethod
+    def _evidence_relation_heads(
+        records: list[CanonicalRecordV1],
+    ) -> dict[str, EvidenceRelationRevisionV1]:
+        heads: dict[str, EvidenceRelationRevisionV1] = {}
+        for record in records:
+            if isinstance(record, EvidenceRelationRevisionV1):
+                heads[record.evidence_relation_id] = record
+        return heads
+
+    @staticmethod
+    def _evidence_relation_semantic_identity(
+        relation: EvidenceRelationRevisionV1,
+    ) -> tuple[Any, ...]:
+        return (
+            relation.relationship,
+            tuple(_object_id(item.record_id) for item in relation.claim_refs),
+            relation.relationship_basis,
+        )
+
+    @staticmethod
+    def _claim_source_transition_issue(
+        claim: ClaimExtractionRevisionV1,
+        records: list[CanonicalRecordV1],
+    ) -> str | None:
+        history = [
+            item
+            for item in records
+            if isinstance(item, ClaimExtractionRevisionV1)
+            and item.claim_id == claim.claim_id
+            and item.append_sequence <= claim.append_sequence
+        ]
+        relationship_heads: dict[str, SourceRelationshipRevisionV1] = {}
+        for relationship in records:
+            if isinstance(relationship, SourceRelationshipRevisionV1):
+                relationship_heads[relationship.relationship_id] = relationship
+        for previous, later in zip(history, history[1:]):
+            if later.source_version_id == previous.source_version_id:
+                continue
+            authorized = any(
+                relationship.status == "ACTIVE"
+                and relationship.predicate in _CLAIM_VERSION_TRANSITION_PREDICATES
+                and relationship.subject_kind == "SOURCE_VERSION"
+                and relationship.subject_id == later.source_version_id
+                and relationship.object_kind == "SOURCE_VERSION"
+                and relationship.object_id == previous.source_version_id
+                for relationship in relationship_heads.values()
+            )
+            if not authorized:
+                return "CLAIM_SOURCE_VERSION_TRANSITION_NOT_CURRENT"
+        return None
+
+    @classmethod
+    def _evidence_relation_issue(
+        cls,
+        relation: EvidenceRelationRevisionV1,
+        records: list[CanonicalRecordV1],
+    ) -> str | None:
+        head = cls._evidence_relation_heads(records).get(relation.evidence_relation_id)
+        if head is None or head.record_sha256 != relation.record_sha256:
+            return "STALE_EVIDENCE_RELATION_REVISION"
+        if head.status != "ACTIVE":
+            return "CURRENT_EVIDENCE_RELATION_NOT_ACTIVE"
+        records_by_hash = {item.record_sha256: item for item in records}
+        claim_heads = cls._claim_heads(records)
+        for reference in head.claim_refs:
+            claim = records_by_hash.get(reference.record_sha256)
+            if (
+                not isinstance(claim, ClaimExtractionRevisionV1)
+                or claim.record_id != reference.record_id
+            ):
+                return "UNRESOLVED_EVIDENCE_RELATION_CLAIM"
+            claim_head = claim_heads.get(claim.claim_id)
+            if claim_head is None or claim_head.record_sha256 != claim.record_sha256:
+                return "STALE_EVIDENCE_RELATION_CLAIM_REVISION"
+            source_issue = cls._claim_source_transition_issue(claim_head, records)
+            if source_issue is not None:
+                return source_issue
+        return None
+
     @classmethod
     def _positive_claim_issue(
         cls,
@@ -332,6 +448,9 @@ class LiteratureStore:
         head = cls._claim_heads(records).get(claim.claim_id)
         if head is None or head.record_sha256 != claim.record_sha256:
             return "STALE_LOGICAL_CLAIM_REVISION"
+        source_issue = cls._claim_source_transition_issue(head, records)
+        if source_issue is not None:
+            return source_issue
         from alphaquest.research.literature.mapper import effective_claim_reliability
 
         relationships = [
@@ -371,6 +490,35 @@ class LiteratureStore:
                 )
         return issues
 
+    @classmethod
+    def _dossier_evidence_relation_issues(
+        cls,
+        dossier: EdgeDossierRevisionV1,
+        records: list[CanonicalRecordV1],
+    ) -> list[dict[str, str]]:
+        records_by_hash = {item.record_sha256: item for item in records}
+        issues: list[dict[str, str]] = []
+        for reference in dossier.evidence_relation_refs:
+            relation = records_by_hash.get(reference.record_sha256)
+            if (
+                not isinstance(relation, EvidenceRelationRevisionV1)
+                or relation.record_id != reference.record_id
+            ):
+                reason = "MISSING_EXACT_EVIDENCE_RELATION_REVISION"
+                relation_id = _object_id(reference.record_id)
+            else:
+                reason = cls._evidence_relation_issue(relation, records)
+                relation_id = relation.evidence_relation_id
+            if reason is not None:
+                issues.append(
+                    {
+                        "evidence_relation_id": relation_id,
+                        "evidence_relation_revision_sha256": reference.record_sha256,
+                        "reason": reason,
+                    }
+                )
+        return issues
+
     def assert_freeze_emission_eligible(self, freeze: DossierFreezeV1) -> None:
         """Fail closed when an immutable historical freeze is stale for a new emission."""
 
@@ -386,12 +534,20 @@ class LiteratureStore:
         )
         if dossier is None:
             raise LiteratureConflictError("freeze lacks its exact dossier revision")
-        issues = self._dossier_positive_claim_issues(dossier, records)
-        if issues:
+        claim_issues = self._dossier_positive_claim_issues(dossier, records)
+        relation_issues = self._dossier_evidence_relation_issues(dossier, records)
+        if claim_issues or relation_issues:
             raise LiteratureConflictError(
                 "dossier freeze is stale for new P2 emission: "
                 + ", ".join(
-                    f"{item['claim_id']}:{item['reason']}" for item in issues
+                    [
+                        f"{item['claim_id']}:{item['reason']}"
+                        for item in claim_issues
+                    ]
+                    + [
+                        f"{item['evidence_relation_id']}:{item['reason']}"
+                        for item in relation_issues
+                    ]
                 )
             )
 
@@ -407,15 +563,19 @@ class LiteratureStore:
             dossier = records_by_hash.get(freeze.dossier_revision_sha256)
             if not isinstance(dossier, EdgeDossierRevisionV1):
                 continue  # Full structural validation reports the exact broken reference.
-            issues = cls._dossier_positive_claim_issues(dossier, records)
+            claim_issues = cls._dossier_positive_claim_issues(dossier, records)
+            relation_issues = cls._dossier_evidence_relation_issues(dossier, records)
             output.append(
                 {
                     "freeze_id": freeze.freeze_id,
                     "freeze_record_sha256": freeze.record_sha256,
                     "emission_eligibility": (
-                        "ELIGIBLE" if not issues else "STALE_INELIGIBLE"
+                        "ELIGIBLE"
+                        if not claim_issues and not relation_issues
+                        else "STALE_INELIGIBLE"
                     ),
-                    "claim_issues": issues,
+                    "claim_issues": claim_issues,
+                    "evidence_relation_issues": relation_issues,
                 }
             )
         return output
@@ -559,8 +719,12 @@ class LiteratureStore:
         material = dict(payload)
         protocol_id = str(material["protocol_id"])
         previous = self._latest_optional(ResearchProtocolRevisionV1, protocol_id)
-        if previous is not None and material.get("execution_lineage_id") != previous.execution_lineage_id:
-            raise LiteratureConflictError("protocol identity cannot move to another execution lineage")
+        if previous is not None:
+            for field in _PROTOCOL_IDENTITY_FIELDS:
+                if material.get(field) != getattr(previous, field):
+                    raise LiteratureConflictError(
+                        f"protocol semantic identity cannot change: {field}"
+                    )
         material["revision"] = 1 if previous is None else previous.revision + 1
         material["previous_revision_sha256"] = previous.record_sha256 if previous else None
         material["record_id"] = f"{protocol_id}.r{material['revision']:06d}"
@@ -757,9 +921,26 @@ class LiteratureStore:
         return self._append(SearchRunRevisionV1, material, actor, idempotency_key, recorded_at)
 
     def append_work(self, payload: Mapping[str, Any], **kwargs: Any) -> SourceIdentityRevisionV1:
-        for locator in payload.get("locators", []):
+        material = dict(payload)
+        for locator in material.get("locators", []):
             assert_no_pnl_repository_reference(str(locator))
-        return self._append_revision(SourceIdentityRevisionV1, "work_id", payload, **kwargs)
+        previous = self._latest_optional(
+            SourceIdentityRevisionV1, str(material["work_id"])
+        )
+        if previous is not None:
+            supplied_identifiers = dict(material.get("strong_identifiers", {}))
+            for key, value in previous.strong_identifiers.items():
+                if supplied_identifiers.get(key) != value:
+                    raise LiteratureConflictError(
+                        "source work cannot remove or change an established strong identifier"
+                    )
+            if not previous.strong_identifiers and not (
+                set(previous.locators) & set(material.get("locators", []))
+            ):
+                raise LiteratureConflictError(
+                    "source work without a strong identifier must retain a prior locator identity anchor"
+                )
+        return self._append_revision(SourceIdentityRevisionV1, "work_id", material, **kwargs)
 
     def append_source_version(self, payload: Mapping[str, Any], **kwargs: Any) -> SourceVersionIdentityRevisionV1:
         material = dict(payload)
@@ -767,8 +948,24 @@ class LiteratureStore:
         if work.work_id != material.get("work_id"):
             raise LiteratureConflictError("source version work ID/hash mismatch")
         previous = self._latest_optional(SourceVersionIdentityRevisionV1, str(material["source_version_id"]))
-        if previous is not None and material.get("work_id") != previous.work_id:
-            raise LiteratureConflictError("source-version identity cannot migrate to another work")
+        if previous is not None:
+            if material.get("work_id") != previous.work_id:
+                raise LiteratureConflictError("source-version identity cannot migrate to another work")
+            if material.get("version_kind") != previous.version_kind:
+                raise LiteratureConflictError("source-version kind is immutable within one identity")
+            supplied_identifiers = dict(material.get("strong_identifiers", {}))
+            for key, value in previous.strong_identifiers.items():
+                if supplied_identifiers.get(key) != value:
+                    raise LiteratureConflictError(
+                        "source version cannot remove or change an established strong identifier"
+                    )
+            if (
+                not previous.strong_identifiers
+                and material.get("version_label") != previous.version_label
+            ):
+                raise LiteratureConflictError(
+                    "source version without a strong identifier cannot change its version label"
+                )
         return self._append_revision(SourceVersionIdentityRevisionV1, "source_version_id", material, **kwargs)
 
     def append_source_relationship(self, payload: Mapping[str, Any], **kwargs: Any) -> SourceRelationshipRevisionV1:
@@ -780,11 +977,30 @@ class LiteratureStore:
         relationship_id = str(payload["relationship_id"])
         previous = self._latest_optional(SourceRelationshipRevisionV1, relationship_id)
         if previous is not None:
-            for field in ("subject_kind", "subject_id", "predicate", "object_kind", "object_id"):
+            for field in _SOURCE_RELATION_IDENTITY_FIELDS:
                 if payload.get(field) != getattr(previous, field):
                     raise LiteratureConflictError("source relationship assertion cannot change inside one identity")
             if previous.status != "ACTIVE":
                 raise LiteratureConflictError("retracted/superseded source relationship cannot be reactivated")
+        if payload.get("status") == "SUPERSEDED":
+            replacement_id = str(payload.get("superseded_by_relationship_id"))
+            if replacement_id == relationship_id:
+                raise LiteratureConflictError("source relationship cannot supersede itself")
+            replacement = self._latest_optional(
+                SourceRelationshipRevisionV1, replacement_id
+            )
+            if replacement is None or replacement.status != "ACTIVE":
+                raise LiteratureConflictError(
+                    "superseding source relationship must already exist and be ACTIVE"
+                )
+            current_identity = tuple(payload.get(field) for field in _SOURCE_RELATION_IDENTITY_FIELDS)
+            replacement_identity = tuple(
+                getattr(replacement, field) for field in _SOURCE_RELATION_IDENTITY_FIELDS
+            )
+            if current_identity == replacement_identity:
+                raise LiteratureConflictError(
+                    "superseding source relationship must have a separate semantic identity"
+                )
         return self._append_revision(SourceRelationshipRevisionV1, "relationship_id", payload, **kwargs)
 
     def append_capture(
@@ -940,18 +1156,101 @@ class LiteratureStore:
             if material.get("statement") != span_text:
                 raise LiteratureConflictError("SOURCE_QUOTE statement must exactly equal its bound byte span")
         previous = self._latest_optional(ClaimExtractionRevisionV1, str(material["claim_id"]))
-        if previous is not None and material.get("reliability") == "WITHDRAWN_INVALID":
-            if material.get("statement") != previous.statement:
-                raise LiteratureConflictError("unsupported withdrawal cannot manufacture a replacement statement")
+        if previous is not None:
+            if material.get("work_id") != previous.work_id:
+                raise LiteratureConflictError(
+                    "logical claim identity cannot migrate to another intellectual work"
+                )
+            if material.get("source_version_id") == previous.source_version_id:
+                if (
+                    material.get("content_sha256") != previous.content_sha256
+                    or material.get("extracted_representation_sha256")
+                    != previous.extracted_representation_sha256
+                ):
+                    raise LiteratureConflictError(
+                        "same-version claim recapture must be byte-identical"
+                    )
+            else:
+                relationship_heads: dict[str, SourceRelationshipRevisionV1] = {}
+                for relationship in self.records():
+                    if isinstance(relationship, SourceRelationshipRevisionV1):
+                        relationship_heads[relationship.relationship_id] = relationship
+                authorized = any(
+                    relationship.status == "ACTIVE"
+                    and relationship.predicate in _CLAIM_VERSION_TRANSITION_PREDICATES
+                    and relationship.subject_kind == "SOURCE_VERSION"
+                    and relationship.subject_id == material.get("source_version_id")
+                    and relationship.object_kind == "SOURCE_VERSION"
+                    and relationship.object_id == previous.source_version_id
+                    for relationship in relationship_heads.values()
+                )
+                if material.get("reliability") != "CORRECTED" or not authorized:
+                    raise LiteratureConflictError(
+                        "claim source-version migration requires a current authoritative correction/revision relationship"
+                    )
+            if material.get("reliability") == "WITHDRAWN_INVALID":
+                if material.get("statement") != previous.statement:
+                    raise LiteratureConflictError(
+                        "unsupported withdrawal cannot manufacture a replacement statement"
+                    )
         return self._append_revision(ClaimExtractionRevisionV1, "claim_id", material, **kwargs)
 
     def append_evidence_relation(self, payload: Mapping[str, Any], **kwargs: Any) -> EvidenceRelationRevisionV1:
-        for reference in payload["claim_refs"]:
-            self._record_by_hash(str(reference["record_sha256"]), ClaimExtractionRevisionV1)
-        previous = self._latest_optional(EvidenceRelationRevisionV1, str(payload["evidence_relation_id"]))
+        material = dict(payload)
+        records = self.records()
+        claims: list[ClaimExtractionRevisionV1] = []
+        for reference in material["claim_refs"]:
+            claim = self._record_by_hash(
+                str(reference["record_sha256"]), ClaimExtractionRevisionV1
+            )
+            if claim.record_id != reference["record_id"]:
+                raise LiteratureConflictError("evidence relation claim ID/hash mismatch")
+            claims.append(claim)
+        relation_id = str(material["evidence_relation_id"])
+        previous = self._latest_optional(EvidenceRelationRevisionV1, relation_id)
         if previous is not None and previous.status != "ACTIVE":
             raise LiteratureConflictError("retracted/superseded evidence relation cannot be reactivated")
-        return self._append_revision(EvidenceRelationRevisionV1, "evidence_relation_id", payload, **kwargs)
+        if previous is not None:
+            for field in _EVIDENCE_RELATION_IDENTITY_FIELDS:
+                if material.get(field) != getattr(previous, field):
+                    raise LiteratureConflictError(
+                        f"evidence relation semantic identity cannot change: {field}"
+                    )
+            if tuple(_object_id(item["record_id"]) for item in material["claim_refs"]) != tuple(
+                _object_id(item.record_id) for item in previous.claim_refs
+            ):
+                raise LiteratureConflictError(
+                    "evidence relation ordered claim endpoint identities cannot change"
+                )
+        if material.get("status") == "ACTIVE":
+            claim_heads = self._claim_heads(records)
+            for claim in claims:
+                head = claim_heads.get(claim.claim_id)
+                if head is None or head.record_sha256 != claim.record_sha256:
+                    raise LiteratureConflictError(
+                        "ACTIVE evidence relation must bind exact current claim heads"
+                    )
+        if material.get("status") == "SUPERSEDED":
+            replacement_id = str(material.get("superseded_by_relation_id"))
+            if replacement_id == relation_id:
+                raise LiteratureConflictError("evidence relation cannot supersede itself")
+            replacement = self._evidence_relation_heads(records).get(replacement_id)
+            if replacement is None or replacement.status != "ACTIVE":
+                raise LiteratureConflictError(
+                    "superseding evidence relation must already exist and be ACTIVE"
+                )
+            candidate_identity = (
+                material.get("relationship"),
+                tuple(_object_id(item["record_id"]) for item in material["claim_refs"]),
+                material.get("relationship_basis"),
+            )
+            if candidate_identity == self._evidence_relation_semantic_identity(replacement):
+                raise LiteratureConflictError(
+                    "superseding evidence relation must have a separate semantic identity"
+                )
+        return self._append_revision(
+            EvidenceRelationRevisionV1, "evidence_relation_id", material, **kwargs
+        )
 
     @staticmethod
     def _current_searches(
@@ -1064,14 +1363,17 @@ class LiteratureStore:
             and len(distinct_capture_results) >= lane.minimum_capture_attempts
         )
 
-        saturation_claims = [item for item in terminal if item.saturation_claimed]
+        saturation_claims = [item for item in eligible if item.saturation_claimed]
         if saturation_claims:
             if lane.saturation is None or not lane.saturation.enabled:
                 raise LiteratureIntegrityError("search claims saturation without a frozen saturation criterion")
             if not satisfied:
                 raise LiteratureIntegrityError("saturation cannot be claimed before frozen minimum obligations are met")
             query_order: list[str] = []
-            for item in sorted(terminal, key=lambda value: (value.append_sequence, value.search_run_id)):
+            ordered_eligible = sorted(
+                eligible, key=lambda value: (value.append_sequence, value.search_run_id)
+            )
+            for item in ordered_eligible:
                 if item.query not in query_order:
                     query_order.append(item.query)
             if len(query_order) < lane.saturation.minimum_queries_before_check:
@@ -1081,7 +1383,7 @@ class LiteratureStore:
             for query in query_order:
                 works = {
                     result.work_identity_sha256
-                    for run in terminal
+                    for run in eligible
                     if run.query == query
                     for result in run.inspected_results
                 }
@@ -1090,7 +1392,9 @@ class LiteratureStore:
                 seen_work.update(works)
             if no_new_work < lane.saturation.consecutive_queries_without_new_work:
                 raise LiteratureIntegrityError("claimed saturation does not meet the frozen no-new-work criterion")
-            final_search = max(terminal, key=lambda item: (item.append_sequence, item.search_run_id))
+            final_search = max(
+                eligible, key=lambda item: (item.append_sequence, item.search_run_id)
+            )
             if len(saturation_claims) != 1 or saturation_claims[0].search_run_id != final_search.search_run_id:
                 raise LiteratureIntegrityError("only the final applicable search may bind lane saturation")
         return satisfied
@@ -1182,6 +1486,12 @@ class LiteratureStore:
             relation = self._record_by_hash(str(reference["record_sha256"]), EvidenceRelationRevisionV1)
             if relation.record_id != reference["record_id"]:
                 raise LiteratureConflictError("dossier evidence-relation ID/hash mismatch")
+            relation_issue = self._evidence_relation_issue(relation, records)
+            if relation_issue is not None:
+                raise LiteratureConflictError(
+                    "dossier current evidence relation must be the exact ACTIVE eligible head: "
+                    f"{relation.evidence_relation_id}:{relation_issue}"
+                )
             for claim_reference in relation.claim_refs:
                 if (claim_reference.record_id, claim_reference.record_sha256) not in claim_set:
                     raise LiteratureConflictError("dossier evidence relation uses a claim outside the dossier")
@@ -1192,6 +1502,14 @@ class LiteratureStore:
             for reference in mapping["basis_claims"]:
                 require_dossier_claim(reference)
         previous = self._latest_optional(EdgeDossierRevisionV1, str(material["dossier_id"]))
+        if previous is not None:
+            previous_protocol = self._record_by_hash(
+                previous.protocol_revision_sha256, ResearchProtocolRevisionV1
+            )
+            if previous_protocol.protocol_id != protocol.protocol_id:
+                raise LiteratureConflictError(
+                    "dossier semantic identity cannot migrate to another protocol"
+                )
         if material.get("p2_entry_id") is not None:
             receipt = self._record_by_hash(
                 str(material["prior_emission_receipt_sha256"]), P2EmissionReceiptV1
@@ -1242,6 +1560,17 @@ class LiteratureStore:
                         "cannot freeze stale or ineligible current positive evidence: "
                         f"{claim.claim_id}:{positive_issue}"
                     )
+        relation_issues = self._dossier_evidence_relation_issues(
+            dossier, current_records
+        )
+        if relation_issues:
+            raise LiteratureConflictError(
+                "cannot freeze stale or ineligible current evidence relation: "
+                + ", ".join(
+                    f"{item['evidence_relation_id']}:{item['reason']}"
+                    for item in relation_issues
+                )
+            )
         material = self._dossier_freeze_material(dossier, freeze_id=str(supplied["freeze_id"]))
         return self._append(DossierFreezeV1, material, actor, idempotency_key, recorded_at)
 
@@ -1289,6 +1618,145 @@ class LiteratureStore:
         recorded_at: datetime | None = None,
     ) -> P2EmissionReceiptV1:
         return self._append(P2EmissionReceiptV1, dict(payload), actor, idempotency_key, recorded_at)
+
+    def complete_emission_operation(
+        self,
+        *,
+        operation_id: str,
+        snapshot_revision_sha256: str,
+        receipt_payload: Mapping[str, Any],
+        actor: ActorProvenanceV1,
+        receipt_idempotency_key: str,
+        completion_idempotency_key: str,
+        recorded_at: datetime | None = None,
+    ) -> tuple[P2EmissionReceiptV1, P2EmissionOperationRevisionV1]:
+        """Append one receipt and its owning COMPLETED revision as one validated unit."""
+
+        def materialize(
+            record_type: type[T],
+            payload: Mapping[str, Any],
+            prior: list[CanonicalRecordV1],
+            idempotency_key: str,
+        ) -> T:
+            clean = {
+                key: value
+                for key, value in dict(payload).items()
+                if key not in _MANAGED_FIELDS
+            }
+            assert_no_pnl_control_fields(clean)
+            material = {
+                **clean,
+                "schema": record_type.schema_literal,
+                "append_sequence": len(prior) + 1,
+                "previous_store_record_sha256": (
+                    prior[-1].record_sha256 if prior else None
+                ),
+                "recorded_at": recorded_at or _now(),
+                "actor": actor.model_dump(mode="json"),
+                "idempotency_key": idempotency_key,
+                "intent_sha256": "0" * 64,
+            }
+            material["record_sha256"] = record_sha256(material)
+            try:
+                provisional = record_type.model_validate_json(
+                    canonical_json_bytes(material),
+                    context=_TRUSTED_CANONICAL_WRITER_CONTEXT,
+                )
+            except ValidationError as exc:
+                raise LiteratureConflictError(str(exc)) from exc
+            intent = intent_sha256(_record_intent_material(provisional))
+            if any(item.idempotency_key == idempotency_key for item in prior):
+                raise LiteratureConflictError(
+                    f"idempotency key {idempotency_key!r} is already owned"
+                )
+            material = provisional.model_dump(mode="json", by_alias=True)
+            material["intent_sha256"] = intent
+            material["record_sha256"] = record_sha256(material)
+            try:
+                return record_type.model_validate_json(canonical_json_bytes(material))
+            except ValidationError as exc:
+                raise LiteratureConflictError(str(exc)) from exc
+
+        with self.lock(exclusive=True):
+            records = self._load_and_validate()
+            operations = [
+                item
+                for item in records
+                if isinstance(item, P2EmissionOperationRevisionV1)
+                and item.operation_id == operation_id
+            ]
+            if not operations:
+                raise LiteratureConflictError(
+                    f"p2-emissions object not found: {operation_id}"
+                )
+            operation = operations[-1]
+            if operation.state == "COMPLETED":
+                receipt = next(
+                    (
+                        item
+                        for item in records
+                        if isinstance(item, P2EmissionReceiptV1)
+                        and item.record_sha256 == operation.receipt_record_sha256
+                    ),
+                    None,
+                )
+                if receipt is None:  # pragma: no cover - full validation closes this
+                    raise LiteratureIntegrityError(
+                        "completed operation lacks its owned receipt"
+                    )
+                return receipt, operation
+            if (
+                operation.state != "SNAPSHOT_BOUND"
+                or operation.record_sha256 != snapshot_revision_sha256
+            ):
+                raise LiteratureConflictError(
+                    "emission completion requires the exact current SNAPSHOT_BOUND revision"
+                )
+
+            receipt = materialize(
+                P2EmissionReceiptV1,
+                receipt_payload,
+                records,
+                receipt_idempotency_key,
+            )
+            completion_payload = operation.model_dump(
+                mode="json",
+                by_alias=True,
+                exclude=_MANAGED_FIELDS | _REVISION_MANAGED_FIELDS,
+            )
+            completion_payload.update(
+                {
+                    "record_id": f"{operation_id}.r{operation.revision + 1:06d}",
+                    "revision": operation.revision + 1,
+                    "previous_revision_sha256": operation.record_sha256,
+                    "state": "COMPLETED",
+                    "receipt_record_sha256": receipt.record_sha256,
+                }
+            )
+            completion = materialize(
+                P2EmissionOperationRevisionV1,
+                completion_payload,
+                [*records, receipt],
+                completion_idempotency_key,
+            )
+            self._validate_pending_revision(completion, list(operations))
+            completed_records = [*records, receipt, completion]
+            self._validate_cross_record_state(completed_records)
+            receipt_relative = self._record_relative(receipt)
+            completion_relative = self._record_relative(completion)
+            exclusive_write_repository_file(
+                self.project_root, receipt_relative, canonical_json_bytes(receipt)
+            )
+            try:
+                exclusive_write_repository_file(
+                    self.project_root,
+                    completion_relative,
+                    canonical_json_bytes(completion),
+                )
+            except Exception:
+                (self.project_root / receipt_relative).unlink(missing_ok=True)
+                raise
+            return receipt, completion
 
     def put_artifact(self, data: bytes, *, kind: str) -> str:
         if kind not in {"artifacts", "extracted", "provider-traces", "codex-io"}:
@@ -1802,9 +2270,13 @@ class LiteratureStore:
                 search_revisions.setdefault(record.search_run_id, []).append(record)
 
         for history in protocol_revisions.values():
-            lineage = history[0].execution_lineage_id
-            if any(item.execution_lineage_id != lineage for item in history):
-                raise LiteratureIntegrityError("persisted protocol revision migrated execution lineage")
+            first = history[0]
+            for later in history[1:]:
+                for field in _PROTOCOL_IDENTITY_FIELDS:
+                    if getattr(later, field) != getattr(first, field):
+                        raise LiteratureIntegrityError(
+                            f"persisted protocol semantic identity changed: {field}"
+                        )
         for protocol in [item for history in protocol_revisions.values() for item in history]:
             if protocol.lineage_kind != "RESULT_INFORMED_EXTENSION":
                 continue
@@ -1874,11 +2346,15 @@ class LiteratureStore:
 
     def _validate_source_provenance_history(self, records: list[CanonicalRecordV1]) -> None:
         records_by_hash = {item.record_sha256: item for item in records}
+        works: dict[str, list[SourceIdentityRevisionV1]] = {}
         versions: dict[str, list[SourceVersionIdentityRevisionV1]] = {}
         captures: dict[str, list[SourceCaptureRevisionV1]] = {}
         relationships: dict[str, list[SourceRelationshipRevisionV1]] = {}
+        claims: dict[str, list[ClaimExtractionRevisionV1]] = {}
         for record in records:
-            if isinstance(record, SourceVersionIdentityRevisionV1):
+            if isinstance(record, SourceIdentityRevisionV1):
+                works.setdefault(record.work_id, []).append(record)
+            elif isinstance(record, SourceVersionIdentityRevisionV1):
                 versions.setdefault(record.source_version_id, []).append(record)
                 work = records_by_hash.get(record.work_revision_sha256)
                 if not isinstance(work, SourceIdentityRevisionV1) or work.work_id != record.work_id:
@@ -1894,6 +2370,7 @@ class LiteratureStore:
             elif isinstance(record, SourceRelationshipRevisionV1):
                 relationships.setdefault(record.relationship_id, []).append(record)
             elif isinstance(record, ClaimExtractionRevisionV1):
+                claims.setdefault(record.claim_id, []).append(record)
                 work = records_by_hash.get(record.work_revision_sha256)
                 version = records_by_hash.get(record.source_version_revision_sha256)
                 capture = records_by_hash.get(record.capture_revision_sha256)
@@ -1916,9 +2393,41 @@ class LiteratureStore:
                     != record.extracted_representation_sha256
                 ):
                     raise LiteratureIntegrityError("claim version-to-capture/hash provenance is inconsistent")
+        for history in works.values():
+            for previous, later in zip(history, history[1:]):
+                for key, value in previous.strong_identifiers.items():
+                    if later.strong_identifiers.get(key) != value:
+                        raise LiteratureIntegrityError(
+                            "persisted source work changed an established strong identifier"
+                        )
+                if not previous.strong_identifiers and not (
+                    set(previous.locators) & set(later.locators)
+                ):
+                    raise LiteratureIntegrityError(
+                        "persisted source work lost its locator identity anchor"
+                    )
         for history in versions.values():
-            if any(item.work_id != history[0].work_id for item in history):
-                raise LiteratureIntegrityError("persisted source version migrated to another work")
+            for previous, later in zip(history, history[1:]):
+                if later.work_id != previous.work_id:
+                    raise LiteratureIntegrityError(
+                        "persisted source version migrated to another work"
+                    )
+                if later.version_kind != previous.version_kind:
+                    raise LiteratureIntegrityError(
+                        "persisted source-version kind changed inside one identity"
+                    )
+                for key, value in previous.strong_identifiers.items():
+                    if later.strong_identifiers.get(key) != value:
+                        raise LiteratureIntegrityError(
+                            "persisted source version changed an established strong identifier"
+                        )
+                if (
+                    not previous.strong_identifiers
+                    and later.version_label != previous.version_label
+                ):
+                    raise LiteratureIntegrityError(
+                        "persisted source version without a strong identifier changed its label"
+                    )
         for history in captures.values():
             first = history[0]
             for later in history[1:]:
@@ -1927,18 +2436,171 @@ class LiteratureStore:
                         raise LiteratureIntegrityError(f"persisted capture identity changed: {field}")
         for history in relationships.values():
             first = history[0]
-            for later in history[1:]:
-                for field in ("subject_kind", "subject_id", "predicate", "object_kind", "object_id"):
+            for previous, later in zip(history, history[1:]):
+                if previous.status != "ACTIVE":
+                    raise LiteratureIntegrityError(
+                        "persisted terminal source relationship was revised"
+                    )
+                for field in _SOURCE_RELATION_IDENTITY_FIELDS:
                     if getattr(later, field) != getattr(first, field):
                         raise LiteratureIntegrityError(f"persisted source relationship identity changed: {field}")
+            for relation in history:
+                if relation.status != "SUPERSEDED":
+                    continue
+                prefix_heads: dict[str, SourceRelationshipRevisionV1] = {}
+                for candidate in records:
+                    if (
+                        isinstance(candidate, SourceRelationshipRevisionV1)
+                        and candidate.append_sequence < relation.append_sequence
+                    ):
+                        prefix_heads[candidate.relationship_id] = candidate
+                replacement = prefix_heads.get(
+                    str(relation.superseded_by_relationship_id)
+                )
+                if (
+                    replacement is None
+                    or replacement.status != "ACTIVE"
+                    or replacement.relationship_id == relation.relationship_id
+                ):
+                    raise LiteratureIntegrityError(
+                        "persisted source supersession lacks a distinct ACTIVE replacement at its prefix"
+                    )
+                if tuple(
+                    getattr(relation, field) for field in _SOURCE_RELATION_IDENTITY_FIELDS
+                ) == tuple(
+                    getattr(replacement, field)
+                    for field in _SOURCE_RELATION_IDENTITY_FIELDS
+                ):
+                    raise LiteratureIntegrityError(
+                        "persisted source supersession replacement is not semantically separate"
+                    )
+        for history in claims.values():
+            for previous, later in zip(history, history[1:]):
+                if later.work_id != previous.work_id:
+                    raise LiteratureIntegrityError(
+                        "persisted logical claim migrated to another intellectual work"
+                    )
+                if later.source_version_id == previous.source_version_id:
+                    if (
+                        later.content_sha256 != previous.content_sha256
+                        or later.extracted_representation_sha256
+                        != previous.extracted_representation_sha256
+                    ):
+                        raise LiteratureIntegrityError(
+                            "persisted same-version claim used a byte-incompatible recapture"
+                        )
+                    continue
+                prefix_heads: dict[str, SourceRelationshipRevisionV1] = {}
+                for relationship in records:
+                    if (
+                        isinstance(relationship, SourceRelationshipRevisionV1)
+                        and relationship.append_sequence < later.append_sequence
+                    ):
+                        prefix_heads[relationship.relationship_id] = relationship
+                authorized = any(
+                    relationship.status == "ACTIVE"
+                    and relationship.predicate
+                    in _CLAIM_VERSION_TRANSITION_PREDICATES
+                    and relationship.subject_kind == "SOURCE_VERSION"
+                    and relationship.subject_id == later.source_version_id
+                    and relationship.object_kind == "SOURCE_VERSION"
+                    and relationship.object_id == previous.source_version_id
+                    for relationship in prefix_heads.values()
+                )
+                if later.reliability != "CORRECTED" or not authorized:
+                    raise LiteratureIntegrityError(
+                        "persisted claim source-version migration lacks a current authoritative correction/revision relationship"
+                    )
+
+    def _validate_evidence_relation_history(
+        self, records: list[CanonicalRecordV1]
+    ) -> None:
+        histories: dict[str, list[EvidenceRelationRevisionV1]] = {}
+        for record in records:
+            if isinstance(record, EvidenceRelationRevisionV1):
+                histories.setdefault(record.evidence_relation_id, []).append(record)
+        for history in histories.values():
+            first_identity = self._evidence_relation_semantic_identity(history[0])
+            for previous, later in zip(history, history[1:]):
+                if previous.status != "ACTIVE":
+                    raise LiteratureIntegrityError(
+                        "persisted terminal evidence relation was revised"
+                    )
+                if self._evidence_relation_semantic_identity(later) != first_identity:
+                    raise LiteratureIntegrityError(
+                        "persisted evidence relation semantic identity changed"
+                    )
+            for relation in history:
+                prefix = [
+                    item
+                    for item in records
+                    if item.append_sequence <= relation.append_sequence
+                ]
+                if relation.status == "ACTIVE":
+                    issue = self._evidence_relation_issue(relation, prefix)
+                    if issue is not None:
+                        raise LiteratureIntegrityError(
+                            "persisted ACTIVE evidence relation was ineligible at its append prefix: "
+                            + issue
+                        )
+                if relation.status != "SUPERSEDED":
+                    continue
+                replacement_heads = self._evidence_relation_heads(
+                    [
+                        item
+                        for item in records
+                        if item.append_sequence < relation.append_sequence
+                    ]
+                )
+                replacement = replacement_heads.get(
+                    str(relation.superseded_by_relation_id)
+                )
+                if (
+                    replacement is None
+                    or replacement.status != "ACTIVE"
+                    or replacement.evidence_relation_id
+                    == relation.evidence_relation_id
+                ):
+                    raise LiteratureIntegrityError(
+                        "persisted evidence supersession lacks a distinct ACTIVE replacement at its prefix"
+                    )
+                if (
+                    self._evidence_relation_semantic_identity(replacement)
+                    == first_identity
+                ):
+                    raise LiteratureIntegrityError(
+                        "persisted evidence supersession replacement is not semantically separate"
+                    )
 
     def _validate_dossier_history(self, records: list[CanonicalRecordV1]) -> None:
         records_by_hash = {item.record_sha256: item for item in records}
+        dossier_protocol_ids: dict[str, str] = {}
+        dossier_heads: dict[str, EdgeDossierRevisionV1] = {}
         for record in records:
             if isinstance(record, EdgeDossierRevisionV1):
                 protocol = records_by_hash.get(record.protocol_revision_sha256)
                 if not isinstance(protocol, ResearchProtocolRevisionV1):
                     raise LiteratureIntegrityError("dossier has no exact protocol revision")
+                prior_protocol_id = dossier_protocol_ids.setdefault(
+                    record.dossier_id, protocol.protocol_id
+                )
+                if (
+                    protocol.protocol_id != prior_protocol_id
+                    or record.execution_lineage_id != protocol.execution_lineage_id
+                ):
+                    raise LiteratureIntegrityError(
+                        "persisted dossier migrated to another protocol semantic identity"
+                    )
+                previous_dossier = dossier_heads.get(record.dossier_id)
+                if (
+                    previous_dossier is not None
+                    and previous_dossier.p2_entry_id is not None
+                    and record.p2_entry_id != previous_dossier.p2_entry_id
+                ):
+                    raise LiteratureIntegrityError(
+                        "persisted emitted dossier changed canonical P2 entry identity"
+                    )
+                dossier_heads[record.dossier_id] = record
                 prior_records = [item for item in records if item.append_sequence < record.append_sequence]
                 expected_completions = self._derive_lane_completions(protocol, prior_records)
                 actual_completions = [item.model_dump(mode="json") for item in record.lane_completions]
@@ -1968,6 +2630,29 @@ class LiteratureStore:
                     if positive_issue is not None:
                         raise LiteratureIntegrityError(
                             "persisted dossier used a stale or ineligible positive claim at append prefix"
+                        )
+                for reference in record.evidence_relation_refs:
+                    relation = records_by_hash.get(reference.record_sha256)
+                    if (
+                        not isinstance(relation, EvidenceRelationRevisionV1)
+                        or relation.record_id != reference.record_id
+                    ):
+                        raise LiteratureIntegrityError(
+                            "persisted dossier evidence-relation identity/hash mismatch"
+                        )
+                    relation_issue = self._evidence_relation_issue(
+                        relation, prior_records
+                    )
+                    if relation_issue is not None:
+                        raise LiteratureIntegrityError(
+                            "persisted dossier used a stale or ineligible evidence relation at append prefix"
+                        )
+                    if any(
+                        (item.record_id, item.record_sha256) not in claim_set
+                        for item in relation.claim_refs
+                    ):
+                        raise LiteratureIntegrityError(
+                            "persisted dossier evidence relation used a claim outside its exact claim set"
                         )
                 nested_refs = [
                     reference
@@ -2005,10 +2690,15 @@ class LiteratureStore:
                             raise LiteratureIntegrityError(
                                 "persisted freeze bound stale or ineligible positive evidence at append prefix"
                             )
+                if self._dossier_evidence_relation_issues(dossier, prior_records):
+                    raise LiteratureIntegrityError(
+                        "persisted freeze bound stale or ineligible evidence relation at append prefix"
+                    )
 
     def _validate_cross_record_state(self, records: list[CanonicalRecordV1]) -> None:
         self._validate_protocol_search_history(records)
         self._validate_source_provenance_history(records)
+        self._validate_evidence_relation_history(records)
         self._validate_dossier_history(records)
         hashes = {record.record_sha256 for record in records}
         records_by_hash = {record.record_sha256: record for record in records}
@@ -2112,29 +2802,85 @@ class LiteratureStore:
                         "first P2 evidence reservation must be owned by its PREPARED operation"
                     )
                 reservations[item.canonical_source_version_id] = identity
-        for record in records:
-            if not isinstance(record, P2EmissionReceiptV1):
+        self._validate_receipt_ownership(records, records_by_hash, operation_histories)
+
+    def _validate_receipt_ownership(
+        self,
+        records: list[CanonicalRecordV1],
+        records_by_hash: dict[str, CanonicalRecordV1],
+        operation_histories: dict[str, list[P2EmissionOperationRevisionV1]],
+    ) -> None:
+        receipts_by_operation: dict[str, list[P2EmissionReceiptV1]] = {}
+        for receipt in records:
+            if not isinstance(receipt, P2EmissionReceiptV1):
                 continue
-            operation = records_by_hash.get(record.operation_revision_sha256)
-            if not isinstance(operation, P2EmissionOperationRevisionV1) or operation.state != "SNAPSHOT_BOUND":
-                raise LiteratureIntegrityError("emission receipt must bind an exact SNAPSHOT_BOUND operation")
-            for field in (
-                "operation_id",
-                "freeze_id",
-                "freeze_record_sha256",
-                "reservations",
-                "observation_bindings",
-                "entry_binding",
-                "duplicate_snapshot",
-                "dependency_impacts",
-                "dependency_entry_bindings",
-                "prior_staled_decision_sha256",
-                "search_completion_status",
-                "unsatisfied_lanes",
-                "operational_status",
+            receipts_by_operation.setdefault(receipt.operation_id, []).append(receipt)
+            operation = records_by_hash.get(receipt.operation_revision_sha256)
+            if (
+                not isinstance(operation, P2EmissionOperationRevisionV1)
+                or operation.state != "SNAPSHOT_BOUND"
+                or operation.operation_id != receipt.operation_id
             ):
-                if getattr(record, field) != getattr(operation, field):
-                    raise LiteratureIntegrityError(f"emission receipt does not repeat operation field: {field}")
+                raise LiteratureIntegrityError(
+                    "emission receipt must bind an exact SNAPSHOT_BOUND revision of the same operation"
+                )
+            for field in _RECEIPT_OPERATION_FIELDS:
+                if getattr(receipt, field) != getattr(operation, field):
+                    raise LiteratureIntegrityError(
+                        f"emission receipt does not repeat operation field: {field}"
+                    )
+
+        used_receipts: set[str] = set()
+        for operation_id, history in operation_histories.items():
+            completed = [item for item in history if item.state == "COMPLETED"]
+            receipts = receipts_by_operation.get(operation_id, [])
+            if not completed:
+                if receipts:
+                    raise LiteratureIntegrityError(
+                        "orphan emission receipt has no completed owning operation"
+                    )
+                continue
+            if len(completed) != 1 or completed[0] is not history[-1]:
+                raise LiteratureIntegrityError(
+                    "emission operation must have exactly one final COMPLETED revision"
+                )
+            if len(receipts) != 1:
+                raise LiteratureIntegrityError(
+                    "completed emission operation must own exactly one receipt"
+                )
+            completion = completed[0]
+            receipt = receipts[0]
+            if len(history) < 2:
+                raise LiteratureIntegrityError(
+                    "completed emission operation lacks a preceding revision"
+                )
+            preceding = history[-2]
+            if (
+                preceding.state != "SNAPSHOT_BOUND"
+                or receipt.operation_revision_sha256 != preceding.record_sha256
+                or completion.previous_revision_sha256 != preceding.record_sha256
+                or completion.receipt_record_sha256 != receipt.record_sha256
+                or not (
+                    preceding.append_sequence
+                    < receipt.append_sequence
+                    < completion.append_sequence
+                )
+            ):
+                raise LiteratureIntegrityError(
+                    "completed emission receipt does not bind its immediately preceding exact SNAPSHOT_BOUND revision"
+                )
+            if receipt.record_sha256 in used_receipts:
+                raise LiteratureIntegrityError(
+                    "one emission receipt cannot satisfy two completed operations"
+                )
+            used_receipts.add(receipt.record_sha256)
+
+        known_operation_ids = set(operation_histories)
+        orphan_ids = set(receipts_by_operation) - known_operation_ids
+        if orphan_ids:
+            raise LiteratureIntegrityError(
+                "orphan emission receipt references an unknown operation"
+            )
 
     def _validate_prepared_emission(
         self,
@@ -2165,9 +2911,11 @@ class LiteratureStore:
         operation_prefix = [
             item for item in records if item.append_sequence < operation.append_sequence
         ]
-        if self._dossier_positive_claim_issues(dossier, operation_prefix):
+        if self._dossier_positive_claim_issues(
+            dossier, operation_prefix
+        ) or self._dossier_evidence_relation_issues(dossier, operation_prefix):
             raise LiteratureIntegrityError(
-                "prepared emission used a stale or ineligible positive claim head"
+                "prepared emission used stale or ineligible current research meaning"
             )
         if operation.search_completion_status != dossier.search_completion_status:
             raise LiteratureIntegrityError("prepared operation altered dossier search completion status")

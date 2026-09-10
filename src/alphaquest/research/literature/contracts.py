@@ -333,6 +333,8 @@ class SearchRunRevisionV1(RevisionRecordV1):
             raise ValueError(
                 "failed search runs cannot contribute capture attempts; use PARTIAL for usable results"
             )
+        if self.status in {"FAILED", "ABANDONED_AFTER_CRASH"} and self.saturation_claimed:
+            raise ValueError("failed search runs cannot claim saturation")
         if self.status == "STARTED" and any(
             (
                 self.results_inspected,
@@ -991,8 +993,8 @@ class P2EmissionOperationRevisionV1(RevisionRecordV1):
             raise ValueError("BLOCKED state and emission action must agree")
         if self.state == "CONFLICT" and not self.conflict_reason:
             raise ValueError("conflicted operation requires reason")
-        if self.state == "COMPLETED" and self.receipt_record_sha256 is None:
-            raise ValueError("completed operation requires receipt binding")
+        if (self.state == "COMPLETED") != (self.receipt_record_sha256 is not None):
+            raise ValueError("receipt binding must appear exactly in COMPLETED state")
         return self
 
 
