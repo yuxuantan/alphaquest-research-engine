@@ -119,6 +119,22 @@ _CAPTURE_TERMINAL_FIELDS = {
     "extractor_config_sha256",
     "failure_reason",
 }
+_CODEX_ATTEMPT_IDENTITY_FIELDS = (
+    "task_type",
+    "model",
+    "settings_sha256",
+    "prompt_sha256",
+    "input_manifest_sha256",
+    "workspace_manifest_sha256",
+    "referenced_records",
+    "isolation_backend",
+)
+_CODEX_ATTEMPT_TERMINAL_STATUSES = {
+    "SUCCEEDED",
+    "FAILED",
+    "INVALID_OUTPUT",
+    "ABANDONED_AFTER_CRASH",
+}
 _PROTOCOL_IDENTITY_FIELDS = {
     "execution_lineage_id",
     "lineage_kind",
@@ -214,6 +230,7 @@ class LiteratureStore:
     def validate(self, *, verify_artifacts: bool = True) -> dict[str, Any]:
         with self.lock(exclusive=False):
             records = self._load_and_validate()
+            recoverable_tail = self._recoverable_completion_tail(records)
             missing: list[str] = []
             if verify_artifacts:
                 for record in records:
@@ -243,15 +260,43 @@ class LiteratureStore:
                 counts[type(record).family] += 1
             unresolved = self._current_invalid_claim_dependencies(records)
             freeze_eligibility = self._freeze_emission_eligibility(records)
+            tail_payload = (
+                {
+                    "operation_id": recoverable_tail.operation_id,
+                    "operation_revision_sha256": recoverable_tail.operation_revision_sha256,
+                    "receipt_id": recoverable_tail.receipt_id,
+                    "receipt_record_sha256": recoverable_tail.record_sha256,
+                }
+                if recoverable_tail is not None
+                else None
+            )
             return {
                 "schema": "alphaquest.literature-validation/v1",
-                "status": "PASS",
+                "status": (
+                    "RECOVERABLE_INCOMPLETE_EMISSION"
+                    if recoverable_tail is not None
+                    else "PASS"
+                ),
+                "structural_status": "PASS",
                 "operational_status": (
-                    "NEEDS_MANUAL_REVIEW" if unresolved else "CURRENT_RESEARCH_CLEAN"
+                    "RECOVERABLE_INCOMPLETE_EMISSION"
+                    if recoverable_tail is not None
+                    else (
+                        "NEEDS_MANUAL_REVIEW"
+                        if unresolved
+                        else "CURRENT_RESEARCH_CLEAN"
+                    )
                 ),
                 "operational_reason": (
-                    "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY" if unresolved else None
+                    "RECOVERABLE_COMPLETION_TAIL"
+                    if recoverable_tail is not None
+                    else (
+                        "UNRESOLVED_INVALID_EVIDENCE_DEPENDENCY"
+                        if unresolved
+                        else None
+                    )
                 ),
+                "recoverable_completion_tail": tail_payload,
                 "unresolved_dependency_impacts": unresolved,
                 "freeze_emission_eligibility": freeze_eligibility,
                 "record_count": len(records),
@@ -1526,7 +1571,35 @@ class LiteratureStore:
         return self._append_revision(EdgeDossierRevisionV1, "dossier_id", material, **kwargs)
 
     def append_codex_attempt(self, payload: Mapping[str, Any], **kwargs: Any) -> CodexTaskAttemptRevisionV1:
-        return self._append_revision(CodexTaskAttemptRevisionV1, "attempt_id", payload, **kwargs)
+        material = dict(payload)
+        attempt_id = str(material["attempt_id"])
+        previous = self._latest_optional(CodexTaskAttemptRevisionV1, attempt_id)
+        status = str(material["status"])
+        if previous is None:
+            if status not in {"STARTED", "REJECTED_PROCESSING_PERMISSION"}:
+                raise LiteratureConflictError(
+                    "first Codex attempt revision must be STARTED or a one-shot processing-permission rejection"
+                )
+        else:
+            if previous.status != "STARTED":
+                raise LiteratureConflictError(
+                    "terminal Codex attempt cannot be revised"
+                )
+            if status not in _CODEX_ATTEMPT_TERMINAL_STATUSES:
+                raise LiteratureConflictError(
+                    "STARTED Codex attempt requires exactly one terminal outcome"
+                )
+            previous_identity = previous.model_dump(
+                mode="json", include=set(_CODEX_ATTEMPT_IDENTITY_FIELDS)
+            )
+            for field in _CODEX_ATTEMPT_IDENTITY_FIELDS:
+                if material.get(field) != previous_identity[field]:
+                    raise LiteratureConflictError(
+                        f"Codex attempt execution identity cannot change: {field}"
+                    )
+        return self._append_revision(
+            CodexTaskAttemptRevisionV1, "attempt_id", material, **kwargs
+        )
 
     def freeze_dossier(
         self,
@@ -1630,13 +1703,15 @@ class LiteratureStore:
         completion_idempotency_key: str,
         recorded_at: datetime | None = None,
     ) -> tuple[P2EmissionReceiptV1, P2EmissionOperationRevisionV1]:
-        """Append one receipt and its owning COMPLETED revision as one validated unit."""
+        """Durably stage one receipt, then append or recover its deterministic completion."""
 
         def materialize(
             record_type: type[T],
             payload: Mapping[str, Any],
             prior: list[CanonicalRecordV1],
             idempotency_key: str,
+            record_actor: ActorProvenanceV1,
+            record_time: datetime,
         ) -> T:
             clean = {
                 key: value
@@ -1651,8 +1726,8 @@ class LiteratureStore:
                 "previous_store_record_sha256": (
                     prior[-1].record_sha256 if prior else None
                 ),
-                "recorded_at": recorded_at or _now(),
-                "actor": actor.model_dump(mode="json"),
+                "recorded_at": record_time,
+                "actor": record_actor.model_dump(mode="json"),
                 "idempotency_key": idempotency_key,
                 "intent_sha256": "0" * 64,
             }
@@ -1679,6 +1754,24 @@ class LiteratureStore:
 
         with self.lock(exclusive=True):
             records = self._load_and_validate()
+            recoverable_tail = self._recoverable_completion_tail(records)
+            if (
+                recoverable_tail is not None
+                and recoverable_tail.operation_id != operation_id
+            ):
+                raise LiteratureConflictError(
+                    "another recoverable completion tail must be reconciled first: "
+                    f"{recoverable_tail.operation_id}"
+                )
+            expected_receipt_key = f"{operation_id}.receipt"
+            expected_completion_key = f"{operation_id}.completed"
+            if (
+                receipt_idempotency_key != expected_receipt_key
+                or completion_idempotency_key != expected_completion_key
+            ):
+                raise LiteratureConflictError(
+                    "emission completion idempotency keys are deterministic"
+                )
             operations = [
                 item
                 for item in records
@@ -1713,12 +1806,36 @@ class LiteratureStore:
                     "emission completion requires the exact current SNAPSHOT_BOUND revision"
                 )
 
-            receipt = materialize(
-                P2EmissionReceiptV1,
-                receipt_payload,
-                records,
-                receipt_idempotency_key,
-            )
+            if recoverable_tail is None:
+                receipt_time = recorded_at or _now()
+                receipt = materialize(
+                    P2EmissionReceiptV1,
+                    receipt_payload,
+                    records,
+                    receipt_idempotency_key,
+                    actor,
+                    receipt_time,
+                )
+                records_before_completion = [*records, receipt]
+            else:
+                receipt = recoverable_tail
+                clean_receipt_payload = {
+                    key: value
+                    for key, value in dict(receipt_payload).items()
+                    if key not in _MANAGED_FIELDS
+                }
+                persisted_receipt_payload = receipt.model_dump(
+                    mode="json", by_alias=True, exclude=_MANAGED_FIELDS
+                )
+                if (
+                    canonical_json_bytes(clean_receipt_payload)
+                    != canonical_json_bytes(persisted_receipt_payload)
+                    or receipt.idempotency_key != receipt_idempotency_key
+                ):
+                    raise LiteratureIntegrityError(
+                        "recoverable completion tail differs from the deterministic receipt"
+                    )
+                records_before_completion = records
             completion_payload = operation.model_dump(
                 mode="json",
                 by_alias=True,
@@ -1736,26 +1853,30 @@ class LiteratureStore:
             completion = materialize(
                 P2EmissionOperationRevisionV1,
                 completion_payload,
-                [*records, receipt],
+                records_before_completion,
                 completion_idempotency_key,
+                receipt.actor,
+                receipt.recorded_at,
             )
             self._validate_pending_revision(completion, list(operations))
-            completed_records = [*records, receipt, completion]
-            self._validate_cross_record_state(completed_records)
-            receipt_relative = self._record_relative(receipt)
+            completed_records = [*records_before_completion, completion]
+            if self._validate_cross_record_state(completed_records) is not None:
+                raise LiteratureIntegrityError(
+                    "completed emission still exposes a recoverable receipt tail"
+                )
             completion_relative = self._record_relative(completion)
-            exclusive_write_repository_file(
-                self.project_root, receipt_relative, canonical_json_bytes(receipt)
-            )
-            try:
+            if recoverable_tail is None:
+                receipt_relative = self._record_relative(receipt)
                 exclusive_write_repository_file(
                     self.project_root,
-                    completion_relative,
-                    canonical_json_bytes(completion),
+                    receipt_relative,
+                    canonical_json_bytes(receipt),
                 )
-            except Exception:
-                (self.project_root / receipt_relative).unlink(missing_ok=True)
-                raise
+            exclusive_write_repository_file(
+                self.project_root,
+                completion_relative,
+                canonical_json_bytes(completion),
+            )
             return receipt, completion
 
     def put_artifact(self, data: bytes, *, kind: str) -> str:
@@ -1817,6 +1938,12 @@ class LiteratureStore:
         assert_no_pnl_control_fields(clean)
         with self.lock(exclusive=True):
             records = self._load_and_validate()
+            recoverable_tail = self._recoverable_completion_tail(records)
+            if recoverable_tail is not None:
+                raise LiteratureConflictError(
+                    "recoverable completion tail must be reconciled before any canonical append: "
+                    f"{recoverable_tail.operation_id}@{recoverable_tail.record_sha256}"
+                )
             sequence = len(records) + 1
             material = {
                 **clean,
@@ -1851,7 +1978,11 @@ class LiteratureStore:
                 raise LiteratureConflictError(str(exc)) from exc
             if isinstance(record, RevisionRecordV1):
                 self._validate_pending_revision(record, records)
-            self._validate_cross_record_state([*records, record])
+            new_tail = self._validate_cross_record_state([*records, record])
+            if new_tail is not None:
+                raise LiteratureConflictError(
+                    "emission receipt may only be staged by the deterministic completion writer"
+                )
             relative = self._record_relative(record)
             exclusive_write_repository_file(self.project_root, relative, canonical_json_bytes(record))
             return record
@@ -2512,6 +2643,48 @@ class LiteratureStore:
                         "persisted claim source-version migration lacks a current authoritative correction/revision relationship"
                     )
 
+    def _validate_codex_attempt_history(
+        self, records: list[CanonicalRecordV1]
+    ) -> None:
+        histories: dict[str, list[CodexTaskAttemptRevisionV1]] = {}
+        for record in records:
+            if isinstance(record, CodexTaskAttemptRevisionV1):
+                histories.setdefault(record.attempt_id, []).append(record)
+        for history in histories.values():
+            first = history[0]
+            if first.status == "REJECTED_PROCESSING_PERMISSION":
+                if len(history) != 1:
+                    raise LiteratureIntegrityError(
+                        "persisted one-shot processing-permission rejection was revised"
+                    )
+                continue
+            if first.status != "STARTED":
+                raise LiteratureIntegrityError(
+                    "persisted Codex attempt did not begin in STARTED"
+                )
+            if len(history) > 2:
+                raise LiteratureIntegrityError(
+                    "persisted Codex attempt has more than one terminal revision"
+                )
+            if len(history) == 1:
+                continue
+            terminal = history[1]
+            if terminal.status not in _CODEX_ATTEMPT_TERMINAL_STATUSES:
+                raise LiteratureIntegrityError(
+                    "persisted STARTED Codex attempt lacks one valid terminal outcome"
+                )
+            first_identity = first.model_dump(
+                mode="json", include=set(_CODEX_ATTEMPT_IDENTITY_FIELDS)
+            )
+            terminal_identity = terminal.model_dump(
+                mode="json", include=set(_CODEX_ATTEMPT_IDENTITY_FIELDS)
+            )
+            for field in _CODEX_ATTEMPT_IDENTITY_FIELDS:
+                if terminal_identity[field] != first_identity[field]:
+                    raise LiteratureIntegrityError(
+                        f"persisted Codex attempt execution identity changed: {field}"
+                    )
+
     def _validate_evidence_relation_history(
         self, records: list[CanonicalRecordV1]
     ) -> None:
@@ -2695,9 +2868,12 @@ class LiteratureStore:
                         "persisted freeze bound stale or ineligible evidence relation at append prefix"
                     )
 
-    def _validate_cross_record_state(self, records: list[CanonicalRecordV1]) -> None:
+    def _validate_cross_record_state(
+        self, records: list[CanonicalRecordV1]
+    ) -> P2EmissionReceiptV1 | None:
         self._validate_protocol_search_history(records)
         self._validate_source_provenance_history(records)
+        self._validate_codex_attempt_history(records)
         self._validate_evidence_relation_history(records)
         self._validate_dossier_history(records)
         hashes = {record.record_sha256 for record in records}
@@ -2802,14 +2978,28 @@ class LiteratureStore:
                         "first P2 evidence reservation must be owned by its PREPARED operation"
                     )
                 reservations[item.canonical_source_version_id] = identity
-        self._validate_receipt_ownership(records, records_by_hash, operation_histories)
+        return self._validate_receipt_ownership(
+            records, records_by_hash, operation_histories
+        )
+
+    def _recoverable_completion_tail(
+        self, records: list[CanonicalRecordV1]
+    ) -> P2EmissionReceiptV1 | None:
+        records_by_hash = {record.record_sha256: record for record in records}
+        operation_histories: dict[str, list[P2EmissionOperationRevisionV1]] = {}
+        for record in records:
+            if isinstance(record, P2EmissionOperationRevisionV1):
+                operation_histories.setdefault(record.operation_id, []).append(record)
+        return self._validate_receipt_ownership(
+            records, records_by_hash, operation_histories
+        )
 
     def _validate_receipt_ownership(
         self,
         records: list[CanonicalRecordV1],
         records_by_hash: dict[str, CanonicalRecordV1],
         operation_histories: dict[str, list[P2EmissionOperationRevisionV1]],
-    ) -> None:
+    ) -> P2EmissionReceiptV1 | None:
         receipts_by_operation: dict[str, list[P2EmissionReceiptV1]] = {}
         for receipt in records:
             if not isinstance(receipt, P2EmissionReceiptV1):
@@ -2831,14 +3021,30 @@ class LiteratureStore:
                     )
 
         used_receipts: set[str] = set()
+        recoverable_tail: P2EmissionReceiptV1 | None = None
         for operation_id, history in operation_histories.items():
             completed = [item for item in history if item.state == "COMPLETED"]
             receipts = receipts_by_operation.get(operation_id, [])
             if not completed:
                 if receipts:
-                    raise LiteratureIntegrityError(
-                        "orphan emission receipt has no completed owning operation"
-                    )
+                    if len(receipts) != 1:
+                        raise LiteratureIntegrityError(
+                            "incomplete emission operation has more than one receipt"
+                        )
+                    receipt = receipts[0]
+                    current = history[-1]
+                    if (
+                        recoverable_tail is not None
+                        or current.state != "SNAPSHOT_BOUND"
+                        or receipt.operation_revision_sha256
+                        != current.record_sha256
+                        or receipt.record_sha256 != records[-1].record_sha256
+                        or receipt.append_sequence != len(records)
+                    ):
+                        raise LiteratureIntegrityError(
+                            "orphan emission receipt is not the exact recoverable completion tail"
+                        )
+                    recoverable_tail = receipt
                 continue
             if len(completed) != 1 or completed[0] is not history[-1]:
                 raise LiteratureIntegrityError(
@@ -2881,6 +3087,7 @@ class LiteratureStore:
             raise LiteratureIntegrityError(
                 "orphan emission receipt references an unknown operation"
             )
+        return recoverable_tail
 
     def _validate_prepared_emission(
         self,

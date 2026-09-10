@@ -21,6 +21,7 @@ from alphaquest.research.literature.contracts import (
     DossierFreezeV1,
     EdgeDossierRevisionV1,
     LiteratureConflictError,
+    LiteratureIntegrityError,
     P2DependencyImpactV1,
     P2EntryPlanV1,
     P2EmissionOperationRevisionV1,
@@ -586,16 +587,33 @@ def emit_prepared(
 
     literature = LiteratureStore(project_root)
     backlog = EdgeBacklogStore(project_root)
-    operation = literature.latest(P2EmissionOperationRevisionV1, operation_id)
+    records = literature.records()
+    recoverable_tail = literature._recoverable_completion_tail(records)
+    if (
+        recoverable_tail is not None
+        and recoverable_tail.operation_id != operation_id
+    ):
+        raise LiteratureConflictError(
+            "recoverable completion tail must be reconciled before another emission: "
+            f"{recoverable_tail.operation_id}"
+        )
+    operations = [
+        item
+        for item in records
+        if isinstance(item, P2EmissionOperationRevisionV1)
+        and item.operation_id == operation_id
+    ]
+    if not operations:
+        raise LiteratureConflictError(f"p2-emissions object not found: {operation_id}")
+    operation = operations[-1]
     if operation.state == "BLOCKED":
         return operation
     if operation.state == "CONFLICT":
         raise LiteratureConflictError(str(operation.conflict_reason))
     if operation.state == "COMPLETED":
-        records = literature.records()
         return _by_hash(records, str(operation.receipt_record_sha256), P2EmissionReceiptV1)
     freeze = _by_hash(
-        literature.records(), operation.freeze_record_sha256, DossierFreezeV1
+        records, operation.freeze_record_sha256, DossierFreezeV1
     )
     literature.assert_freeze_emission_eligible(freeze)
 
@@ -866,10 +884,23 @@ def reconcile_emission(
 ) -> P2EmissionReceiptV1 | P2EmissionOperationRevisionV1:
     """Validate both stores, then resume the deterministic transaction."""
 
-    LiteratureStore(project_root).validate()
+    validation = LiteratureStore(project_root).validate()
+    recoverable_tail = validation["recoverable_completion_tail"]
+    if (
+        recoverable_tail is not None
+        and recoverable_tail["operation_id"] != operation_id
+    ):
+        raise LiteratureConflictError(
+            "reconciliation must complete the exact recoverable tail first: "
+            f"{recoverable_tail['operation_id']}"
+        )
     EdgeBacklogStore(project_root).validate()
     result = emit_prepared(project_root, operation_id=operation_id, actor=actor)
-    LiteratureStore(project_root).validate()
+    completed_validation = LiteratureStore(project_root).validate()
+    if completed_validation["status"] != "PASS":
+        raise LiteratureIntegrityError(
+            "emission reconciliation did not restore a fully completed P3 store"
+        )
     EdgeBacklogStore(project_root).validate()
     return result
 

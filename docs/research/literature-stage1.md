@@ -63,6 +63,7 @@ object into an existing stable ID. The semantic-identity boundary is explicit:
 | claim | intellectual work ID | proposition, reliability and provenance only through the allowed recapture/version transitions below |
 | evidence relation | predicate, ordered logical claim IDs, direct/inferred basis | rationale, exact current claim revisions, lifecycle status, replacement binding |
 | dossier | protocol logical ID and execution lineage; P2 entry ID once emitted | current claims, relations, descriptors, taxonomy and lifecycle-linked synthesis |
+| Codex task attempt | task type, model, settings/prompt/input/workspace hashes, ordered record references, isolation backend | one `STARTED` revision followed by exactly one terminal outcome, or one immutable pre-execution permission rejection |
 | P2 emission operation | complete prepared transaction identity and outputs already written at each stage | only the closed forward state machine and its stage-specific derived bindings |
 
 Append APIs and full persisted reload independently enforce the same identity
@@ -254,17 +255,35 @@ dependencies have actually been revised.
    links, then create or revise the entry.
 5. Compute a self-excluding duplicate snapshot at `before_append_sequence`, so
    later P2 records cannot leak into its universe.
-6. Validate and publish the receipt plus owning `COMPLETED` revision as one
-   locked pair.
+6. Validate the exact transaction outputs, durably append and fsync the receipt,
+   then durably append and fsync its owning `COMPLETED` revision.
 
-A crash after any step is recoverable from exact task-authored P2 records and
-the journal. State changes and payload collisions become conflicts. Full P3
-validation resolves each written observation and entry binding in P2 and
-reconstructs the complete duplicate snapshot at the exact prefix, including
-the historical universe and ordered candidate bindings. Missing P2 authority
-is an explicit semantic-dependency failure, never an ordinary validation pass.
+The two final records are separate append-only files; the lock does not make
+their filesystem publication atomic. Each canonical write fsyncs the file and
+then its parent directory. A crash before the receipt is committed leaves the
+valid `SNAPSHOT_BOUND` state. A crash after `COMPLETED` is committed leaves the
+valid completed state. The only accepted intermediate state is
+`RECOVERABLE_COMPLETION_TAIL`: the receipt is the final global append, owns the
+exact current `SNAPSHOT_BOUND` revision, repeats every transaction output, is
+unique and unused, and has no `COMPLETED` successor. Any mismatch, other orphan
+receipt, or later record remains an integrity failure.
+
+Full P3 validation resolves each written observation and entry binding in P2
+and reconstructs the complete duplicate snapshot at the exact prefix,
+including the historical universe and ordered candidate bindings. A valid
+completion tail therefore reports structurally valid but operationally
+`RECOVERABLE_INCOMPLETE_EMISSION`, with the exact operation and receipt
+identity; it does not report ordinary `PASS`. Missing P2 authority is an
+explicit semantic-dependency failure, never a recoverable or ordinary pass.
 Once a binding or snapshot enters the journal it is immutable across later
 stages.
+
+Reconciliation reloads and revalidates both stores and every receipt ownership
+field, then appends only the deterministic `COMPLETED` successor using the
+receipt's existing audit metadata. It never deletes or rewrites the receipt,
+creates a second receipt, or restarts P2 publication. While a recoverable tail
+exists, all unrelated canonical P3 appends are rejected until that exact
+operation is reconciled.
 
 A receipt is not trusted merely because its bytes and referenced snapshot are
 valid. Full reload reconstructs ownership from canonical history: every
@@ -272,10 +291,11 @@ completed operation owns exactly one receipt, every receipt belongs to exactly
 one completed operation, and that receipt binds the operation's immediately
 preceding exact `SNAPSHOT_BOUND` revision. Freeze, reservations, observations,
 entry, dependency impacts and bindings, duplicate snapshot, gaps, and
-operational status must repeat that revision exactly. Orphans, duplicates,
-cross-operation swaps, early receipt bindings, and receipts for older operation
-revisions are invalid. Retrying an already completed emission runs this same
-full ownership validation before returning its receipt.
+operational status must repeat that revision exactly. Except for the narrowly
+defined final recoverable tail above, orphans, duplicates, cross-operation
+swaps, early receipt bindings, and receipts for older operation revisions are
+invalid. Retrying an already completed emission runs this same full ownership
+validation before returning its receipt.
 
 Search and capture start/completion calls check idempotency before lifecycle
 rejection. An identical retry, including after reload, returns the original

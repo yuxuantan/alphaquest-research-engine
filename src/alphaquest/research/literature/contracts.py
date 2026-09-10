@@ -800,8 +800,36 @@ class CodexTaskAttemptRevisionV1(RevisionRecordV1):
     def validate_attempt(self) -> "CodexTaskAttemptRevisionV1":
         if self.record_id != f"{self.attempt_id}.r{self.revision:06d}":
             raise ValueError("attempt record_id mismatch")
-        if self.status != "SUCCEEDED" and self.status != "STARTED" and not self.failure_reason:
-            raise ValueError("failed/rejected attempt requires failure_reason")
+        if self.status == "REJECTED_PROCESSING_PERMISSION":
+            if self.model is not None or self.workspace_manifest_sha256 is not None:
+                raise ValueError(
+                    "processing-permission rejection cannot claim a model or workspace invocation"
+                )
+            if self.output_sha256 is not None:
+                raise ValueError(
+                    "processing-permission rejection cannot claim model output"
+                )
+            if self.isolation_backend != "NOT_INVOKED_PROCESSING_PERMISSION":
+                raise ValueError(
+                    "processing-permission rejection requires the non-invocation backend sentinel"
+                )
+            if not self.failure_reason:
+                raise ValueError("processing-permission rejection requires a reason")
+            return self
+        if self.model is None or not self.model.strip():
+            raise ValueError("invoked Codex attempt requires a model identity")
+        if self.workspace_manifest_sha256 is None:
+            raise ValueError("invoked Codex attempt requires a workspace manifest")
+        if self.isolation_backend == "NOT_INVOKED_PROCESSING_PERMISSION":
+            raise ValueError("invoked Codex attempt cannot use the non-invocation backend sentinel")
+        if self.status == "STARTED":
+            if self.output_sha256 is not None or self.failure_reason is not None:
+                raise ValueError("STARTED attempt cannot claim terminal outcome fields")
+        elif self.status == "SUCCEEDED":
+            if self.output_sha256 is None or self.failure_reason is not None:
+                raise ValueError("SUCCEEDED attempt requires output and forbids failure reason")
+        elif not self.failure_reason:
+            raise ValueError("failed attempt requires failure_reason")
         return self
 
 
