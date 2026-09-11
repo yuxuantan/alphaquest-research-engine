@@ -14,13 +14,18 @@ from typing import Any, Iterator, Mapping, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from alphaquest.research.edge_backlog_io import (
-    exclusive_write_repository_file,
     read_repository_file,
     read_repository_file_optional,
     repository_directory_fd,
     repository_file_lock,
 )
-from alphaquest.research.literature.publication import publish_canonical_record
+from alphaquest.research.literature.publication import (
+    publish_canonical_record,
+    publish_runtime_artifact,
+    quarantine_runtime_artifact,
+    recover_canonical_record,
+    recover_runtime_artifact,
+)
 from alphaquest.research.literature.contracts import (
     CANONICAL_RECORD_TYPES,
     SCHEMA_TYPES,
@@ -1871,6 +1876,16 @@ class LiteratureStore:
                     raise LiteratureConflictError(
                         "completed emission retry differs from the persisted receipt intent"
                     )
+                recover_canonical_record(
+                    self.project_root,
+                    self._record_relative(receipt),
+                    canonical_json_bytes(receipt),
+                )
+                recover_canonical_record(
+                    self.project_root,
+                    self._record_relative(operation),
+                    canonical_json_bytes(operation),
+                )
                 return receipt, operation
             if (
                 operation.state != "SNAPSHOT_BOUND"
@@ -1909,6 +1924,11 @@ class LiteratureStore:
                     raise LiteratureIntegrityError(
                         "recoverable completion tail differs from the deterministic receipt"
                     )
+                recover_canonical_record(
+                    self.project_root,
+                    self._record_relative(receipt),
+                    canonical_json_bytes(receipt),
+                )
                 records_before_completion = records
             completion_payload = operation.model_dump(
                 mode="json",
@@ -1992,11 +2012,48 @@ class LiteratureStore:
         with self.lock(exclusive=True):
             existing = read_repository_file_optional(self.project_root, relative)
             if existing is not None:
-                if existing != data:
-                    raise LiteratureIntegrityError("content-addressed artifact collision")
-                return digest
-            exclusive_write_repository_file(self.project_root, relative, data)
+                if existing == data:
+                    recover_runtime_artifact(self.project_root, relative, data)
+                    return digest
+                records = self._load_and_validate()
+                if self._artifact_is_referenced(records, digest=digest, kind=kind):
+                    raise LiteratureIntegrityError(
+                        "referenced content-addressed artifact has wrong bytes"
+                    )
+                quarantine_runtime_artifact(self.project_root, relative, existing)
+            try:
+                publish_runtime_artifact(self.project_root, relative, data)
+            except FileExistsError as exc:
+                raise LiteratureIntegrityError(
+                    "content-addressed artifact collision"
+                ) from exc
         return digest
+
+    @staticmethod
+    def _artifact_is_referenced(
+        records: list[CanonicalRecordV1],
+        *,
+        digest: str,
+        kind: str,
+    ) -> bool:
+        reference_fields = {
+            "artifacts": {"content_sha256"},
+            "extracted": {"extracted_representation_sha256"},
+            "provider-traces": {"provider_trace_sha256"},
+            "codex-io": {
+                "settings_sha256",
+                "prompt_sha256",
+                "input_manifest_sha256",
+                "workspace_manifest_sha256",
+                "output_sha256",
+            },
+        }[kind]
+        return any(
+            value == digest
+            for record in records
+            for field, value in record.model_dump(mode="json").items()
+            if field in reference_fields
+        )
 
     def verify_artifact(self, digest: str, *, kind: str) -> bytes:
         with self.lock(exclusive=False):
@@ -2073,6 +2130,11 @@ class LiteratureStore:
                     continue
                 if record.intent_sha256 != intent or not isinstance(record, record_type):
                     raise LiteratureConflictError(f"idempotency key {idempotency_key!r} identifies different intent")
+                recover_canonical_record(
+                    self.project_root,
+                    self._record_relative(record),
+                    canonical_json_bytes(record),
+                )
                 return record  # type: ignore[return-value]
             material = provisional.model_dump(mode="json", by_alias=True)
             material["intent_sha256"] = intent

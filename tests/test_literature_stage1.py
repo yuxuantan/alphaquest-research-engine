@@ -4,9 +4,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import threading
 
 import pytest
@@ -111,7 +113,12 @@ LANES = (
 )
 
 
-def _protocol(store: LiteratureStore, *, protocol_id: str = "protocol.fixture", lineage: str = "lineage.fixture", **extra):
+def _protocol_payload(
+    *,
+    protocol_id: str = "protocol.fixture",
+    lineage: str = "lineage.fixture",
+    **extra,
+) -> dict:
     payload = {
         "protocol_id": protocol_id,
         "execution_lineage_id": lineage,
@@ -127,6 +134,15 @@ def _protocol(store: LiteratureStore, *, protocol_id: str = "protocol.fixture", 
         "change_reason": "Initial frozen fixture protocol",
     }
     payload.update(extra)
+    return payload
+
+
+def _protocol(store: LiteratureStore, *, protocol_id: str = "protocol.fixture", lineage: str = "lineage.fixture", **extra):
+    payload = _protocol_payload(
+        protocol_id=protocol_id,
+        lineage=lineage,
+        **extra,
+    )
     key = hashlib.sha256(canonical_json_bytes(payload, trailing_lf=False)).hexdigest()[:16]
     return store.append_protocol(payload, actor=_actor(), idempotency_key=f"{protocol_id}.{key}")
 
@@ -509,6 +525,128 @@ def _all_family_slice(root: Path) -> LiteratureStore:
 
 def _canonical_paths(root: Path) -> list[Path]:
     return sorted((root / "research/literature").glob("**/*.json"))
+
+
+def _python_subprocess(script: str, *arguments: str) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    existing_path = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = (
+        f"{REPO / 'src'}{os.pathsep}{existing_path}"
+        if existing_path
+        else str(REPO / "src")
+    )
+    return subprocess.run(
+        [sys.executable, "-c", script, *arguments],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+
+_CANONICAL_CRASH_WRITER = r"""
+import json
+import os
+from pathlib import Path
+import sys
+from datetime import datetime
+
+from alphaquest.research.literature.contracts import ActorProvenanceV1
+import alphaquest.research.literature.publication as publication
+from alphaquest.research.literature.store import LiteratureStore
+
+root = Path(sys.argv[1])
+phase = sys.argv[2]
+payload = json.loads(sys.argv[3])
+key = sys.argv[4]
+recorded_at = datetime.fromisoformat(sys.argv[5])
+
+def terminate(actual_phase, _relative):
+    if actual_phase == phase:
+        os._exit(73)
+
+publication._TEST_PUBLICATION_HOOK = terminate
+LiteratureStore(root).append_protocol(
+    payload,
+    actor=ActorProvenanceV1(
+        actor_class="ALPHAQUEST_DETERMINISTIC_ENGINE",
+        actor_id="engine",
+    ),
+    idempotency_key=key,
+    recorded_at=recorded_at,
+)
+"""
+
+
+_CANONICAL_RETRY_INSPECTOR = r"""
+import json
+from pathlib import Path
+import sys
+from datetime import datetime
+
+from alphaquest.research.literature.contracts import ActorProvenanceV1
+import alphaquest.research.literature.publication as publication
+from alphaquest.research.literature.store import LiteratureStore
+
+root = Path(sys.argv[1])
+payload = json.loads(sys.argv[2])
+key = sys.argv[3]
+recorded_at = datetime.fromisoformat(sys.argv[4])
+events = []
+publication._TEST_DURABILITY_HOOK = lambda kind, relative: events.append([kind, relative])
+record = LiteratureStore(root).append_protocol(
+    payload,
+    actor=ActorProvenanceV1(
+        actor_class="ALPHAQUEST_DETERMINISTIC_ENGINE",
+        actor_id="engine",
+    ),
+    idempotency_key=key,
+    recorded_at=recorded_at,
+)
+print(json.dumps({"record_id": record.record_id, "events": events}, sort_keys=True))
+"""
+
+
+_ARTIFACT_CRASH_WRITER = r"""
+import os
+from pathlib import Path
+import sys
+
+import alphaquest.research.literature.publication as publication
+from alphaquest.research.literature.store import LiteratureStore
+
+root = Path(sys.argv[1])
+phase = sys.argv[2]
+kind = sys.argv[3]
+data = bytes.fromhex(sys.argv[4])
+
+def terminate(actual_phase, _relative):
+    if actual_phase == phase:
+        os._exit(74)
+
+publication._TEST_ARTIFACT_PUBLICATION_HOOK = terminate
+LiteratureStore(root).put_artifact(data, kind=kind)
+"""
+
+
+_ARTIFACT_RETRY_INSPECTOR = r"""
+import json
+from pathlib import Path
+import sys
+
+import alphaquest.research.literature.publication as publication
+from alphaquest.research.literature.store import LiteratureStore
+
+root = Path(sys.argv[1])
+kind = sys.argv[2]
+data = bytes.fromhex(sys.argv[3])
+events = []
+publication._TEST_DURABILITY_HOOK = lambda event_kind, relative: events.append(
+    [event_kind, relative]
+)
+digest = LiteratureStore(root).put_artifact(data, kind=kind)
+print(json.dumps({"digest": digest, "events": events}, sort_keys=True))
+"""
 
 
 def _deep_hash_replace(value, replacements: dict[str, str]):
@@ -1563,22 +1701,553 @@ def test_safe_publication_fails_closed_when_staging_device_differs(
 
     root = _project(tmp_path)
     relative = "research/literature/test-family/cross-device.json"
-    real_fstat = publication_module.os.fstat
-    fstat_calls = 0
-
-    def different_destination_device(descriptor):
-        nonlocal fstat_calls
-        fstat_calls += 1
-        metadata = real_fstat(descriptor)
-        if fstat_calls == 2:
-            return type("DifferentDevice", (), {"st_dev": metadata.st_dev + 1})()
-        return metadata
-
-    monkeypatch.setattr(publication_module.os, "fstat", different_destination_device)
+    monkeypatch.setattr(publication_module, "_same_filesystem", lambda *_args: False)
     with pytest.raises(OSError, match="not on the same filesystem"):
         publication_module.publish_canonical_record(root, relative, b"complete bytes\n")
     assert not (root / relative).exists()
     assert not list((root / "run-store/literature/canonical-staging").glob("*"))
+
+
+@pytest.mark.parametrize(
+    ("case", "protocol_id", "revision"),
+    (
+        ("first-family", "protocol.durable-first", 1),
+        ("new-object", "protocol.durable-second", 1),
+        ("new-revision", "protocol.durable-first", 2),
+    ),
+)
+def test_canonical_publication_fsyncs_exact_directory_roles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    protocol_id: str,
+    revision: int,
+) -> None:
+    import alphaquest.research.literature.publication as publication_module
+
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    with store.lock(exclusive=True):
+        pass
+    if case != "first-family":
+        _protocol(
+            store,
+            protocol_id="protocol.durable-first",
+            lineage="lineage.durable-first",
+        )
+
+    events: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        publication_module,
+        "_TEST_DURABILITY_HOOK",
+        lambda kind, relative: events.append((kind, relative)),
+    )
+    payload = _protocol_payload(
+        protocol_id=protocol_id,
+        lineage=(
+            "lineage.durable-second"
+            if case == "new-object"
+            else "lineage.durable-first"
+        ),
+        **(
+            {
+                "administrative_annotations": ["Durability retry revision"],
+                "change_reason": "Exercise an existing revisions directory",
+            }
+            if case == "new-revision"
+            else {}
+        ),
+    )
+    key = f"durability.{case}"
+    store.append_protocol(
+        payload,
+        actor=_actor(),
+        idempotency_key=key,
+        recorded_at=NOW,
+    )
+
+    record_directory = (
+        f"research/literature/protocols/{protocol_id}/revisions"
+    )
+    expected_directories = {
+        "first-family": {
+            "research",
+            "research/literature",
+            "research/literature/protocols",
+            f"research/literature/protocols/{protocol_id}",
+            record_directory,
+        },
+        "new-object": {
+            "research/literature/protocols",
+            f"research/literature/protocols/{protocol_id}",
+            record_directory,
+        },
+        "new-revision": {record_directory},
+    }[case]
+    canonical_directory_events = {
+        relative
+        for kind, relative in events
+        if kind == "directory"
+        and (relative == "." or relative.startswith("research"))
+    }
+    assert canonical_directory_events == expected_directories
+    expected_file = f"{record_directory}/{revision:06d}.json"
+    assert ("file", expected_file) in events
+    assert (root / expected_file).is_file()
+
+
+@pytest.mark.parametrize(
+    ("phase", "published_before_retry"),
+    (
+        ("after_staging_create_before_write", False),
+        ("during_staging_write", False),
+        ("after_staging_fsync_before_publish", False),
+        ("after_atomic_publish_before_directory_fsync", True),
+        ("after_canonical_directory_fsync", True),
+        ("before_staging_cleanup", True),
+        ("after_staging_cleanup", True),
+    ),
+)
+def test_canonical_publication_crash_matrix_uses_fresh_process_retry(
+    tmp_path: Path,
+    phase: str,
+    published_before_retry: bool,
+) -> None:
+    root = _project(tmp_path)
+    protocol_id = "protocol.subprocess-durability"
+    payload = _protocol_payload(
+        protocol_id=protocol_id,
+        lineage="lineage.subprocess-durability",
+    )
+    key = "protocol.subprocess-durability.r1"
+    relative = (
+        f"research/literature/protocols/{protocol_id}/revisions/000001.json"
+    )
+
+    writer = _python_subprocess(
+        _CANONICAL_CRASH_WRITER,
+        str(root),
+        phase,
+        json.dumps(payload),
+        key,
+        NOW.isoformat(),
+    )
+    assert writer.returncode == 73, writer.stderr
+    assert (root / relative).exists() is published_before_retry
+
+    retry = _python_subprocess(
+        _CANONICAL_RETRY_INSPECTOR,
+        str(root),
+        json.dumps(payload),
+        key,
+        NOW.isoformat(),
+    )
+    assert retry.returncode == 0, retry.stderr
+    result = json.loads(retry.stdout)
+    assert result["record_id"] == f"{protocol_id}.r000001"
+    assert LiteratureStore(root).validate(verify_artifacts=False)["status"] == "PASS"
+    assert (root / relative).is_file()
+
+    events = {tuple(item) for item in result["events"]}
+    expected_directories = {
+        ".",
+        "research",
+        "research/literature",
+        "research/literature/protocols",
+        f"research/literature/protocols/{protocol_id}",
+        f"research/literature/protocols/{protocol_id}/revisions",
+    }
+    assert {
+        relative_path
+        for event_kind, relative_path in events
+        if event_kind == "directory"
+        and (relative_path == "." or relative_path.startswith("research"))
+    } == expected_directories
+    if published_before_retry:
+        assert ("file", relative) in events
+
+
+@pytest.mark.parametrize(
+    ("case", "protocol_id", "revision"),
+    (
+        ("first-family", "protocol.post-link-first", 1),
+        ("new-object", "protocol.post-link-second", 1),
+        ("new-revision", "protocol.post-link-first", 2),
+    ),
+)
+def test_post_link_idempotent_retry_fsyncs_complete_ancestry_in_fresh_process(
+    tmp_path: Path,
+    case: str,
+    protocol_id: str,
+    revision: int,
+) -> None:
+    root = _project(tmp_path)
+    if case != "first-family":
+        _protocol(
+            LiteratureStore(root),
+            protocol_id="protocol.post-link-first",
+            lineage="lineage.post-link-first",
+        )
+    payload = _protocol_payload(
+        protocol_id=protocol_id,
+        lineage=(
+            "lineage.post-link-second"
+            if case == "new-object"
+            else "lineage.post-link-first"
+        ),
+        **(
+            {
+                "administrative_annotations": ["Post-link retry revision"],
+                "change_reason": "Exercise post-link revision recovery",
+            }
+            if case == "new-revision"
+            else {}
+        ),
+    )
+    key = f"post-link.{case}"
+    writer = _python_subprocess(
+        _CANONICAL_CRASH_WRITER,
+        str(root),
+        "after_atomic_publish_before_directory_fsync",
+        json.dumps(payload),
+        key,
+        NOW.isoformat(),
+    )
+    assert writer.returncode == 73, writer.stderr
+
+    retry = _python_subprocess(
+        _CANONICAL_RETRY_INSPECTOR,
+        str(root),
+        json.dumps(payload),
+        key,
+        NOW.isoformat(),
+    )
+    assert retry.returncode == 0, retry.stderr
+    result = json.loads(retry.stdout)
+    relative = (
+        f"research/literature/protocols/{protocol_id}/revisions/"
+        f"{revision:06d}.json"
+    )
+    assert result["record_id"] == f"{protocol_id}.r{revision:06d}"
+    events = {tuple(item) for item in result["events"]}
+    assert ("file", relative) in events
+    assert {
+        ".",
+        "research",
+        "research/literature",
+        "research/literature/protocols",
+        f"research/literature/protocols/{protocol_id}",
+        f"research/literature/protocols/{protocol_id}/revisions",
+    }.issubset(
+        {
+            relative_path
+            for event_kind, relative_path in events
+            if event_kind == "directory"
+        }
+    )
+
+
+def test_directory_fsync_failure_preserves_complete_final_for_exact_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import alphaquest.research.literature.publication as publication_module
+
+    root = _project(tmp_path)
+    payload = _protocol_payload(
+        protocol_id="protocol.fsync-failure",
+        lineage="lineage.fsync-failure",
+    )
+    key = "protocol.fsync-failure.r1"
+    relative = (
+        "research/literature/protocols/protocol.fsync-failure/"
+        "revisions/000001.json"
+    )
+    real_fsync_directory = publication_module._fsync_directory
+    failed = False
+    leaf_calls = 0
+
+    def fail_leaf_once(directory) -> None:
+        nonlocal failed, leaf_calls
+        if directory.relative.endswith("protocol.fsync-failure/revisions"):
+            leaf_calls += 1
+        if not failed and leaf_calls == 2:
+            failed = True
+            raise OSError("simulated canonical-directory fsync failure")
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(
+        publication_module,
+        "_fsync_directory",
+        fail_leaf_once,
+    )
+    with pytest.raises(OSError, match="simulated canonical-directory fsync failure"):
+        LiteratureStore(root).append_protocol(
+            payload,
+            actor=_actor(),
+            idempotency_key=key,
+            recorded_at=NOW,
+        )
+    assert (root / relative).is_file()
+
+    monkeypatch.setattr(
+        publication_module,
+        "_fsync_directory",
+        real_fsync_directory,
+    )
+    events: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        publication_module,
+        "_TEST_DURABILITY_HOOK",
+        lambda kind, path: events.append((kind, path)),
+    )
+    recovered = LiteratureStore(root).append_protocol(
+        payload,
+        actor=_actor(),
+        idempotency_key=key,
+        recorded_at=NOW,
+    )
+    assert recovered.record_id == "protocol.fsync-failure.r000001"
+    assert ("file", relative) in events
+    assert LiteratureStore(root).validate(verify_artifacts=False)["status"] == "PASS"
+
+
+def test_pre_link_directory_fsync_failure_marks_retry_for_full_ancestry_barrier(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import alphaquest.research.literature.publication as publication_module
+
+    root = _project(tmp_path)
+    payload = _protocol_payload(
+        protocol_id="protocol.pre-link-fsync-failure",
+        lineage="lineage.pre-link-fsync-failure",
+    )
+    key = "protocol.pre-link-fsync-failure.r1"
+    relative = (
+        "research/literature/protocols/protocol.pre-link-fsync-failure/"
+        "revisions/000001.json"
+    )
+    real_fsync_directory = publication_module._fsync_directory
+    failed = False
+
+    def fail_first_leaf(directory) -> None:
+        nonlocal failed
+        if not failed and directory.relative.endswith(
+            "protocol.pre-link-fsync-failure/revisions"
+        ):
+            failed = True
+            raise OSError("simulated pre-link directory fsync failure")
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(
+        publication_module,
+        "_fsync_directory",
+        fail_first_leaf,
+    )
+    with pytest.raises(OSError, match="simulated pre-link directory fsync failure"):
+        LiteratureStore(root).append_protocol(
+            payload,
+            actor=_actor(),
+            idempotency_key=key,
+            recorded_at=NOW,
+        )
+    assert not (root / relative).exists()
+    assert list((root / "run-store/literature/canonical-staging").glob("*.staging"))
+
+    monkeypatch.setattr(
+        publication_module,
+        "_fsync_directory",
+        real_fsync_directory,
+    )
+    events: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        publication_module,
+        "_TEST_DURABILITY_HOOK",
+        lambda kind, path: events.append((kind, path)),
+    )
+    recovered = LiteratureStore(root).append_protocol(
+        payload,
+        actor=_actor(),
+        idempotency_key=key,
+        recorded_at=NOW,
+    )
+    assert recovered.record_id == "protocol.pre-link-fsync-failure.r000001"
+    assert (root / relative).is_file()
+    canonical_directories = {
+        path
+        for kind, path in events
+        if kind == "directory"
+        and (path == "." or path.startswith("research"))
+    }
+    assert canonical_directories == {
+        ".",
+        "research",
+        "research/literature",
+        "research/literature/protocols",
+        "research/literature/protocols/protocol.pre-link-fsync-failure",
+        "research/literature/protocols/protocol.pre-link-fsync-failure/revisions",
+    }
+
+
+@pytest.mark.parametrize(
+    ("phase", "published_before_retry"),
+    (
+        ("after_staging_create_before_write", False),
+        ("during_staging_write", False),
+        ("after_staging_fsync_before_publish", False),
+        ("after_atomic_publish_before_directory_fsync", True),
+        ("after_canonical_directory_fsync", True),
+        ("before_staging_cleanup", True),
+        ("after_staging_cleanup", True),
+    ),
+)
+def test_runtime_artifact_crash_matrix_uses_fresh_process_retry(
+    tmp_path: Path,
+    phase: str,
+    published_before_retry: bool,
+) -> None:
+    root = _project(tmp_path)
+    data = b"complete artifact bytes for a fresh-process durability retry"
+    digest = hashlib.sha256(data).hexdigest()
+    relative = f"run-store/literature/artifacts/sha256/{digest[:2]}/{digest}"
+
+    writer = _python_subprocess(
+        _ARTIFACT_CRASH_WRITER,
+        str(root),
+        phase,
+        "artifacts",
+        data.hex(),
+    )
+    assert writer.returncode == 74, writer.stderr
+    assert (root / relative).exists() is published_before_retry
+    if not published_before_retry:
+        assert not (root / relative).exists()
+
+    retry = _python_subprocess(
+        _ARTIFACT_RETRY_INSPECTOR,
+        str(root),
+        "artifacts",
+        data.hex(),
+    )
+    assert retry.returncode == 0, retry.stderr
+    result = json.loads(retry.stdout)
+    assert result["digest"] == digest
+    assert (root / relative).read_bytes() == data
+    expected_directories = {
+        ".",
+        "run-store",
+        "run-store/literature",
+        "run-store/literature/artifacts",
+        "run-store/literature/artifacts/sha256",
+        f"run-store/literature/artifacts/sha256/{digest[:2]}",
+    }
+    events = {tuple(item) for item in result["events"]}
+    assert expected_directories.issubset(
+        {
+            relative_path
+            for event_kind, relative_path in events
+            if event_kind == "directory"
+        }
+    )
+    if published_before_retry:
+        assert ("file", relative) in events
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ("artifacts", "extracted", "provider-traces", "codex-io"),
+)
+def test_each_runtime_artifact_family_uses_staged_idempotent_publication(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    data = b"" if kind == "provider-traces" else f"{kind} bytes".encode()
+    digest = hashlib.sha256(data).hexdigest()
+
+    assert store.put_artifact(data, kind=kind) == digest
+    assert store.put_artifact(data, kind=kind) == digest
+    assert store.verify_artifact(digest, kind=kind) == data
+
+
+def test_runtime_artifact_fails_closed_across_filesystems(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import alphaquest.research.literature.publication as publication_module
+
+    root = _project(tmp_path)
+    data = b"artifact that must not cross devices"
+    digest = hashlib.sha256(data).hexdigest()
+    relative = f"run-store/literature/artifacts/sha256/{digest[:2]}/{digest}"
+    monkeypatch.setattr(publication_module, "_same_filesystem", lambda *_args: False)
+
+    with pytest.raises(OSError, match="not on the same filesystem"):
+        LiteratureStore(root).put_artifact(data, kind="artifacts")
+    assert not (root / relative).exists()
+    assert not list((root / "run-store/literature/artifact-staging").glob("*"))
+
+
+def test_unreferenced_poisoned_runtime_artifact_is_quarantined_and_republished(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    intended = b"intended immutable artifact"
+    poisoned = b"partial bytes from the retired final-name-first writer"
+    digest = hashlib.sha256(intended).hexdigest()
+    relative = store._artifact_relative(digest, kind="artifacts")
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(poisoned)
+
+    assert store.put_artifact(intended, kind="artifacts") == digest
+    assert path.read_bytes() == intended
+    quarantine = list(
+        (
+            root
+            / "run-store/literature/artifact-quarantine/artifacts"
+        ).glob(f"{digest}.*.poisoned")
+    )
+    assert len(quarantine) == 1
+    assert quarantine[0].read_bytes() == poisoned
+
+
+@pytest.mark.parametrize("kind", ("artifacts", "extracted", "codex-io"))
+def test_referenced_poisoned_runtime_artifact_fails_closed(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    intended = b"artifact already bound by canonical capture state"
+    digest = hashlib.sha256(intended).hexdigest()
+    if kind in {"artifacts", "extracted"}:
+        _source(store, "referenced-poison", intended)
+    else:
+        attempt = _attempt_payload("attempt.referenced-poison")
+        attempt["prompt_sha256"] = digest
+        store.append_codex_attempt(
+            attempt,
+            actor=_actor(),
+            idempotency_key="attempt.referenced-poison.r1",
+            recorded_at=NOW,
+        )
+        assert store.put_artifact(intended, kind=kind) == digest
+    path = root / store._artifact_relative(digest, kind=kind)
+    poisoned = b"wrong bytes at a referenced digest path"
+    path.write_bytes(poisoned)
+
+    with pytest.raises(
+        LiteratureIntegrityError,
+        match="referenced content-addressed artifact has wrong bytes",
+    ):
+        store.put_artifact(intended, kind=kind)
+    assert path.read_bytes() == poisoned
+    quarantine_root = root / "run-store/literature/artifact-quarantine"
+    assert not quarantine_root.exists()
 
 
 @pytest.mark.parametrize(

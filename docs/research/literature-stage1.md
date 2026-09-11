@@ -259,22 +259,64 @@ dependencies have actually been revised.
    then durably append and fsync its owning `COMPLETED` revision.
 
 The two final records are separate append-only files; the lock does not make
-the pair one filesystem transaction. Each individual P3 canonical record is
-first written completely and fsynced at a unique path beneath the noncanonical
+the pair one filesystem transaction. Persistence has four distinct parts.
+
+**Byte publication.** Each individual P3 canonical record is written completely
+and fsynced at a unique path beneath the noncanonical
 `run-store/literature/canonical-staging/` directory. Only then is that complete
 inode hard-linked at its final canonical path by an atomic same-filesystem
-no-replace operation, followed by an fsync of the canonical parent directory.
-The writer verifies the staging and destination devices match and fails closed
-if they do not. It never creates the final pathname and then fills its bytes.
+no-replace operation. The P3 writer checks the staging and destination devices
+and fails closed if they differ. It never creates the final pathname and then
+fills its bytes. The linked inode is fsynced again before directory metadata is
+acknowledged.
 
-On the supported platform, process death before the link leaves the previous
-canonical history, while process death after the link can expose only the
-complete staged bytes. The canonical-directory fsync is the durability boundary
-for the new final name across power loss; before that fsync, power-loss recovery
-may retain either the previous history or the complete new name. Abandoned
-staging files are noncanonical, are ignored by history discovery and append
-sequencing, and may be garbage-collected rather than promoted. Cleanup removes
-the staging name and fsyncs its directory during ordinary successful writes.
+**Directory-entry durability.** P3 publication does not use the P2
+`repository_parent_fd(create=True)` path. Its own no-follow, descriptor-relative
+walker retains the descriptor and repository-relative identity of every
+canonical ancestor and records which directory entries it created. After the
+staging-file fsync, newly created directories and their naming parents are
+fsynced bottom-up before the link. The linked record directory is fsynced again
+after publication of the final filename. Thus an existing-object/new-revision
+append changes only the record directory, while a new object or family also
+anchors every new ancestor entry. If a pre-link process exit leaves a staging
+residue for the same digest, or a pre-link directory fsync fails and preserves
+that residue deliberately, the retry conservatively fsyncs the complete
+canonical ancestry because it cannot trust the visible directories left by the
+prior attempt. A directory-fsync failure is not reported as success and does
+not delete an already complete final record.
+
+**Ambiguous post-link recovery.** An exact idempotent retry does not return just
+because a matching record is visible. After the normal record hash, identity,
+family, object, and revision checks, it opens the expected final file without
+following links, compares its exact canonical bytes, fsyncs that file, and
+fsyncs the complete directory ancestry from the record directory through the
+repository root. Receipt-tail reconciliation applies the same barrier to an
+already visible receipt before publishing its completion, and a completed-pair
+retry barriers both files. A changed-byte collision still fails closed.
+
+**Artifact durability.** Every P3 runtime artifact kind (`artifacts`,
+`extracted`, `provider-traces`, and `codex-io`) uses a separate noncanonical
+artifact staging area and the same write-completely, file-fsync, same-device,
+atomic-no-replace sequence. Publication fsyncs the complete runtime ancestry
+bottom-up; this includes runtime parents that may have been created while the
+exclusive P3 lock was acquired as well as content-addressed directories created
+by the artifact writer. Exact existing bytes receive the same conservative
+file-and-complete-ancestry retry barrier.
+If an older writer left wrong bytes at an unreferenced digest path, recovery
+first hard-links those bytes to a unique quarantine name, durably anchors the
+quarantine, removes and fsyncs the wrong final entry, and publishes the intended
+bytes. If canonical P3 state references that artifact kind and digest, the
+writer reports integrity damage and never replaces the bound evidence.
+
+On the supported Darwin/POSIX platform, process death before the link leaves no
+final filename, while process death after the link can expose only the complete
+staged bytes. The file and bottom-up directory fsync sequence is the supported
+durability barrier; underlying filesystems and storage hardware still define
+the ultimate power-loss guarantees of `fsync(2)`. Abandoned staging files are
+noncanonical, ignored by history discovery and append sequencing, and may be
+garbage-collected rather than promoted. Tests use writer processes terminated
+with `os._exit(...)` and separate inspector/retry processes at staging, write,
+file-fsync, link, directory-fsync, and staging-cleanup boundaries.
 
 A crash before the receipt is published leaves the valid `SNAPSHOT_BOUND`
 state. A crash after `COMPLETED` is published leaves the valid completed state.
