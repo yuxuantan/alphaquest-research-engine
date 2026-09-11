@@ -20,6 +20,7 @@ from alphaquest.research.edge_backlog_io import (
     repository_directory_fd,
     repository_file_lock,
 )
+from alphaquest.research.literature.publication import publish_canonical_record
 from alphaquest.research.literature.contracts import (
     CANONICAL_RECORD_TYPES,
     SCHEMA_TYPES,
@@ -1570,9 +1571,40 @@ class LiteratureStore:
                 raise LiteratureConflictError("emitted dossier cannot change canonical P2 entry identity")
         return self._append_revision(EdgeDossierRevisionV1, "dossier_id", material, **kwargs)
 
-    def append_codex_attempt(self, payload: Mapping[str, Any], **kwargs: Any) -> CodexTaskAttemptRevisionV1:
+    def append_codex_attempt(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        actor: ActorProvenanceV1,
+        idempotency_key: str,
+        recorded_at: datetime | None = None,
+    ) -> CodexTaskAttemptRevisionV1:
         material = dict(payload)
         attempt_id = str(material["attempt_id"])
+        idempotent = self._idempotency_record(idempotency_key)
+        if idempotent is not None:
+            if not isinstance(idempotent, CodexTaskAttemptRevisionV1):
+                raise LiteratureConflictError(
+                    f"idempotency key {idempotency_key!r} belongs to another operation family"
+                )
+            if idempotent.attempt_id != attempt_id:
+                raise LiteratureConflictError(
+                    f"idempotency key {idempotency_key!r} identifies a different Codex attempt"
+                )
+            material.update(
+                {
+                    "record_id": idempotent.record_id,
+                    "revision": idempotent.revision,
+                    "previous_revision_sha256": idempotent.previous_revision_sha256,
+                }
+            )
+            return self._append(
+                CodexTaskAttemptRevisionV1,
+                material,
+                actor,
+                idempotency_key,
+                recorded_at,
+            )
         previous = self._latest_optional(CodexTaskAttemptRevisionV1, attempt_id)
         status = str(material["status"])
         if previous is None:
@@ -1598,7 +1630,12 @@ class LiteratureStore:
                         f"Codex attempt execution identity cannot change: {field}"
                     )
         return self._append_revision(
-            CodexTaskAttemptRevisionV1, "attempt_id", material, **kwargs
+            CodexTaskAttemptRevisionV1,
+            "attempt_id",
+            material,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            recorded_at=recorded_at,
         )
 
     def freeze_dossier(
@@ -1784,6 +1821,22 @@ class LiteratureStore:
                 )
             operation = operations[-1]
             if operation.state == "COMPLETED":
+                if len(operations) < 2:
+                    raise LiteratureIntegrityError(
+                        "completed operation lacks its immediately preceding snapshot"
+                    )
+                snapshot = operations[-2]
+                if (
+                    snapshot.state != "SNAPSHOT_BOUND"
+                    or operation.previous_revision_sha256 != snapshot.record_sha256
+                ):
+                    raise LiteratureIntegrityError(
+                        "completed operation does not immediately follow its owned snapshot"
+                    )
+                if snapshot_revision_sha256 != snapshot.record_sha256:
+                    raise LiteratureConflictError(
+                        "completed emission retry requires the exact preceding SNAPSHOT_BOUND revision"
+                    )
                 receipt = next(
                     (
                         item
@@ -1796,6 +1849,27 @@ class LiteratureStore:
                 if receipt is None:  # pragma: no cover - full validation closes this
                     raise LiteratureIntegrityError(
                         "completed operation lacks its owned receipt"
+                    )
+                normalized_receipt_payload = self._normalize_unmanaged_payload(
+                    P2EmissionReceiptV1,
+                    receipt_payload,
+                    managed_source=receipt,
+                )
+                persisted_receipt_payload = receipt.model_dump(
+                    mode="json", by_alias=True, exclude=_MANAGED_FIELDS
+                )
+                if (
+                    receipt.operation_revision_sha256 != snapshot.record_sha256
+                    or operation.receipt_record_sha256 != receipt.record_sha256
+                ):
+                    raise LiteratureIntegrityError(
+                        "completed operation does not own its exact snapshot receipt"
+                    )
+                if canonical_json_bytes(
+                    normalized_receipt_payload
+                ) != canonical_json_bytes(persisted_receipt_payload):
+                    raise LiteratureConflictError(
+                        "completed emission retry differs from the persisted receipt intent"
                     )
                 return receipt, operation
             if (
@@ -1867,17 +1941,48 @@ class LiteratureStore:
             completion_relative = self._record_relative(completion)
             if recoverable_tail is None:
                 receipt_relative = self._record_relative(receipt)
-                exclusive_write_repository_file(
+                publish_canonical_record(
                     self.project_root,
                     receipt_relative,
                     canonical_json_bytes(receipt),
                 )
-            exclusive_write_repository_file(
+            publish_canonical_record(
                 self.project_root,
                 completion_relative,
                 canonical_json_bytes(completion),
             )
             return receipt, completion
+
+    @staticmethod
+    def _normalize_unmanaged_payload(
+        record_type: type[T],
+        payload: Mapping[str, Any],
+        *,
+        managed_source: CanonicalRecordV1,
+    ) -> dict[str, Any]:
+        clean = {
+            key: value
+            for key, value in dict(payload).items()
+            if key not in _MANAGED_FIELDS
+        }
+        managed = managed_source.model_dump(
+            mode="json", by_alias=True, include=_MANAGED_FIELDS
+        )
+        material = {**clean, **managed}
+        material["schema"] = record_type.schema_literal
+        material["record_sha256"] = record_sha256(material)
+        try:
+            normalized = record_type.model_validate_json(
+                canonical_json_bytes(material),
+                context=_TRUSTED_CANONICAL_WRITER_CONTEXT,
+            )
+        except ValidationError as exc:
+            raise LiteratureConflictError(
+                "completion retry receipt payload is invalid: " + str(exc)
+            ) from exc
+        return normalized.model_dump(
+            mode="json", by_alias=True, exclude=_MANAGED_FIELDS
+        )
 
     def put_artifact(self, data: bytes, *, kind: str) -> str:
         if kind not in {"artifacts", "extracted", "provider-traces", "codex-io"}:
@@ -1984,7 +2089,7 @@ class LiteratureStore:
                     "emission receipt may only be staged by the deterministic completion writer"
                 )
             relative = self._record_relative(record)
-            exclusive_write_repository_file(self.project_root, relative, canonical_json_bytes(record))
+            publish_canonical_record(self.project_root, relative, canonical_json_bytes(record))
             return record
 
     def _validate_pending_revision(

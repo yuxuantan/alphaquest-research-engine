@@ -259,14 +259,32 @@ dependencies have actually been revised.
    then durably append and fsync its owning `COMPLETED` revision.
 
 The two final records are separate append-only files; the lock does not make
-their filesystem publication atomic. Each canonical write fsyncs the file and
-then its parent directory. A crash before the receipt is committed leaves the
-valid `SNAPSHOT_BOUND` state. A crash after `COMPLETED` is committed leaves the
-valid completed state. The only accepted intermediate state is
+the pair one filesystem transaction. Each individual P3 canonical record is
+first written completely and fsynced at a unique path beneath the noncanonical
+`run-store/literature/canonical-staging/` directory. Only then is that complete
+inode hard-linked at its final canonical path by an atomic same-filesystem
+no-replace operation, followed by an fsync of the canonical parent directory.
+The writer verifies the staging and destination devices match and fails closed
+if they do not. It never creates the final pathname and then fills its bytes.
+
+On the supported platform, process death before the link leaves the previous
+canonical history, while process death after the link can expose only the
+complete staged bytes. The canonical-directory fsync is the durability boundary
+for the new final name across power loss; before that fsync, power-loss recovery
+may retain either the previous history or the complete new name. Abandoned
+staging files are noncanonical, are ignored by history discovery and append
+sequencing, and may be garbage-collected rather than promoted. Cleanup removes
+the staging name and fsyncs its directory during ordinary successful writes.
+
+A crash before the receipt is published leaves the valid `SNAPSHOT_BOUND`
+state. A crash after `COMPLETED` is published leaves the valid completed state.
+The only accepted intermediate state is
 `RECOVERABLE_COMPLETION_TAIL`: the receipt is the final global append, owns the
 exact current `SNAPSHOT_BOUND` revision, repeats every transaction output, is
 unique and unused, and has no `COMPLETED` successor. Any mismatch, other orphan
-receipt, or later record remains an integrity failure.
+receipt, partial or malformed record, or later record remains an integrity
+failure. Only a fully written, fsynced, and atomically published receipt can
+form this tail.
 
 Full P3 validation resolves each written observation and entry binding in P2
 and reconstructs the complete duplicate snapshot at the exact prefix,
@@ -295,12 +313,16 @@ operational status must repeat that revision exactly. Except for the narrowly
 defined final recoverable tail above, orphans, duplicates, cross-operation
 swaps, early receipt bindings, and receipts for older operation revisions are
 invalid. Retrying an already completed emission runs this same full ownership
-validation before returning its receipt.
+validation, resolves its immediately preceding exact `SNAPSHOT_BOUND` revision,
+and compares every unmanaged receipt field with the caller's normalized request
+before returning the existing receipt and completion. A changed snapshot,
+transaction output, operation, or deterministic key is a hard conflict.
 
-Search and capture start/completion calls check idempotency before lifecycle
-rejection. An identical retry, including after reload, returns the original
-canonical record. Reusing a key for changed intent, another object, family, or
-phase is a hard conflict and never creates another revision.
+Search, capture, and Codex-attempt start/completion calls check idempotency before
+lifecycle rejection. An identical retry, including after reload and for every
+Codex terminal or one-shot processing-permission-rejection state, returns the
+original canonical record. Reusing a key for changed intent, another object,
+family, or phase is a hard conflict and never creates another revision.
 
 ## CLI
 

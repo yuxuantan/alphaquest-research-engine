@@ -1414,7 +1414,7 @@ def test_valid_canonical_record_passes_and_trusted_draft_never_reaches_disk(
 
     root = _project(tmp_path)
     writes: list[bytes] = []
-    real_write = store_module.exclusive_write_repository_file
+    real_write = store_module.publish_canonical_record
 
     def inspect_write(project_root, relative, data):
         if str(relative).startswith("research/literature/"):
@@ -1424,11 +1424,314 @@ def test_valid_canonical_record_passes_and_trusted_draft_never_reaches_disk(
             assert decoded["record_sha256"] == record_sha256(decoded)
         return real_write(project_root, relative, data)
 
-    monkeypatch.setattr(store_module, "exclusive_write_repository_file", inspect_write)
+    monkeypatch.setattr(store_module, "publish_canonical_record", inspect_write)
     protocol = _protocol(LiteratureStore(root))
     assert writes
     assert type(protocol).model_validate_json(canonical_json_bytes(protocol)) == protocol
     assert LiteratureStore(root).validate()["status"] == "PASS"
+
+
+@pytest.fixture(scope="module")
+def all_family_safe_publication_paths(tmp_path_factory: pytest.TempPathFactory) -> frozenset[str]:
+    import alphaquest.research.literature.store as store_module
+
+    root = _project(tmp_path_factory.mktemp("p3-all-family-publication"))
+    published: list[str] = []
+    real_publish = store_module.publish_canonical_record
+
+    def observe(project_root, relative, data):
+        published.append(str(relative))
+        return real_publish(project_root, relative, data)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(store_module, "publish_canonical_record", observe)
+        _all_family_slice(root)
+    return frozenset(published)
+
+
+@pytest.mark.parametrize(
+    "family", tuple(sorted(item.family for item in CANONICAL_RECORD_TYPES))
+)
+def test_every_canonical_family_uses_safe_publication_boundary(
+    family: str, all_family_safe_publication_paths: frozenset[str]
+) -> None:
+    assert any(
+        relative.startswith(f"research/literature/{family}/")
+        for relative in all_family_safe_publication_paths
+    )
+
+
+def _protocol_revision_payload(protocol, annotation: str) -> dict:
+    payload = protocol.model_dump(
+        mode="json",
+        exclude=MANAGED_FIELDS
+        | {
+            "schema_name",
+            "record_id",
+            "revision",
+            "previous_revision_sha256",
+            "methodology_sha256",
+        },
+    )
+    payload["administrative_annotations"] = [annotation]
+    payload["change_reason"] = annotation
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("phase", "published"),
+    (
+        ("before_staging_create", False),
+        ("after_staging_create_before_write", False),
+        ("during_staging_write", False),
+        ("after_staging_write_before_file_fsync", False),
+        ("after_staging_fsync_before_publish", False),
+        ("after_atomic_publish_before_directory_fsync", True),
+        ("after_canonical_directory_fsync", True),
+        ("before_staging_cleanup", True),
+    ),
+)
+def test_real_safe_publication_process_death_never_exposes_partial_final_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str, published: bool
+) -> None:
+    import alphaquest.research.literature.publication as publication_module
+
+    class SimulatedProcessDeath(BaseException):
+        pass
+
+    base = _project(tmp_path / "base")
+    protocol = _protocol(LiteratureStore(base))
+    payload = _protocol_revision_payload(protocol, "Durability boundary fixture")
+    control = tmp_path / "control"
+    shutil.copytree(base, control)
+    expected = LiteratureStore(control).append_protocol(
+        payload,
+        actor=_actor(),
+        idempotency_key="protocol.fixture.durability-r2",
+        recorded_at=NOW,
+    )
+    relative = Path(
+        "research/literature/protocols/protocol.fixture/revisions/000002.json"
+    )
+    expected_bytes = (control / relative).read_bytes()
+
+    root = tmp_path / phase
+    shutil.copytree(base, root)
+
+    def terminate(actual_phase: str, actual_relative: str) -> None:
+        if actual_phase == phase and actual_relative == relative.as_posix():
+            raise SimulatedProcessDeath()
+
+    monkeypatch.setattr(publication_module, "_TEST_PUBLICATION_HOOK", terminate)
+    with pytest.raises(SimulatedProcessDeath):
+        LiteratureStore(root).append_protocol(
+            payload,
+            actor=_actor(),
+            idempotency_key="protocol.fixture.durability-r2",
+            recorded_at=NOW,
+        )
+
+    final = root / relative
+    assert final.exists() is published
+    if published:
+        assert final.read_bytes() == expected_bytes
+        assert LiteratureStore(root).get(expected.record_id).record_sha256 == (
+            expected.record_sha256
+        )
+    else:
+        assert LiteratureStore(root).latest(type(protocol), protocol.protocol_id).revision == 1
+    assert LiteratureStore(root).validate(verify_artifacts=False)["status"] == "PASS"
+    assert not list((root / "research/literature").rglob("*.staging"))
+
+
+def test_safe_publication_is_no_replace_and_preserves_existing_bytes(tmp_path: Path) -> None:
+    from alphaquest.research.literature.publication import publish_canonical_record
+
+    root = _project(tmp_path)
+    relative = "research/literature/test-family/test-record.json"
+    publish_canonical_record(root, relative, b"complete first bytes\n")
+    with pytest.raises(FileExistsError):
+        publish_canonical_record(root, relative, b"replacement bytes\n")
+    assert (root / relative).read_bytes() == b"complete first bytes\n"
+    assert not list((root / "run-store/literature/canonical-staging").glob("*"))
+
+
+def test_safe_publication_fails_closed_when_staging_device_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import alphaquest.research.literature.publication as publication_module
+
+    root = _project(tmp_path)
+    relative = "research/literature/test-family/cross-device.json"
+    real_fstat = publication_module.os.fstat
+    fstat_calls = 0
+
+    def different_destination_device(descriptor):
+        nonlocal fstat_calls
+        fstat_calls += 1
+        metadata = real_fstat(descriptor)
+        if fstat_calls == 2:
+            return type("DifferentDevice", (), {"st_dev": metadata.st_dev + 1})()
+        return metadata
+
+    monkeypatch.setattr(publication_module.os, "fstat", different_destination_device)
+    with pytest.raises(OSError, match="not on the same filesystem"):
+        publication_module.publish_canonical_record(root, relative, b"complete bytes\n")
+    assert not (root / relative).exists()
+    assert not list((root / "run-store/literature/canonical-staging").glob("*"))
+
+
+@pytest.mark.parametrize(
+    ("phase", "published"),
+    (
+        ("after_staging_create_before_write", False),
+        ("during_staging_write", False),
+        ("after_atomic_publish_before_directory_fsync", True),
+        ("before_staging_cleanup", True),
+    ),
+)
+def test_immutable_freeze_publication_is_previous_or_complete_under_process_death(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str, published: bool
+) -> None:
+    import alphaquest.research.literature.publication as publication_module
+
+    class SimulatedProcessDeath(BaseException):
+        pass
+
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    protocol = _protocol(store)
+    claim = _source(store, "freeze-publication", b"freeze publication evidence")[-1]
+    target_fragment = "/dossier-freezes/"
+
+    def terminate(actual_phase: str, actual_relative: str) -> None:
+        if actual_phase == phase and target_fragment in f"/{actual_relative}":
+            raise SimulatedProcessDeath()
+
+    monkeypatch.setattr(publication_module, "_TEST_PUBLICATION_HOOK", terminate)
+    with pytest.raises(SimulatedProcessDeath):
+        _dossier(
+            store,
+            protocol,
+            [(claim, "SUPPORTING")],
+            dossier_id="dossier.freeze-publication",
+        )
+
+    fresh = LiteratureStore(root)
+    report = fresh.validate(verify_artifacts=False)
+    assert report["status"] == "PASS"
+    freezes = [
+        item for item in fresh.records() if type(item).family == "dossier-freezes"
+    ]
+    assert bool(freezes) is published
+    if published:
+        path = root / fresh._record_relative(freezes[0])
+        assert path.read_bytes() == canonical_json_bytes(freezes[0])
+
+
+@pytest.mark.parametrize(
+    "target_family", ("p2-emission-receipts", "p2-emissions")
+)
+def test_receipt_and_completed_publication_process_death_preserves_recovery_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target_family: str
+) -> None:
+    import alphaquest.research.literature.publication as publication_module
+    import alphaquest.research.literature.store as store_module
+
+    class SimulatedProcessDeath(BaseException):
+        pass
+
+    base = _project(tmp_path / "snapshot-base")
+    store = LiteratureStore(base)
+    protocol = _protocol(store)
+    claim = _source(store, "publication-tail", b"publication tail evidence")[-1]
+    _dossier_record, freeze = _dossier(
+        store,
+        protocol,
+        [(claim, "SUPPORTING")],
+        dossier_id="dossier.publication-tail",
+    )
+    prepared = prepare_emission(
+        base,
+        freeze_id=freeze.freeze_id,
+        operation_id="emission.publication-tail",
+        actor=_actor(),
+        idempotency_key="emission.publication-tail.prepared",
+    )
+
+    def stop_before_receipt(*_args, **_kwargs):
+        raise RuntimeError("stop at snapshot")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(LiteratureStore, "complete_emission_operation", stop_before_receipt)
+        with pytest.raises(RuntimeError, match="stop at snapshot"):
+            emit_prepared(base, operation_id=prepared.operation_id, actor=_actor())
+
+    control = tmp_path / "control"
+    shutil.copytree(base, control)
+    with monkeypatch.context() as patch:
+        patch.setattr(store_module, "_now", lambda: NOW)
+        emit_prepared(control, operation_id=prepared.operation_id, actor=_actor())
+    expected_files = {
+        path.relative_to(control / "research/literature").as_posix(): path.read_bytes()
+        for path in _canonical_paths(control)
+    }
+    target_paths = [
+        path
+        for path in _canonical_paths(control)
+        if f"/{target_family}/" in f"/{path.relative_to(control).as_posix()}"
+        and json.loads(path.read_text()).get("operation_id") == prepared.operation_id
+    ]
+    target_path = max(
+        target_paths,
+        key=lambda path: json.loads(path.read_text())["append_sequence"],
+    ).relative_to(control)
+    expected_target_bytes = (control / target_path).read_bytes()
+
+    cases = (
+        ("after_staging_create_before_write", False),
+        ("during_staging_write", False),
+        ("after_atomic_publish_before_directory_fsync", True),
+        ("before_staging_cleanup", True),
+    )
+    for phase, target_published in cases:
+        root = tmp_path / f"{target_family}-{phase}"
+        shutil.copytree(base, root)
+
+        def terminate(actual_phase: str, actual_relative: str) -> None:
+            if actual_phase == phase and f"/{target_family}/" in f"/{actual_relative}":
+                raise SimulatedProcessDeath()
+
+        with monkeypatch.context() as patch:
+            patch.setattr(publication_module, "_TEST_PUBLICATION_HOOK", terminate)
+            patch.setattr(store_module, "_now", lambda: NOW)
+            with pytest.raises(SimulatedProcessDeath):
+                emit_prepared(root, operation_id=prepared.operation_id, actor=_actor())
+
+        assert (root / target_path).exists() is target_published
+        if target_published:
+            assert (root / target_path).read_bytes() == expected_target_bytes
+        fresh = LiteratureStore(root)
+        report = fresh.validate(verify_artifacts=False)
+        if target_family == "p2-emission-receipts":
+            expected_status = (
+                "RECOVERABLE_INCOMPLETE_EMISSION" if target_published else "PASS"
+            )
+            assert report["status"] == expected_status
+        elif target_published:
+            assert report["status"] == "PASS"
+            assert fresh.latest(type(prepared), prepared.operation_id).state == "COMPLETED"
+        else:
+            assert report["status"] == "RECOVERABLE_INCOMPLETE_EMISSION"
+
+        with monkeypatch.context() as patch:
+            patch.setattr(store_module, "_now", lambda: NOW)
+            reconcile_emission(root, operation_id=prepared.operation_id, actor=_actor())
+        actual_files = {
+            path.relative_to(root / "research/literature").as_posix(): path.read_bytes()
+            for path in _canonical_paths(root)
+        }
+        assert actual_files == expected_files
 
 
 @pytest.mark.parametrize("field", PROTOCOL_FROZEN_MUTATIONS)
@@ -3565,6 +3868,158 @@ def test_completed_emission_retry_revalidates_receipt_ownership(tmp_path: Path) 
         emit_prepared(root, operation_id=operation.operation_id, actor=_actor())
 
 
+@pytest.fixture(scope="module")
+def completed_emission_retry_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = _project(tmp_path_factory.mktemp("p3-completed-retry"))
+    _initial_slice(root)
+    return root
+
+
+def _completed_retry_inputs(root: Path):
+    store = LiteratureStore(root)
+    records = store.records()
+    completed = next(
+        item
+        for item in reversed(records)
+        if type(item).family == "p2-emissions" and item.state == "COMPLETED"
+    )
+    history = [
+        item
+        for item in records
+        if type(item).family == "p2-emissions"
+        and item.operation_id == completed.operation_id
+    ]
+    snapshot = history[-2]
+    receipt = next(
+        item
+        for item in records
+        if type(item).family == "p2-emission-receipts"
+        and item.record_sha256 == completed.receipt_record_sha256
+    )
+    return store, snapshot, receipt, completed, _receipt_payload_from_operation(
+        snapshot, receipt.receipt_id
+    )
+
+
+def test_completed_emission_exact_retry_revalidates_and_returns_owned_records(
+    completed_emission_retry_root: Path,
+) -> None:
+    store, snapshot, receipt, completed, payload = _completed_retry_inputs(
+        completed_emission_retry_root
+    )
+    retried_receipt, retried_completed = store.complete_emission_operation(
+        operation_id=completed.operation_id,
+        snapshot_revision_sha256=snapshot.record_sha256,
+        receipt_payload=payload,
+        actor=_actor(),
+        receipt_idempotency_key=f"{completed.operation_id}.receipt",
+        completion_idempotency_key=f"{completed.operation_id}.completed",
+    )
+    assert retried_receipt.record_sha256 == receipt.record_sha256
+    assert retried_completed.record_sha256 == completed.record_sha256
+
+    fresh_receipt, fresh_completed = LiteratureStore(
+        completed_emission_retry_root
+    ).complete_emission_operation(
+        operation_id=completed.operation_id,
+        snapshot_revision_sha256=snapshot.record_sha256,
+        receipt_payload=payload,
+        actor=_actor("fresh-retry"),
+        receipt_idempotency_key=f"{completed.operation_id}.receipt",
+        completion_idempotency_key=f"{completed.operation_id}.completed",
+    )
+    assert fresh_receipt.record_sha256 == receipt.record_sha256
+    assert fresh_completed.record_sha256 == completed.record_sha256
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "record_id",
+        "receipt_id",
+        "operation_id",
+        "operation_revision_sha256",
+        "freeze_id",
+        "freeze_record_sha256",
+        "reservations",
+        "observation_bindings",
+        "entry_binding",
+        "duplicate_snapshot",
+        "dependency_impacts",
+        "dependency_entry_bindings",
+        "prior_staled_decision_sha256",
+        "search_completion_status",
+        "unsatisfied_lanes",
+        "operational_status",
+    ),
+)
+def test_completed_emission_retry_rejects_each_changed_receipt_field(
+    completed_emission_retry_root: Path, field: str
+) -> None:
+    store, snapshot, _receipt, completed, payload = _completed_retry_inputs(
+        completed_emission_retry_root
+    )
+    changed = dict(payload)
+    value = changed[field]
+    if isinstance(value, list):
+        changed[field] = [] if value else [{}]
+    elif isinstance(value, dict):
+        changed[field] = {}
+    elif value is None:
+        changed[field] = "f" * 64
+    elif isinstance(value, str) and len(value) == 64:
+        changed[field] = "f" * 64 if value != "f" * 64 else "e" * 64
+    else:
+        changed[field] = f"{value}.changed"
+    with pytest.raises(LiteratureConflictError):
+        store.complete_emission_operation(
+            operation_id=completed.operation_id,
+            snapshot_revision_sha256=snapshot.record_sha256,
+            receipt_payload=changed,
+            actor=_actor(),
+            receipt_idempotency_key=f"{completed.operation_id}.receipt",
+            completion_idempotency_key=f"{completed.operation_id}.completed",
+        )
+
+
+def test_completed_emission_retry_rejects_changed_snapshot_operation_and_keys(
+    completed_emission_retry_root: Path,
+) -> None:
+    store, snapshot, _receipt, completed, payload = _completed_retry_inputs(
+        completed_emission_retry_root
+    )
+    common = {
+        "operation_id": completed.operation_id,
+        "snapshot_revision_sha256": snapshot.record_sha256,
+        "receipt_payload": payload,
+        "actor": _actor(),
+        "receipt_idempotency_key": f"{completed.operation_id}.receipt",
+        "completion_idempotency_key": f"{completed.operation_id}.completed",
+    }
+    with pytest.raises(LiteratureConflictError, match="preceding SNAPSHOT_BOUND"):
+        store.complete_emission_operation(
+            **{**common, "snapshot_revision_sha256": "f" * 64}
+        )
+    wrong_operation = f"{completed.operation_id}.other"
+    with pytest.raises(LiteratureConflictError, match="not found"):
+        store.complete_emission_operation(
+            **{
+                **common,
+                "operation_id": wrong_operation,
+                "receipt_idempotency_key": f"{wrong_operation}.receipt",
+                "completion_idempotency_key": f"{wrong_operation}.completed",
+            }
+        )
+    with pytest.raises(LiteratureConflictError, match="deterministic"):
+        store.complete_emission_operation(
+            **{**common, "receipt_idempotency_key": "wrong.receipt"}
+        )
+    with pytest.raises(LiteratureConflictError, match="deterministic"):
+        store.complete_emission_operation(
+            **{**common, "completion_idempotency_key": "wrong.completed"}
+        )
+
+
 def test_completion_crash_boundaries_recover_to_one_identical_canonical_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3628,7 +4083,7 @@ def test_completion_crash_boundaries_recover_to_one_identical_canonical_history(
     for boundary, expected_state in boundaries:
         root = tmp_path / boundary
         shutil.copytree(base, root)
-        real_write = store_module.exclusive_write_repository_file
+        real_write = store_module.publish_canonical_record
         real_complete = LiteratureStore.complete_emission_operation
         with monkeypatch.context() as patch:
             patch.setattr(store_module, "_now", lambda: NOW)
@@ -3641,7 +4096,7 @@ def test_completion_crash_boundaries_recover_to_one_identical_canonical_history(
 
                 patch.setattr(
                     store_module,
-                    "exclusive_write_repository_file",
+                    "publish_canonical_record",
                     fail_before_receipt,
                 )
                 expected_exception = OSError
@@ -3668,7 +4123,7 @@ def test_completion_crash_boundaries_recover_to_one_identical_canonical_history(
 
                 patch.setattr(
                     store_module,
-                    "exclusive_write_repository_file",
+                    "publish_canonical_record",
                     die_after_receipt,
                 )
                 expected_exception = SimulatedProcessDeath
@@ -3681,7 +4136,7 @@ def test_completion_crash_boundaries_recover_to_one_identical_canonical_history(
 
                 patch.setattr(
                     store_module,
-                    "exclusive_write_repository_file",
+                    "publish_canonical_record",
                     die_before_completion,
                 )
                 expected_exception = SimulatedProcessDeath
@@ -3695,7 +4150,7 @@ def test_completion_crash_boundaries_recover_to_one_identical_canonical_history(
 
                 patch.setattr(
                     store_module,
-                    "exclusive_write_repository_file",
+                    "publish_canonical_record",
                     die_after_completion,
                 )
                 expected_exception = SimulatedProcessDeath
@@ -5217,6 +5672,225 @@ def test_codex_attempt_allows_exactly_one_normal_terminal_outcome(
     )
     assert terminal.status == terminal_status
     assert LiteratureStore(tmp_path).validate(verify_artifacts=False)["status"] == "PASS"
+
+
+@pytest.mark.parametrize(
+    "status",
+    ("STARTED", "SUCCEEDED", "FAILED", "INVALID_OUTPUT", "ABANDONED_AFTER_CRASH"),
+)
+def test_codex_attempt_exact_retry_precedes_lifecycle_rejection_for_every_normal_phase(
+    tmp_path: Path, status: str
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    attempt_id = f"attempt.retry-{status.lower()}"
+    started_payload = _attempt_payload(attempt_id)
+    started = store.append_codex_attempt(
+        started_payload,
+        actor=_actor(),
+        idempotency_key=f"{attempt_id}.started",
+    )
+    if status == "STARTED":
+        payload = started_payload
+        key = f"{attempt_id}.started"
+        expected = started
+        next_phase = _terminal_attempt_payload(started, "SUCCEEDED")
+    else:
+        payload = _terminal_attempt_payload(started, status)
+        key = f"{attempt_id}.{status.lower()}"
+        expected = store.append_codex_attempt(
+            payload,
+            actor=_actor(),
+            idempotency_key=key,
+        )
+        next_phase = started_payload
+
+    assert store.append_codex_attempt(
+        payload, actor=_actor(), idempotency_key=key
+    ).record_sha256 == expected.record_sha256
+    assert LiteratureStore(root).append_codex_attempt(
+        payload, actor=_actor("fresh-retry"), idempotency_key=key
+    ).record_sha256 == expected.record_sha256
+
+    changed = dict(payload)
+    changed["prompt_sha256"] = "f" * 64
+    with pytest.raises(LiteratureConflictError, match="idempotency"):
+        store.append_codex_attempt(changed, actor=_actor(), idempotency_key=key)
+    with pytest.raises(LiteratureConflictError, match="idempotency"):
+        store.append_codex_attempt(next_phase, actor=_actor(), idempotency_key=key)
+    with pytest.raises(LiteratureConflictError, match="different Codex attempt"):
+        store.append_codex_attempt(
+            {**payload, "attempt_id": f"{attempt_id}.other"},
+            actor=_actor(),
+            idempotency_key=key,
+        )
+
+    attempt_records = [
+        item
+        for item in LiteratureStore(root).records()
+        if getattr(item, "attempt_id", None) == attempt_id
+    ]
+    assert len(attempt_records) == (1 if status == "STARTED" else 2)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("task_type", "DOSSIER_SYNTHESIZER"),
+        ("model", "changed-model"),
+        ("settings_sha256", "1" * 64),
+        ("prompt_sha256", "2" * 64),
+        ("input_manifest_sha256", "3" * 64),
+        ("workspace_manifest_sha256", "4" * 64),
+        (
+            "referenced_records",
+            [{"record_id": "missing.r000001", "record_sha256": "5" * 64}],
+        ),
+        ("isolation_backend", "changed-read-only-sandbox"),
+    ),
+)
+def test_codex_started_retry_same_key_rejects_each_changed_task_identity_field(
+    tmp_path: Path, field: str, replacement
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    payload = _attempt_payload("attempt.retry-changed-started")
+    key = "attempt.retry-changed-started.key"
+    store.append_codex_attempt(payload, actor=_actor(), idempotency_key=key)
+    with pytest.raises(LiteratureConflictError, match="idempotency"):
+        store.append_codex_attempt(
+            {**payload, field: replacement},
+            actor=_actor(),
+            idempotency_key=key,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("status", "ABANDONED_AFTER_CRASH"),
+        ("output_sha256", "6" * 64),
+        ("failure_reason", "Changed terminal failure intent"),
+    ),
+)
+def test_codex_terminal_retry_same_key_rejects_each_changed_outcome_field(
+    tmp_path: Path, field: str, replacement
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    started = store.append_codex_attempt(
+        _attempt_payload("attempt.retry-changed-terminal"),
+        actor=_actor(),
+        idempotency_key="attempt.retry-changed-terminal.started",
+    )
+    payload = _terminal_attempt_payload(started, "INVALID_OUTPUT")
+    key = "attempt.retry-changed-terminal.invalid"
+    store.append_codex_attempt(payload, actor=_actor(), idempotency_key=key)
+    with pytest.raises(LiteratureConflictError, match="idempotency"):
+        store.append_codex_attempt(
+            {**payload, field: replacement},
+            actor=_actor(),
+            idempotency_key=key,
+        )
+
+
+def test_processing_permission_rejection_exact_retry_is_idempotent_and_terminal(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    store = LiteratureStore(root)
+    payload = _attempt_payload(
+        "attempt.permission-retry", status="REJECTED_PROCESSING_PERMISSION"
+    )
+    key = "attempt.permission-retry.rejected"
+    rejection = store.append_codex_attempt(
+        payload, actor=_actor(), idempotency_key=key
+    )
+    assert store.append_codex_attempt(
+        payload, actor=_actor(), idempotency_key=key
+    ).record_sha256 == rejection.record_sha256
+    assert LiteratureStore(root).append_codex_attempt(
+        payload, actor=_actor("fresh-retry"), idempotency_key=key
+    ).record_sha256 == rejection.record_sha256
+
+    changed = {**payload, "failure_reason": "Different permission evidence"}
+    with pytest.raises(LiteratureConflictError, match="idempotency"):
+        store.append_codex_attempt(changed, actor=_actor(), idempotency_key=key)
+    with pytest.raises(LiteratureConflictError, match="idempotency"):
+        store.append_codex_attempt(
+            _attempt_payload("attempt.permission-retry"),
+            actor=_actor(),
+            idempotency_key=key,
+        )
+    with pytest.raises(LiteratureConflictError, match="different Codex attempt"):
+        store.append_codex_attempt(
+            {**payload, "attempt_id": "attempt.permission-retry.other"},
+            actor=_actor(),
+            idempotency_key=key,
+        )
+    assert len(
+        [
+            item
+            for item in LiteratureStore(root).records()
+            if getattr(item, "attempt_id", None) == payload["attempt_id"]
+        ]
+    ) == 1
+
+
+@pytest.mark.parametrize(
+    "required_field",
+    (
+        "attempt_id",
+        "task_type",
+        "status",
+        "settings_sha256",
+        "prompt_sha256",
+        "input_manifest_sha256",
+        "referenced_records",
+        "isolation_backend",
+        "failure_reason",
+    ),
+)
+def test_processing_permission_rejection_requires_every_declared_field(
+    tmp_path: Path, required_field: str
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    payload = _attempt_payload(
+        f"attempt.permission-missing-{required_field}",
+        status="REJECTED_PROCESSING_PERMISSION",
+    )
+    payload.pop(required_field)
+    with pytest.raises((KeyError, LiteratureConflictError)):
+        store.append_codex_attempt(
+            payload,
+            actor=_actor(),
+            idempotency_key=f"attempt.permission-missing-{required_field}.r1",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("model", "forbidden-model"),
+        ("workspace_manifest_sha256", "a" * 64),
+        ("output_sha256", "b" * 64),
+        ("isolation_backend", "fixture-read-only-sandbox"),
+        ("failure_reason", None),
+    ),
+)
+def test_processing_permission_rejection_forbids_invocation_and_requires_reason(
+    tmp_path: Path, field: str, replacement
+) -> None:
+    store = LiteratureStore(_project(tmp_path))
+    payload = _attempt_payload(
+        f"attempt.permission-forbidden-{field}",
+        status="REJECTED_PROCESSING_PERMISSION",
+    )
+    payload[field] = replacement
+    with pytest.raises(LiteratureConflictError):
+        store.append_codex_attempt(
+            payload,
+            actor=_actor(),
+            idempotency_key=f"attempt.permission-forbidden-{field}.r1",
+        )
 
 
 def test_codex_attempt_public_api_rejects_terminal_reentry_and_third_revision(
