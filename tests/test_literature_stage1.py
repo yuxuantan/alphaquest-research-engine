@@ -1770,20 +1770,13 @@ def test_canonical_publication_fsyncs_exact_directory_roles(
         f"research/literature/protocols/{protocol_id}/revisions"
     )
     expected_directories = {
-        "first-family": {
-            "research",
-            "research/literature",
-            "research/literature/protocols",
-            f"research/literature/protocols/{protocol_id}",
-            record_directory,
-        },
-        "new-object": {
-            "research/literature/protocols",
-            f"research/literature/protocols/{protocol_id}",
-            record_directory,
-        },
-        "new-revision": {record_directory},
-    }[case]
+        ".",
+        "research",
+        "research/literature",
+        "research/literature/protocols",
+        f"research/literature/protocols/{protocol_id}",
+        record_directory,
+    }
     canonical_directory_events = {
         relative
         for kind, relative in events
@@ -1793,7 +1786,131 @@ def test_canonical_publication_fsyncs_exact_directory_roles(
     assert canonical_directory_events == expected_directories
     expected_file = f"{record_directory}/{revision:06d}.json"
     assert ("file", expected_file) in events
+    file_barrier = events.index(("file", expected_file))
+    assert events[file_barrier + 1:file_barrier + 7] == [
+        ("directory", path)
+        for path in (
+            record_directory,
+            f"research/literature/protocols/{protocol_id}",
+            "research/literature/protocols",
+            "research/literature",
+            "research",
+            ".",
+        )
+    ]
     assert (root / expected_file).is_file()
+
+
+@pytest.mark.parametrize(
+    "failed_component",
+    ("research", "literature", "protocols", "protocol.mkdir-open", "revisions"),
+)
+def test_partial_mkdir_failed_open_retry_persists_complete_ancestry(
+    tmp_path: Path, failed_component: str,
+) -> None:
+    # Start without any canonical ancestry, including research itself.
+    root = tmp_path
+    payload = _protocol_payload(
+        protocol_id="protocol.mkdir-open", lineage="lineage.mkdir-open"
+    )
+    key = "protocol.mkdir-open.r1"
+    relative = "research/literature/protocols/protocol.mkdir-open/revisions/000001.json"
+    writer_script = r"""
+import json
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+from alphaquest.research.literature.contracts import ActorProvenanceV1
+import alphaquest.research.literature.publication as publication
+from alphaquest.research.literature.store import LiteratureStore
+
+root, component, payload, key, timestamp = sys.argv[1:]
+real_mkdir = os.mkdir
+real_open = publication._open_directory_at
+created = None
+failed = False
+canonical_phase = False
+
+def publication_phase(phase, _relative):
+    global canonical_phase
+    if phase == "after_staging_fsync_before_publish":
+        canonical_phase = True
+
+def mkdir(name, *args, **kwargs):
+    global created
+    result = real_mkdir(name, *args, **kwargs)
+    if canonical_phase and name == component:
+        parent = os.fstat(kwargs["dir_fd"])
+        created = (parent.st_dev, parent.st_ino, name)
+    return result
+
+def open_child(parent_fd, name):
+    global failed
+    parent = os.fstat(parent_fd)
+    if created == (parent.st_dev, parent.st_ino, name):
+        assert os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        failed = True
+        raise OSError("injected open failure immediately after successful mkdir")
+    return real_open(parent_fd, name)
+
+os.mkdir = mkdir
+publication._open_directory_at = open_child
+publication._TEST_PUBLICATION_HOOK = publication_phase
+try:
+    LiteratureStore(Path(root)).append_protocol(
+        json.loads(payload),
+        actor=ActorProvenanceV1(
+            actor_class="ALPHAQUEST_DETERMINISTIC_ENGINE", actor_id="engine"
+        ),
+        idempotency_key=key,
+        recorded_at=datetime.fromisoformat(timestamp),
+    )
+except OSError:
+    if not failed:
+        raise
+    os._exit(75)
+raise AssertionError("failed-open injection was not reached")
+"""
+    writer = _python_subprocess(
+        writer_script, str(root), failed_component, json.dumps(payload), key,
+        NOW.isoformat(),
+    )
+    assert writer.returncode == 75, writer.stderr
+    parts = Path(relative).parts[:-1]
+    failed_directory = root.joinpath(*parts[:parts.index(failed_component) + 1])
+    assert failed_directory.is_dir()
+    assert not (root / relative).exists()
+    # The failed append cleaned its staging file; no ambiguity marker can help.
+    assert not list((root / "run-store/literature/canonical-staging").glob("*.staging"))
+
+    retry = _python_subprocess(
+        _CANONICAL_RETRY_INSPECTOR, str(root), json.dumps(payload), key,
+        NOW.isoformat(),
+    )
+    assert retry.returncode == 0, retry.stderr
+    result = json.loads(retry.stdout)
+    assert result["record_id"] == "protocol.mkdir-open.r000001"
+    events = [tuple(event) for event in result["events"]]
+    file_barrier = events.index(("file", relative))
+    assert events[file_barrier + 1:file_barrier + 7] == [
+        ("directory", path)
+        for path in (
+            "research/literature/protocols/protocol.mkdir-open/revisions",
+            "research/literature/protocols/protocol.mkdir-open",
+            "research/literature/protocols",
+            "research/literature",
+            "research",
+            ".",
+        )
+    ]
+    control = tmp_path / "control"
+    control.mkdir()
+    expected = LiteratureStore(control).append_protocol(
+        payload, actor=_actor(), idempotency_key=key, recorded_at=NOW,
+    )
+    assert (root / relative).read_bytes() == canonical_json_bytes(expected)
+    assert LiteratureStore(root).validate(verify_artifacts=False)["status"] == "PASS"
 
 
 @pytest.mark.parametrize(

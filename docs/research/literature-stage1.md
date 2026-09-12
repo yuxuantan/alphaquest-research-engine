@@ -275,15 +275,19 @@ acknowledged.
 walker retains the descriptor and repository-relative identity of every
 canonical ancestor and records which directory entries it created. After the
 staging-file fsync, newly created directories and their naming parents are
-fsynced bottom-up before the link. The linked record directory is fsynced again
-after publication of the final filename. Thus an existing-object/new-revision
-append changes only the record directory, while a new object or family also
-anchors every new ancestor entry. If a pre-link process exit leaves a staging
-residue for the same digest, or a pre-link directory fsync fails and preserves
-that residue deliberately, the retry conservatively fsyncs the complete
-canonical ancestry because it cannot trust the visible directories left by the
-prior attempt. A directory-fsync failure is not reported as success and does
-not delete an already complete final record.
+fsynced bottom-up before the link. After the link and linked-inode fsync,
+EVERY successful canonical publication fsyncs the COMPLETE descriptor-opened
+ancestry, from the record directory through the repository root, before
+staging cleanup and its directory fsync. This applies equally to the first
+family record, a new object, and a new revision in an existing object.
+Directory existence, the current attempt's created-directory list, and
+abandoned staging files never determine the completeness of this barrier.
+For example, a prior attempt may have created a directory but failed to open
+it before recording its creation; the next append still anchors that directory
+and every parent. A directory-fsync failure is not reported as success and
+does not delete an already complete final record. Exact retries perform the
+same complete ancestry barrier. Stage 1 intentionally accepts the extra fsync
+cost rather than inferring durability from process-local creation history.
 
 **Ambiguous post-link recovery.** An exact idempotent retry does not return just
 because a matching record is visible. After the normal record hash, identity,

@@ -380,7 +380,9 @@ def publish_canonical_record(
         data,
         staging_root=LITERATURE_CANONICAL_STAGING_RELATIVE,
         hook=_TEST_PUBLICATION_HOOK,
-        complete_ancestry=False,
+        # Existing directories may come from an interrupted mkdir/open attempt.
+        # Every successful canonical publication must anchor the entire chain.
+        complete_ancestry=True,
         collision_message="P3 canonical record already exists with different bytes",
         allow_empty=False,
     )
