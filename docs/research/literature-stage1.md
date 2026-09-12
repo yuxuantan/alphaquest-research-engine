@@ -289,6 +289,32 @@ does not delete an already complete final record. Exact retries perform the
 same complete ancestry barrier. Stage 1 intentionally accepts the extra fsync
 cost rather than inferring durability from process-local creation history.
 
+**Visible versus durable prefix.** Parsing and fully validating canonical
+records establishes a visible prefix, not a durable one. Under the exclusive
+P3 writer lock, writers first load and structurally/semantically validate the
+complete canonical history and check any recoverable completion tail. They
+then recover EVERY record in authoritative append-sequence order: reopen the
+exact canonical path, require byte equality with the validated serialization,
+fsync the file, and fsync its complete ancestry through the repository root.
+Only then may a successor bind the prefix or an existing canonical operation
+be acknowledged. Missing/changed bytes, unsafe reopening, or any required
+fsync failure blocks the successor without consuming a canonical sequence.
+Malformed history is rejected before durability recovery.
+
+This rule applies to generic append (including immutable freezes and exact
+retries), specialized receipt/COMPLETED publication and receipt-tail recovery,
+and the emission layer's completed/blocked returns. Receipt-tail recovery
+includes the published receipt and does not rerun P2 publication. Newly
+published records still require their own complete ancestry barrier; prefix
+recovery is additional. Runtime artifacts are not canonical sequence members
+and do not participate in canonical-prefix recovery.
+
+Stage 1 maintains no durability frontier, marker, or authoritative in-memory
+cache. Each independent transaction conservatively recovers the full validated
+prefix, including older non-tail records in sibling objects/families. The
+extra fsync cost is intentional. Any future durable-frontier optimization
+requires a separate design and audit.
+
 **Ambiguous post-link recovery.** An exact idempotent retry does not return just
 because a matching record is visible. After the normal record hash, identity,
 family, object, and revision checks, it opens the expected final file without

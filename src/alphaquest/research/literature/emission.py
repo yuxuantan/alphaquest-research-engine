@@ -587,31 +587,33 @@ def emit_prepared(
 
     literature = LiteratureStore(project_root)
     backlog = EdgeBacklogStore(project_root)
-    records = literature.records()
-    recoverable_tail = literature._recoverable_completion_tail(records)
-    if (
-        recoverable_tail is not None
-        and recoverable_tail.operation_id != operation_id
-    ):
-        raise LiteratureConflictError(
-            "recoverable completion tail must be reconciled before another emission: "
-            f"{recoverable_tail.operation_id}"
-        )
-    operations = [
-        item
-        for item in records
-        if isinstance(item, P2EmissionOperationRevisionV1)
-        and item.operation_id == operation_id
-    ]
-    if not operations:
-        raise LiteratureConflictError(f"p2-emissions object not found: {operation_id}")
-    operation = operations[-1]
-    if operation.state == "BLOCKED":
-        return operation
-    if operation.state == "CONFLICT":
-        raise LiteratureConflictError(str(operation.conflict_reason))
-    if operation.state == "COMPLETED":
-        return _by_hash(records, str(operation.receipt_record_sha256), P2EmissionReceiptV1)
+    with literature.lock(exclusive=True):
+        records = literature._load_and_validate()
+        recoverable_tail = literature._recoverable_completion_tail(records)
+        if (
+            recoverable_tail is not None
+            and recoverable_tail.operation_id != operation_id
+        ):
+            raise LiteratureConflictError(
+                "recoverable completion tail must be reconciled before another emission: "
+                f"{recoverable_tail.operation_id}"
+            )
+        operations = [
+            item
+            for item in records
+            if isinstance(item, P2EmissionOperationRevisionV1)
+            and item.operation_id == operation_id
+        ]
+        if not operations:
+            raise LiteratureConflictError(f"p2-emissions object not found: {operation_id}")
+        operation = operations[-1]
+        if operation.state == "CONFLICT":
+            raise LiteratureConflictError(str(operation.conflict_reason))
+        literature._ensure_durable_canonical_prefix(records)
+        if operation.state == "BLOCKED":
+            return operation
+        if operation.state == "COMPLETED":
+            return _by_hash(records, str(operation.receipt_record_sha256), P2EmissionReceiptV1)
     freeze = _by_hash(
         records, operation.freeze_record_sha256, DossierFreezeV1
     )

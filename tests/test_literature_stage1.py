@@ -1777,6 +1777,12 @@ def test_canonical_publication_fsyncs_exact_directory_roles(
         f"research/literature/protocols/{protocol_id}",
         record_directory,
     }
+    if case == "new-object":
+        # The predecessor's sibling hierarchy must now be recovered as well.
+        expected_directories.update({
+            "research/literature/protocols/protocol.durable-first",
+            "research/literature/protocols/protocol.durable-first/revisions",
+        })
     canonical_directory_events = {
         relative
         for kind, relative in events

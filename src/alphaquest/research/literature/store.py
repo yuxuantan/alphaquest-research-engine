@@ -1805,6 +1805,7 @@ class LiteratureStore:
                     "another recoverable completion tail must be reconciled first: "
                     f"{recoverable_tail.operation_id}"
                 )
+            self._ensure_durable_canonical_prefix(records)
             expected_receipt_key = f"{operation_id}.receipt"
             expected_completion_key = f"{operation_id}.completed"
             if (
@@ -2106,6 +2107,7 @@ class LiteratureStore:
                     "recoverable completion tail must be reconciled before any canonical append: "
                     f"{recoverable_tail.operation_id}@{recoverable_tail.record_sha256}"
                 )
+            self._ensure_durable_canonical_prefix(records)
             sequence = len(records) + 1
             material = {
                 **clean,
@@ -2153,6 +2155,21 @@ class LiteratureStore:
             relative = self._record_relative(record)
             publish_canonical_record(self.project_root, relative, canonical_json_bytes(record))
             return record
+
+    def _ensure_durable_canonical_prefix(self, records: list[CanonicalRecordV1]) -> None:
+        """Recover every validated record, in append order, under the writer lock.
+
+        Callers must first load and fully validate this exact prefix. Visibility
+        does not prove durability, even for an older non-tail record. No durable
+        frontier or cross-transaction cache is inferred from process/disk state.
+        """
+
+        for record in records:
+            recover_canonical_record(
+                self.project_root,
+                self._record_relative(record),
+                canonical_json_bytes(record),
+            )
 
     def _validate_pending_revision(
         self, record: RevisionRecordV1, records: list[CanonicalRecordV1]
