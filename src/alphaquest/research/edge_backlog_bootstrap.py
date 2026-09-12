@@ -38,7 +38,7 @@ from alphaquest.research.edge_backlog_io import (
 from alphaquest.research.storage import StorageLayout, campaign_definition_paths, display_path, load_storage_layout
 
 
-_COMMITTED_LAYOUT_FIELDS = frozenset(
+_COMMITTED_LAYOUT_BASE_FIELDS = frozenset(
     {
         "schema",
         "active_campaign_root",
@@ -58,6 +58,8 @@ _COMMITTED_LAYOUT_FIELDS = frozenset(
         "legacy_prefixes",
     }
 )
+_COMMITTED_LAYOUT_P3_FIELDS = frozenset({"literature_root", "literature_runtime_root"})
+_COMMITTED_LAYOUT_FIELDS = _COMMITTED_LAYOUT_BASE_FIELDS | _COMMITTED_LAYOUT_P3_FIELDS
 _COMMITTED_LAYOUT_PATH_FIELDS = (
     "active_campaign_root",
     "research_artifact_root",
@@ -70,6 +72,8 @@ _COMMITTED_LAYOUT_PATH_FIELDS = (
     "studio_runtime_root",
     "edge_backlog_root",
     "edge_backlog_history_index",
+    "literature_root",
+    "literature_runtime_root",
     "migration_manifest",
 )
 _GIT_EXECUTABLE = next(
@@ -1241,7 +1245,7 @@ def _strict_committed_storage_layout(root: Path, data: bytes) -> StorageLayout:
     if not isinstance(document, dict):
         raise ValueError("committed storage layout must be a mapping")
     keys = set(document)
-    if keys != _COMMITTED_LAYOUT_FIELDS:
+    if keys not in {_COMMITTED_LAYOUT_BASE_FIELDS, _COMMITTED_LAYOUT_FIELDS}:
         missing = sorted(_COMMITTED_LAYOUT_FIELDS - keys)
         extra = sorted(keys - _COMMITTED_LAYOUT_FIELDS)
         raise ValueError(
@@ -1254,6 +1258,16 @@ def _strict_committed_storage_layout(root: Path, data: bytes) -> StorageLayout:
             "committed edge_backlog_root must remain fixed at "
             f"{CANONICAL_EDGE_BACKLOG_RELATIVE!r}"
         )
+    if "literature_root" in document and document["literature_root"] != "research/literature":
+        raise ValueError("committed literature_root must remain fixed at 'research/literature'")
+    if "literature_runtime_root" in document and document["literature_runtime_root"] != "run-store/literature":
+        raise ValueError("committed literature_runtime_root must remain fixed at 'run-store/literature'")
+
+    document = {
+        **document,
+        "literature_root": document.get("literature_root", "research/literature"),
+        "literature_runtime_root": document.get("literature_runtime_root", "run-store/literature"),
+    }
 
     paths = {
         field: _canonical_layout_path(document[field], field=field)
@@ -1312,6 +1326,8 @@ def _strict_committed_storage_layout(root: Path, data: bytes) -> StorageLayout:
         studio_runtime_root=absolute(paths["studio_runtime_root"]),
         edge_backlog_root=absolute(paths["edge_backlog_root"]),
         edge_backlog_history_index=absolute(paths["edge_backlog_history_index"]),
+        literature_root=absolute(paths["literature_root"]),
+        literature_runtime_root=absolute(paths["literature_runtime_root"]),
         migration_manifest=absolute(paths["migration_manifest"]),
         legacy_prefixes=tuple(
             sorted(normalized_prefixes, key=lambda item: len(item[0]), reverse=True)

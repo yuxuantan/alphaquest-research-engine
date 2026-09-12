@@ -1,0 +1,278 @@
+{
+  "$defs": {
+    "ActorProvenanceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_class": {
+          "enum": [
+            "CODEX",
+            "HUMAN_OWNER_RESEARCHER",
+            "ALPHAQUEST_DETERMINISTIC_ENGINE"
+          ],
+          "title": "Actor Class",
+          "type": "string"
+        },
+        "actor_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        }
+      },
+      "required": [
+        "actor_class",
+        "actor_id"
+      ],
+      "title": "ActorProvenanceV1",
+      "type": "object"
+    },
+    "PublicAvailabilityV1": {
+      "additionalProperties": false,
+      "properties": {
+        "original_value": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Original Value"
+        },
+        "parsed_value": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parsed Value"
+        },
+        "precision": {
+          "enum": [
+            "EXACT_INSTANT",
+            "DAY",
+            "MONTH",
+            "YEAR",
+            "UNKNOWN"
+          ],
+          "title": "Precision",
+          "type": "string"
+        },
+        "provenance_record_ids": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Provenance Record Ids",
+          "type": "array"
+        },
+        "timezone_basis": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone Basis"
+        },
+        "verification": {
+          "enum": [
+            "VERIFIED",
+            "SOURCE_REPORTED_UNVERIFIED",
+            "CONFLICTING",
+            "UNKNOWN"
+          ],
+          "title": "Verification",
+          "type": "string"
+        }
+      },
+      "required": [
+        "precision",
+        "verification"
+      ],
+      "title": "PublicAvailabilityV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://alphaquest.local/schemas/literature-source-version-identity-revision-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/ActorProvenanceV1"
+    },
+    "append_sequence": {
+      "minimum": 1,
+      "title": "Append Sequence",
+      "type": "integer"
+    },
+    "change_reason": {
+      "minLength": 1,
+      "title": "Change Reason",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "identity_status": {
+      "enum": [
+        "VERIFIED_STRONG",
+        "PROVISIONAL",
+        "AMBIGUOUS"
+      ],
+      "title": "Identity Status",
+      "type": "string"
+    },
+    "intent_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Intent Sha256",
+      "type": "string"
+    },
+    "previous_revision_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Revision Sha256"
+    },
+    "previous_store_record_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Store Record Sha256"
+    },
+    "public_availability": {
+      "$ref": "#/$defs/PublicAvailabilityV1"
+    },
+    "record_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,255}$",
+      "title": "Record Id",
+      "type": "string"
+    },
+    "record_sha256": {
+      "not": {
+        "const": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Record Sha256",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "schema": {
+      "const": "alphaquest.literature-source-version-identity-revision/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "source_version_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Source Version Id",
+      "type": "string"
+    },
+    "strong_identifiers": {
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9_.-]{0,127}$": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "title": "Strong Identifiers",
+      "type": "object"
+    },
+    "version_kind": {
+      "enum": [
+        "ORIGINAL",
+        "WORKING_PAPER_REVISION",
+        "PUBLISHED_SUCCESSOR",
+        "CORRECTION_NOTICE",
+        "RETRACTION_NOTICE",
+        "OTHER"
+      ],
+      "title": "Version Kind",
+      "type": "string"
+    },
+    "version_label": {
+      "minLength": 1,
+      "title": "Version Label",
+      "type": "string"
+    },
+    "work_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Work Id",
+      "type": "string"
+    },
+    "work_revision_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Work Revision Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "record_id",
+    "append_sequence",
+    "recorded_at",
+    "actor",
+    "idempotency_key",
+    "intent_sha256",
+    "record_sha256",
+    "revision",
+    "source_version_id",
+    "work_id",
+    "work_revision_sha256",
+    "version_kind",
+    "version_label",
+    "public_availability",
+    "identity_status",
+    "change_reason"
+  ],
+  "title": "SourceVersionIdentityRevisionV1",
+  "type": "object"
+}

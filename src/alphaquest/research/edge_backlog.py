@@ -1058,11 +1058,56 @@ class EdgeBacklogStore:
         return self._load_record(paths[-1], ObservationRevisionV1)
 
     @_transactional(exclusive=False)
+    def exact_observation_revision(
+        self,
+        observation_id: str,
+        record_sha256: str,
+    ) -> ObservationRevisionV1:
+        matches = [
+            item
+            for item in self._all_observation_revisions(
+                _require_identifier(observation_id, "observation_id")
+            )
+            if item.record_sha256 == record_sha256
+        ]
+        if len(matches) != 1:
+            raise FileNotFoundError(
+                f"exact observation revision not found: {observation_id}@{record_sha256}"
+            )
+        return matches[0]
+
+    @_transactional(exclusive=False)
+    def observation_revisions(self, observation_id: str) -> list[ObservationRevisionV1]:
+        """Return the complete append-only revision chain for one observation."""
+
+        revisions = self._all_observation_revisions(
+            _require_identifier(observation_id, "observation_id")
+        )
+        if not revisions:
+            raise FileNotFoundError(f"observation not found: {observation_id}")
+        return revisions
+
+    @_transactional(exclusive=False)
     def latest_entry(self, entry_id: str) -> EdgeBacklogEntryRevisionV1:
         paths = self._entry_paths(_require_identifier(entry_id, "entry_id"))
         if not paths:
             raise FileNotFoundError(f"edge backlog entry not found: {entry_id}")
         return self._load_record(paths[-1], EdgeBacklogEntryRevisionV1)
+
+    @_transactional(exclusive=False)
+    def exact_entry_revision(
+        self,
+        entry_id: str,
+        record_sha256: str,
+    ) -> EdgeBacklogEntryRevisionV1:
+        matches = [
+            item
+            for item in self._all_entry_revisions(_require_identifier(entry_id, "entry_id"))
+            if item.record_sha256 == record_sha256
+        ]
+        if len(matches) != 1:
+            raise FileNotFoundError(f"exact entry revision not found: {entry_id}@{record_sha256}")
+        return matches[0]
 
     @_transactional(exclusive=False)
     def decisions(self, entry_id: str) -> list[EdgeBacklogDecisionV1]:
@@ -1100,6 +1145,116 @@ class EdgeBacklogStore:
         if not history or history[-1].entry_revision_sha256 != entry.record_sha256:
             return "UNREVIEWED"
         return history[-1].disposition
+
+    @_transactional(exclusive=False)
+    def entry_link_chain_sha256(self, entry_id: str) -> str:
+        """Return the exact current link-chain identity for one entry."""
+
+        return _record_chain_sha256(self.links(entry_id))
+
+    @_transactional(exclusive=False)
+    def entry_link_chain_sha256_at_prefix(self, entry_id: str, before_append_sequence: int) -> str:
+        _require_identifier(entry_id, "entry_id")
+        return _record_chain_sha256(
+            [item for item in self.links(entry_id) if item.append_sequence < before_append_sequence]
+        )
+
+    @_transactional(exclusive=False)
+    def entry_state_at_prefix(self, entry_id: str, before_append_sequence: int) -> str:
+        revisions = [
+            item
+            for item in self._all_entry_revisions(_require_identifier(entry_id, "entry_id"))
+            if item.append_sequence < before_append_sequence
+        ]
+        if not revisions:
+            raise FileNotFoundError(f"entry not found before P2 prefix: {entry_id}")
+        entry = revisions[-1]
+        decisions = [
+            item for item in self.decisions(entry_id) if item.append_sequence < before_append_sequence
+        ]
+        if not decisions or decisions[-1].entry_revision_sha256 != entry.record_sha256:
+            return "UNREVIEWED"
+        return decisions[-1].disposition
+
+    @_transactional(exclusive=False)
+    def latest_entry_at_prefix(
+        self, entry_id: str, before_append_sequence: int
+    ) -> EdgeBacklogEntryRevisionV1:
+        revisions = [
+            item
+            for item in self._all_entry_revisions(_require_identifier(entry_id, "entry_id"))
+            if item.append_sequence < before_append_sequence
+        ]
+        if not revisions:
+            raise FileNotFoundError(f"entry not found before P2 prefix: {entry_id}")
+        return revisions[-1]
+
+    @_transactional(exclusive=False)
+    def latest_observation_at_prefix(
+        self, observation_id: str, before_append_sequence: int
+    ) -> ObservationRevisionV1:
+        revisions = [
+            item
+            for item in self._all_observation_revisions(
+                _require_identifier(observation_id, "observation_id")
+            )
+            if item.append_sequence < before_append_sequence
+        ]
+        if not revisions:
+            raise FileNotFoundError(f"observation not found before P2 prefix: {observation_id}")
+        return revisions[-1]
+
+    @_transactional(exclusive=False)
+    def next_append_sequence(self) -> int:
+        """Return the next global P2 append sequence under a shared snapshot."""
+
+        return self._next_append_sequence()
+
+    @_transactional(exclusive=False)
+    def current_observation_dependents(
+        self,
+        observation_id: str,
+        observation_revision_sha256: str,
+    ) -> list[EdgeBacklogEntryRevisionV1]:
+        """Enumerate every current entry referencing one exact observation revision."""
+
+        _require_identifier(observation_id, "observation_id")
+        output = []
+        for entry_id in self._canonical_tree().entry_ids:
+            entry = self.latest_entry(entry_id)
+            if any(
+                item.observation_id == observation_id
+                and item.observation_revision_sha256 == observation_revision_sha256
+                for item in entry.observation_refs
+            ):
+                output.append(entry)
+        return sorted(output, key=lambda item: item.entry_id)
+
+    @_transactional(exclusive=False)
+    def observation_dependents_at_prefix(
+        self,
+        observation_id: str,
+        observation_revision_sha256: str,
+        before_append_sequence: int,
+    ) -> list[EdgeBacklogEntryRevisionV1]:
+        _require_identifier(observation_id, "observation_id")
+        output = []
+        for entry_id in self._canonical_tree().entry_ids:
+            revisions = [
+                item
+                for item in self._all_entry_revisions(entry_id)
+                if item.append_sequence < before_append_sequence
+            ]
+            if not revisions:
+                continue
+            entry = revisions[-1]
+            if any(
+                item.observation_id == observation_id
+                and item.observation_revision_sha256 == observation_revision_sha256
+                for item in entry.observation_refs
+            ):
+                output.append(entry)
+        return sorted(output, key=lambda item: item.entry_id)
 
     @_transactional(exclusive=False)
     def list_entries(self) -> list[dict[str, Any]]:
@@ -1175,6 +1330,80 @@ class EdgeBacklogStore:
             "candidates": candidates,
         }
         return {**core, "snapshot_sha256": hashlib.sha256(canonical_json_bytes(core)).hexdigest()}
+
+    @_transactional(exclusive=False)
+    def duplicate_snapshot_at_prefix(
+        self,
+        entry_id: str,
+        *,
+        entry_revision_sha256: str,
+        before_append_sequence: int,
+        expected_historical_source_commit: str | None = None,
+        expected_historical_universe_sha256: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a reproducible snapshot at an exact canonical P2 prefix.
+
+        This read-only API exists for transaction journals that must recover
+        without silently widening the duplicate-review universe.
+        """
+
+        if before_append_sequence < 1:
+            raise EdgeBacklogConflictError("duplicate snapshot prefix must be positive")
+        revisions = [
+            item
+            for item in self._all_entry_revisions(_require_identifier(entry_id, "entry_id"))
+            if item.append_sequence < before_append_sequence
+        ]
+        query = next((item for item in revisions if item.record_sha256 == entry_revision_sha256), None)
+        if query is None:
+            raise EdgeBacklogConflictError("exact query entry revision is absent from the requested P2 prefix")
+        query_links = [
+            item for item in self.links(entry_id) if item.append_sequence < before_append_sequence
+        ]
+        historical_records, historical_source_commit, historical_universe_sha256 = (
+            self._historical_snapshot_universe()
+        )
+        if (
+            expected_historical_source_commit is not None
+            and historical_source_commit != expected_historical_source_commit
+        ):
+            raise EdgeBacklogConflictError("historical source commit changed since the prepared emission")
+        if (
+            expected_historical_universe_sha256 is not None
+            and historical_universe_sha256 != expected_historical_universe_sha256
+        ):
+            raise EdgeBacklogConflictError("historical duplicate universe changed since the prepared emission")
+        candidates = [
+            DuplicateCandidateV1.model_validate(item).model_dump(mode="json", by_alias=True)
+            for item in self._duplicate_candidates(
+                query,
+                historical_records=historical_records,
+                before_append_sequence=before_append_sequence,
+                reviewing_recorded_at=query.recorded_at,
+                query_links=query_links,
+            )
+        ]
+        core = {
+            "schema": DUPLICATE_SNAPSHOT_SCHEMA,
+            "entry_id": query.entry_id,
+            "entry_revision_sha256": query.record_sha256,
+            "before_append_sequence": before_append_sequence,
+            "entry_link_chain_sha256": _record_chain_sha256(query_links),
+            "historical_source_commit": historical_source_commit,
+            "historical_universe_sha256": historical_universe_sha256,
+            "candidates": candidates,
+        }
+        return {**core, "snapshot_sha256": hashlib.sha256(canonical_json_bytes(core)).hexdigest()}
+
+    @_transactional(exclusive=False)
+    def records_by_task_id(self, task_id: str) -> list[HashedRecord]:
+        """Return exact P2 records authored for a recovery task, in append order."""
+
+        _require_identifier(task_id, "task_id")
+        return sorted(
+            [item for item in self._canonical_records() if item.actor.task_id == task_id],
+            key=lambda item: item.append_sequence,
+        )
 
     @_transactional(exclusive=False)
     def duplicate_candidates(self, entry_id: str) -> list[dict[str, Any]]:

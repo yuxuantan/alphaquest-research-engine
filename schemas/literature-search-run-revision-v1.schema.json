@@ -1,0 +1,381 @@
+{
+  "$defs": {
+    "ActorProvenanceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_class": {
+          "enum": [
+            "CODEX",
+            "HUMAN_OWNER_RESEARCHER",
+            "ALPHAQUEST_DETERMINISTIC_ENGINE"
+          ],
+          "title": "Actor Class",
+          "type": "string"
+        },
+        "actor_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        }
+      },
+      "required": [
+        "actor_class",
+        "actor_id"
+      ],
+      "title": "ActorProvenanceV1",
+      "type": "object"
+    },
+    "SearchCaptureAttemptV1": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_attempt_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Capture Attempt Id",
+          "type": "string"
+        },
+        "result_identity_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Result Identity Sha256",
+          "type": "string"
+        },
+        "selection_ordinal": {
+          "minimum": 1,
+          "title": "Selection Ordinal",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "capture_attempt_id",
+        "result_identity_sha256",
+        "selection_ordinal"
+      ],
+      "title": "SearchCaptureAttemptV1",
+      "type": "object"
+    },
+    "SearchResultInspectionV1": {
+      "additionalProperties": false,
+      "description": "One stable inspected-result identity with deterministic provider ranking.",
+      "properties": {
+        "canonical_locator": {
+          "minLength": 1,
+          "title": "Canonical Locator",
+          "type": "string"
+        },
+        "locator_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Locator Sha256",
+          "type": "string"
+        },
+        "provider_rank": {
+          "minimum": 1,
+          "title": "Provider Rank",
+          "type": "integer"
+        },
+        "result_identity_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Result Identity Sha256",
+          "type": "string"
+        },
+        "result_rank": {
+          "minimum": 1,
+          "title": "Result Rank",
+          "type": "integer"
+        },
+        "work_identity_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Work Identity Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result_identity_sha256",
+        "work_identity_sha256",
+        "canonical_locator",
+        "locator_sha256",
+        "provider_rank",
+        "result_rank"
+      ],
+      "title": "SearchResultInspectionV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://alphaquest.local/schemas/literature-search-run-revision-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/ActorProvenanceV1"
+    },
+    "adaptive_depth": {
+      "minimum": 0,
+      "title": "Adaptive Depth",
+      "type": "integer"
+    },
+    "append_sequence": {
+      "minimum": 1,
+      "title": "Append Sequence",
+      "type": "integer"
+    },
+    "bytes_retrieved": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Bytes Retrieved",
+      "type": "integer"
+    },
+    "capture_attempt_records": {
+      "items": {
+        "$ref": "#/$defs/SearchCaptureAttemptV1"
+      },
+      "title": "Capture Attempt Records",
+      "type": "array"
+    },
+    "capture_attempts": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Capture Attempts",
+      "type": "integer"
+    },
+    "elapsed_seconds": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Elapsed Seconds",
+      "type": "integer"
+    },
+    "execution_lineage_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Execution Lineage Id",
+      "type": "string"
+    },
+    "failure_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Reason"
+    },
+    "idempotency_key": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "inspected_results": {
+      "items": {
+        "$ref": "#/$defs/SearchResultInspectionV1"
+      },
+      "title": "Inspected Results",
+      "type": "array"
+    },
+    "intent_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Intent Sha256",
+      "type": "string"
+    },
+    "lane": {
+      "enum": [
+        "SUPPORTING_OR_MOTIVATING",
+        "NULL_OR_CONTRARY",
+        "FAILED_REPLICATION",
+        "REGIME_DEPENDENCE",
+        "TRANSACTION_COST_OR_EXECUTION_OBJECTION",
+        "ALTERNATIVE_EXPLANATION",
+        "DATA_MINING_OR_MULTIPLE_TESTING"
+      ],
+      "title": "Lane",
+      "type": "string"
+    },
+    "parent_search_run_id": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Search Run Id"
+    },
+    "previous_revision_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Revision Sha256"
+    },
+    "previous_store_record_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Store Record Sha256"
+    },
+    "protocol_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Protocol Id",
+      "type": "string"
+    },
+    "protocol_revision_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Protocol Revision Sha256",
+      "type": "string"
+    },
+    "provider_attempt_ordinal": {
+      "minimum": 1,
+      "title": "Provider Attempt Ordinal",
+      "type": "integer"
+    },
+    "provider_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Provider Id",
+      "type": "string"
+    },
+    "provider_trace_completeness": {
+      "enum": [
+        "COMPLETE_FOR_REQUEST",
+        "PARTIAL_PROVIDER_TRACE",
+        "AGENT_REPORTED_ONLY",
+        "UNAVAILABLE",
+        "UNKNOWN"
+      ],
+      "title": "Provider Trace Completeness",
+      "type": "string"
+    },
+    "query": {
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+    },
+    "query_kind": {
+      "enum": [
+        "INITIAL",
+        "ADAPTIVE"
+      ],
+      "title": "Query Kind",
+      "type": "string"
+    },
+    "record_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,255}$",
+      "title": "Record Id",
+      "type": "string"
+    },
+    "record_sha256": {
+      "not": {
+        "const": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Record Sha256",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "result_set_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Set Sha256"
+    },
+    "results_inspected": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Results Inspected",
+      "type": "integer"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "saturation_claimed": {
+      "default": false,
+      "title": "Saturation Claimed",
+      "type": "boolean"
+    },
+    "schema": {
+      "const": "alphaquest.literature-search-run-revision/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "search_run_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Search Run Id",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "STARTED",
+        "SUCCEEDED",
+        "PARTIAL",
+        "FAILED",
+        "ABANDONED_AFTER_CRASH"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "record_id",
+    "append_sequence",
+    "recorded_at",
+    "actor",
+    "idempotency_key",
+    "intent_sha256",
+    "record_sha256",
+    "revision",
+    "search_run_id",
+    "protocol_id",
+    "protocol_revision_sha256",
+    "execution_lineage_id",
+    "lane",
+    "query",
+    "query_kind",
+    "adaptive_depth",
+    "provider_id",
+    "provider_attempt_ordinal",
+    "status",
+    "provider_trace_completeness"
+  ],
+  "title": "SearchRunRevisionV1",
+  "type": "object"
+}
