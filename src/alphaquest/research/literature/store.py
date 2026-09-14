@@ -1805,7 +1805,6 @@ class LiteratureStore:
                     "another recoverable completion tail must be reconciled first: "
                     f"{recoverable_tail.operation_id}"
                 )
-            self._ensure_durable_canonical_prefix(records)
             expected_receipt_key = f"{operation_id}.receipt"
             expected_completion_key = f"{operation_id}.completed"
             if (
@@ -1877,6 +1876,7 @@ class LiteratureStore:
                     raise LiteratureConflictError(
                         "completed emission retry differs from the persisted receipt intent"
                     )
+                self._ensure_durable_canonical_prefix(records)
                 recover_canonical_record(
                     self.project_root,
                     self._record_relative(receipt),
@@ -1925,11 +1925,6 @@ class LiteratureStore:
                     raise LiteratureIntegrityError(
                         "recoverable completion tail differs from the deterministic receipt"
                     )
-                recover_canonical_record(
-                    self.project_root,
-                    self._record_relative(receipt),
-                    canonical_json_bytes(receipt),
-                )
                 records_before_completion = records
             completion_payload = operation.model_dump(
                 mode="json",
@@ -1958,6 +1953,15 @@ class LiteratureStore:
             if self._validate_cross_record_state(completed_records) is not None:
                 raise LiteratureIntegrityError(
                     "completed emission still exposes a recoverable receipt tail"
+                )
+            # Reject conflicts with the validated transaction before recovery I/O,
+            # but establish the full prefix before any dependent publication.
+            self._ensure_durable_canonical_prefix(records)
+            if recoverable_tail is not None:
+                recover_canonical_record(
+                    self.project_root,
+                    self._record_relative(receipt),
+                    canonical_json_bytes(receipt),
                 )
             completion_relative = self._record_relative(completion)
             if recoverable_tail is None:
@@ -2107,7 +2111,10 @@ class LiteratureStore:
                     "recoverable completion tail must be reconciled before any canonical append: "
                     f"{recoverable_tail.operation_id}@{recoverable_tail.record_sha256}"
                 )
-            self._ensure_durable_canonical_prefix(records)
+            # Only an owned key needs retry comparison before recovery. Keep
+            # fresh append normalization and timestamp allocation after it.
+            if not any(record.idempotency_key == idempotency_key for record in records):
+                self._ensure_durable_canonical_prefix(records)
             sequence = len(records) + 1
             material = {
                 **clean,
@@ -2132,6 +2139,7 @@ class LiteratureStore:
                     continue
                 if record.intent_sha256 != intent or not isinstance(record, record_type):
                     raise LiteratureConflictError(f"idempotency key {idempotency_key!r} identifies different intent")
+                self._ensure_durable_canonical_prefix(records)
                 recover_canonical_record(
                     self.project_root,
                     self._record_relative(record),
