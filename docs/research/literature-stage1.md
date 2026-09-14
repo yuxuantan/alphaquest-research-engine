@@ -292,8 +292,11 @@ cost rather than inferring durability from process-local creation history.
 **Visible versus durable prefix.** Parsing and fully validating canonical
 records establishes a visible prefix, not a durable one. Under the exclusive
 P3 writer lock, writers first load and structurally/semantically validate the
-complete canonical history and check any recoverable completion tail. They
-then recover EVERY record in authoritative append-sequence order: reopen the
+complete canonical history and check any recoverable completion tail. Retry
+conflicts already provable from that locked, validated history are rejected
+before unrelated prefix-recovery I/O; integrity failures retain their existing
+classification. Before successful acknowledgement or dependent publication,
+writers recover EVERY record in authoritative append-sequence order: reopen the
 exact canonical path, require byte equality with the validated serialization,
 fsync the file, and fsync its complete ancestry through the repository root.
 Only then may a successor bind the prefix or an existing canonical operation

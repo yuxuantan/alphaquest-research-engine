@@ -4746,7 +4746,7 @@ def test_completed_emission_exact_retry_revalidates_and_returns_owned_records(
     ),
 )
 def test_completed_emission_retry_rejects_each_changed_receipt_field(
-    completed_emission_retry_root: Path, field: str
+    completed_emission_retry_root: Path, field: str, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store, snapshot, _receipt, completed, payload = _completed_retry_inputs(
         completed_emission_retry_root
@@ -4763,6 +4763,13 @@ def test_completed_emission_retry_rejects_each_changed_receipt_field(
         changed[field] = "f" * 64 if value != "f" * 64 else "e" * 64
     else:
         changed[field] = f"{value}.changed"
+    recovery_calls = []
+
+    def failed_recovery(self, records):
+        recovery_calls.append(records)
+        raise OSError("injected unrelated prefix recovery failure")
+
+    monkeypatch.setattr(LiteratureStore, "_ensure_durable_canonical_prefix", failed_recovery)
     with pytest.raises(LiteratureConflictError):
         store.complete_emission_operation(
             operation_id=completed.operation_id,
@@ -4772,6 +4779,7 @@ def test_completed_emission_retry_rejects_each_changed_receipt_field(
             receipt_idempotency_key=f"{completed.operation_id}.receipt",
             completion_idempotency_key=f"{completed.operation_id}.completed",
         )
+    assert recovery_calls == []
 
 
 def test_completed_emission_retry_rejects_changed_snapshot_operation_and_keys(
