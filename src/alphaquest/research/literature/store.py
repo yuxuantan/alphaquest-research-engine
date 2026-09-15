@@ -2547,6 +2547,13 @@ class LiteratureStore:
                 raise LiteratureIntegrityError(f"record path/identity mismatch: {relative} != {expected}")
             records.append(record)
         records.sort(key=lambda item: item.append_sequence)
+        self._validate_canonical_sequence(records)
+        self._validate_cross_record_state(records)
+        return records
+
+    @staticmethod
+    def _validate_canonical_sequence(records: list[CanonicalRecordV1]) -> None:
+        """Validate an ordered canonical sequence without changing its records."""
         seen_ids: set[str] = set()
         seen_idempotency: dict[str, tuple[str, str]] = {}
         previous_hash: str | None = None
@@ -2577,8 +2584,6 @@ class LiteratureStore:
                     raise LiteratureIntegrityError("object revision predecessor hash is broken")
                 revisions[key] = record
             previous_hash = record.record_sha256
-        self._validate_cross_record_state(records)
-        return records
 
     def _validate_protocol_search_history(self, records: list[CanonicalRecordV1]) -> None:
         records_by_hash = {item.record_sha256: item for item in records}

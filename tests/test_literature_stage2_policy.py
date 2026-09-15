@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import ast
+from contextlib import contextmanager
 from dataclasses import replace
 import hashlib
 import itertools
 from pathlib import Path
 import socket
 import subprocess
+from tempfile import TemporaryDirectory
 
 import pytest
 
 from alphaquest.research.literature.contracts import (
+    LiteratureConflictError,
     LiteratureIntegrityError,
     ResearchProtocolRevisionV1,
     SearchRunRevisionV1,
@@ -21,7 +24,7 @@ from alphaquest.research.literature.contracts import (
 )
 from alphaquest.research.literature import stage2_policy as policy
 from alphaquest.research.literature.store import LiteratureStore, _record_intent_material
-from tests.test_literature_stage1 import _actor, _project, _protocol_payload, _search_result, NOW
+from tests.test_literature_stage1 import _actor, _project, _protocol_payload, _search_result, _source, NOW
 
 
 def _record(cls, payload, previous=None):
@@ -131,8 +134,29 @@ def _proposals(protocol, outcomes):
     return tuple(proposals)
 
 
+def _persist(store, records):
+    # Exact synthetic canonical bytes; planning still uses the real disk loader.
+    for record in records:
+        path = store.project_root / store._record_relative(record)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(canonical_json_bytes(record))
+
+
+@contextmanager
+def _snapshot(protocol, history):
+    with TemporaryDirectory() as directory:
+        store = LiteratureStore(_project(Path(directory)))
+        _persist(store, [protocol, *history])
+        yield store
+
+
+def _plan_history(protocol, history, proposals):
+    with _snapshot(protocol, history) as store:
+        return policy.plan_publication(store, protocol.record_sha256, proposals)
+
+
 def _plan(protocol, proposals):
-    return policy.plan_publication(protocol, (proposals[0].started,), proposals)
+    return _plan_history(protocol, (proposals[0].started,), proposals)
 
 
 def _assert_rejected(plan, match=None):
@@ -278,7 +302,7 @@ def test_serial_public_append_and_replanning_parity(store, providers, first_stat
     for i, proposal in enumerate(proposals):
         _publish_start(store, proposal)
         history.append(proposal.started)
-        plan = policy.plan_publication(protocol, tuple(history), proposals[i:])
+        plan = policy.plan_publication(store, protocol.record_sha256, proposals[i:])
         assert plan.status == "CAPTURE_RETRIEVAL_ALLOWED"
         assert plan.next_capture_attempts == tuple(proposal.terminal.capture_attempt_records)
         assert len(plan.steps) == len(proposals) - i
@@ -501,7 +525,12 @@ def test_fail_closed_order_history_and_identity(mutation, match):
             )
             history = (started,)
         proposals = (policy.Stage2SearchProposal(started, terminal),)
-    _assert_rejected(policy.plan_publication(protocol, history, proposals), match)
+    if mutation in {"concurrent", "partial-history", "reverse-provider"}:
+        # These are corrupt full persisted histories, not hypothetical rejection.
+        with pytest.raises(LiteratureIntegrityError):
+            _plan_history(protocol, history, proposals)
+    else:
+        _assert_rejected(_plan_history(protocol, history, proposals), match)
 
 
 def test_adaptive_search_and_false_saturation_rejected():
@@ -511,7 +540,7 @@ def test_adaptive_search_and_false_saturation_rejected():
     material = started.model_dump(mode="json", by_alias=True)
     material.update(query_kind="ADAPTIVE", adaptive_depth=1, parent_search_run_id="search.parent")
     bad_start = _record(SearchRunRevisionV1, material, protocol)
-    _assert_rejected(policy.plan_publication(protocol, (bad_start,), proposals), "adaptive")
+    _assert_rejected(_plan_history(protocol, (bad_start,), proposals), "adaptive")
     terminal = _record(
         SearchRunRevisionV1,
         LiteratureStore._terminal_search_material(started, {**_outcome(), "saturation_claimed": True}),
@@ -520,11 +549,14 @@ def test_adaptive_search_and_false_saturation_rejected():
     _assert_rejected(_plan(protocol, (policy.Stage2SearchProposal(started, terminal),)), "saturation")
 
 
-def test_no_network_files_credentials_or_worker_and_pnl_noninterference(tmp_path, monkeypatch):
+def test_no_external_side_effects_and_pnl_noninterference(store, tmp_path, monkeypatch):
     protocol = _protocol()
     item = _inspection("first")
     proposals = _proposals(protocol, [_outcome([item], [(1, item)])])
-    expected = _plan(protocol, proposals)
+    _publish_protocol(store, protocol)
+    _publish_start(store, proposals[0])
+    expected = policy.plan_publication(store, protocol.record_sha256, proposals)
+    original_open = Path.open
     for outcome in ["PASS", "FAIL", "NEEDS MANUAL REVIEW"]:
         (tmp_path / "unrelated-pnl.csv").write_text(f"verdict,pnl\n{outcome},123456\n")
         monkeypatch.chdir(tmp_path)
@@ -536,16 +568,17 @@ def test_no_network_files_credentials_or_worker_and_pnl_noninterference(tmp_path
             blocked.setattr(socket, "socket", forbidden)
             blocked.setattr(socket, "getaddrinfo", forbidden)
             blocked.setattr(subprocess, "Popen", forbidden)
-            blocked.setattr("builtins.open", forbidden)
-            blocked.setattr(Path, "open", forbidden)
+            def canonical_only(path, *args, **kwargs):
+                assert path != tmp_path / "unrelated-pnl.csv"
+                return original_open(path, *args, **kwargs)
+
+            blocked.setattr(Path, "open", canonical_only)
             blocked.setattr("os.getenv", forbidden)
-            assert _plan(protocol, proposals) == expected
+            assert policy.plan_publication(store, protocol.record_sha256, proposals) == expected
     tree = ast.parse(Path(policy.__file__).read_text())
     imports = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
-    assert imports <= {"__future__", "dataclasses", "typing", "contracts", "store"}
-    assert {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names} == {
-        "hashlib"
-    }
+    assert imports <= {"__future__", "dataclasses", "typing", "pydantic", "contracts", "store"}
+    assert not any(isinstance(node, ast.Import) for node in ast.walk(tree))
 
 
 def test_plans_snapshot_mutable_inputs_and_reject_changed_outcomes():
@@ -600,9 +633,9 @@ def test_all_seven_lanes_and_all_providers_remain_in_execution_plan(store):
 def test_empty_proposals_and_completed_history_cannot_authorize_capture():
     protocol = _protocol(1)
     proposals = _proposals(protocol, [_outcome()])
-    _assert_rejected(policy.plan_publication(protocol, (proposals[0].started,), ()), "no known terminal")
+    _assert_rejected(_plan_history(protocol, (proposals[0].started,), ()), "no known terminal")
     _assert_rejected(
-        policy.plan_publication(protocol, (proposals[0].started, proposals[0].terminal), proposals),
+        _plan_history(protocol, (proposals[0].started, proposals[0].terminal), proposals),
         "already have a canonical STARTED",
     )
 
@@ -617,3 +650,220 @@ def test_known_outcome_exceeding_canonical_budget_is_rejected(bound):
     if bound == "maximum_elapsed_seconds":
         outcome["elapsed_seconds"] = 2
     _assert_rejected(_plan(protocol, _proposals(protocol, [outcome])), "budget")
+
+
+def _rewrite(record, **updates):
+    material = record.model_dump(mode="json", by_alias=True)
+    material.update(updates)
+    material["record_sha256"] = record_sha256(material)
+    provisional = type(record).model_validate_json(canonical_json_bytes(material))
+    material["intent_sha256"] = intent_sha256(_record_intent_material(provisional))
+    material["record_sha256"] = record_sha256(material)
+    return type(record).model_validate_json(canonical_json_bytes(material))
+
+
+def _work(store, name):
+    return store.append_work(
+        {
+            "work_id": f"work.{name}",
+            "source_category": "ACADEMIC",
+            "title": f"Fixture {name}",
+            "authors": ["Fixture Author"],
+            "strong_identifiers": {"doi": f"10.0000/{name}"},
+            "locators": [f"https://synthetic.invalid/{name}"],
+            "identity_status": "VERIFIED_STRONG",
+            "change_reason": "Offline ownership fixture",
+        },
+        actor=_actor(), idempotency_key=f"work.{name}.r1", recorded_at=NOW,
+    )
+
+
+def _after(record, previous):
+    return _rewrite(
+        record, append_sequence=previous.append_sequence + 1,
+        previous_store_record_sha256=previous.record_sha256,
+    )
+
+
+def test_b1_all_protocol_revisions_match_real_finish_capture_budget(store):
+    r1 = _protocol(1, maximum_captures=1)
+    _publish_protocol(store, r1)
+    payload = _record_intent_material(r1)
+    payload["lanes"][0]["maximum_captures"] = 2
+    payload["methodology_sha256"] = methodology_sha256(payload)
+    r2 = store.append_protocol(payload, actor=_actor(), idempotency_key="protocol.r2", recorded_at=NOW)
+    results = [_inspection("a"), _inspection("b", rank=2)]
+    proposals = _proposals(r2, [_outcome(results, list(enumerate(results, 1)))])
+    _publish_start(store, proposals[0])
+    _assert_rejected(
+        policy.plan_publication(store, r2.record_sha256, proposals), "frozen capture budget"
+    )
+    with pytest.raises(LiteratureIntegrityError, match="frozen capture budget"):
+        _publish_terminal(store, proposals[0])
+    assert store.records() == [r1, r2, proposals[0].started]
+
+
+def test_b2_existing_foreign_protocol_search_id_matches_real_publication(store):
+    foreign = _protocol(1)
+    payload = _record_intent_material(foreign)
+    payload.update(protocol_id="protocol.foreign", execution_lineage_id="lineage.foreign")
+    payload.pop("methodology_sha256")
+    foreign = store.append_protocol(payload, actor=_actor(), idempotency_key="foreign", recorded_at=NOW)
+    pair = _proposals(foreign, [_outcome()])[0]
+    started_payload = _record_intent_material(pair.started)
+    started_payload["search_run_id"] = "search.1"
+    foreign_start = store.start_search(started_payload, actor=_actor(), idempotency_key="foreign.start", recorded_at=NOW)
+    foreign_end = store.finish_search(
+        foreign_start.search_run_id, _outcome(), actor=_actor(), idempotency_key="foreign.end", recorded_at=NOW
+    )
+    protocol = _after(_protocol(), foreign_end)
+    _publish_protocol(store, protocol)
+    item = _inspection("first")
+    proposals = _proposals(protocol, [_outcome([item], [(1, item)]), _outcome()])
+    _publish_start(store, proposals[0])
+    _assert_rejected(policy.plan_publication(store, protocol.record_sha256, proposals), "duplicate P3 record_id")
+    _publish_terminal(store, proposals[0])
+    with pytest.raises(LiteratureConflictError):
+        _publish_start(store, proposals[1])
+
+
+def test_b2_other_canonical_family_idempotency_matches_real_publication(store):
+    work = _work(store, "owned")
+    protocol = _after(_protocol(1), work)
+    _publish_protocol(store, protocol)
+    item = _inspection("a")
+    pair = _proposals(protocol, [_outcome([item], [(1, item)])])[0]
+    pair = replace(pair, terminal=_rewrite(pair.terminal, idempotency_key=work.idempotency_key))
+    _publish_start(store, pair)
+    _assert_rejected(policy.plan_publication(store, protocol.record_sha256, (pair,)), "idempotency")
+    with pytest.raises(LiteratureConflictError, match="idempotency"):
+        _publish_terminal(store, pair)
+
+
+@pytest.mark.parametrize("collision", ["record_id", "idempotency_key"])
+def test_b2_ownership_includes_prior_hypothetical_records(store, collision):
+    protocol = _protocol()
+    first, second = _proposals(protocol, [_outcome(), _outcome()])
+    if collision == "idempotency_key":
+        second = replace(second, terminal=_rewrite(second.terminal, idempotency_key=first.terminal.idempotency_key))
+    else:
+        started = _rewrite(second.started, record_id=first.started.record_id, search_run_id=first.started.search_run_id)
+        terminal = _record(SearchRunRevisionV1, LiteratureStore._terminal_search_material(started, _outcome()), started)
+        second = policy.Stage2SearchProposal(started, terminal)
+    _publish_protocol(store, protocol)
+    _publish_start(store, first)
+    _assert_rejected(policy.plan_publication(store, protocol.record_sha256, (first, second)))
+    _publish_terminal(store, first)
+    with pytest.raises(LiteratureConflictError):
+        if collision == "record_id":
+            _publish_start(store, second)
+        else:
+            _publish_start(store, second)
+            _publish_terminal(store, second)
+
+
+def test_b3_rehashed_persisted_semantic_corruption_propagates_integrity(store):
+    protocol = _protocol(1)
+    item = _inspection("a")
+    pair = _proposals(protocol, [_outcome([item], [(1, item)])])[0]
+    _publish_protocol(store, protocol)
+    _publish_start(store, pair)
+    _publish_terminal(store, pair)
+    captures = [item.model_dump(mode="json") for item in pair.terminal.capture_attempt_records]
+    captures[0]["selection_ordinal"] = 2
+    corrupt = _rewrite(pair.terminal, capture_attempt_records=captures)
+    assert corrupt.record_sha256 == record_sha256(corrupt.model_dump(mode="json", by_alias=True))
+    _persist(store, [corrupt])
+    with pytest.raises(LiteratureIntegrityError, match="gap-free") as loading:
+        store.records()
+    with pytest.raises(LiteratureIntegrityError) as planning:
+        policy.plan_publication(store, protocol.record_sha256, (pair,))
+    assert type(planning.value) is type(loading.value)
+    assert str(planning.value) == str(loading.value)
+
+
+@pytest.mark.parametrize("error", [TypeError, RuntimeError, ValueError])
+@pytest.mark.parametrize("boundary", ["load", "proposal"])
+def test_unexpected_programming_errors_are_not_schedule_rejections(store, monkeypatch, error, boundary):
+    protocol = _protocol(1)
+    pair = _proposals(protocol, [_outcome()])[0]
+    _publish_protocol(store, protocol)
+    _publish_start(store, pair)
+
+    def defect(*args, **kwargs):
+        raise error("unexpected implementation defect")
+
+    if boundary == "load":
+        monkeypatch.setattr(store, "_load_and_validate", defect)
+    else:
+        original = store._validate_canonical_sequence
+
+        def proposed_only(records):
+            if len(records) > 2:
+                defect()
+            return original(records)
+
+        monkeypatch.setattr(store, "_validate_canonical_sequence", proposed_only)
+    with pytest.raises(error, match="unexpected implementation defect"):
+        policy.plan_publication(store, protocol.record_sha256, (pair,))
+
+
+def test_full_store_interleaving_parity_and_snapshot_freshness(store):
+    protocol = _protocol()
+    _publish_protocol(store, protocol)
+    original = _proposals(protocol, [_outcome(), _outcome()])
+    for index, pair in enumerate(original):
+        before_start = _work(store, f"before-start-{index}")
+        started = _after(pair.started, before_start)
+        terminal = _record(SearchRunRevisionV1, LiteratureStore._terminal_search_material(started, _outcome()), started)
+        pair = policy.Stage2SearchProposal(started, terminal)
+        _publish_start(store, pair)
+        _, _, before_terminal, _ = _source(
+            store, f"before-terminal-{index}", b"", capture_status="LOCATOR_METADATA_ONLY"
+        )
+        pair = replace(pair, terminal=_after(terminal, before_terminal))
+        before = [(r.record_id, canonical_json_bytes(r)) for r in store.records()]
+        plan = policy.plan_publication(store, protocol.record_sha256, (pair,))
+        assert plan.status == "CAPTURE_RETRIEVAL_ALLOWED"
+        assert plan.snapshot_append_sequence == before_terminal.append_sequence
+        assert plan.snapshot_head_record_sha256 == before_terminal.record_sha256
+        assert [(r.record_id, canonical_json_bytes(r)) for r in store.records()] == before
+        # Every canonical append invalidates the binding, including another family.
+        advanced = _work(store, f"advanced-{index}")
+        _assert_rejected(policy.plan_publication(store, protocol.record_sha256, (pair,)), "append_sequence")
+        pair = replace(pair, terminal=_after(pair.terminal, advanced))
+        fresh = policy.plan_publication(store, protocol.record_sha256, (pair,))
+        assert fresh.status == "CAPTURE_RETRIEVAL_ALLOWED"
+        assert fresh.snapshot_head_record_sha256 == advanced.record_sha256
+        assert fresh.snapshot_append_sequence == plan.snapshot_append_sequence + 1
+        _publish_terminal(store, pair)
+        store.validate(verify_artifacts=False)
+
+
+def test_valid_canonical_concurrent_starts_remain_unsupported_execution_policy(store):
+    protocol = _protocol()
+    first, second = _proposals(protocol, [_outcome(), _outcome()])
+    _publish_protocol(store, protocol)
+    _publish_start(store, first)
+    second = replace(second, started=_after(second.started, first.started))
+    _publish_start(store, second)
+    assert len(store.records()) == 3
+    _assert_rejected(policy.plan_publication(store, protocol.record_sha256, (first,)), "concurrency=1")
+
+
+def test_extracted_global_validator_does_not_mutate_records(store):
+    protocol = _protocol()
+    pair = _proposals(protocol, [_outcome()])[0]
+    _publish_protocol(store, protocol)
+    _publish_start(store, pair)
+    records = store.records()
+    before = canonical_json_bytes(records)
+    identities = [id(record) for record in records]
+    store._validate_canonical_sequence(records)
+    assert canonical_json_bytes(records) == before
+    assert [id(record) for record in records] == identities
+    invalid = [*records, _rewrite(pair.terminal, idempotency_key=protocol.idempotency_key)]
+    invalid_before = canonical_json_bytes(invalid)
+    with pytest.raises(LiteratureIntegrityError, match="idempotency"):
+        store._validate_canonical_sequence(invalid)
+    assert canonical_json_bytes(invalid) == invalid_before

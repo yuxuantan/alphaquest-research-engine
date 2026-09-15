@@ -59,16 +59,36 @@ be appended first. The duplicate R2 does not shift ranking: it lets a later
 provider propose ownership of a capture whose rank comes from an earlier
 inspection. Protocol admission alone is therefore insufficient.
 
-`plan_publication` replays every proposed STARTED/terminal prefix through the
-unchanged canonical search-history validator using a pure adapter exposing
-only that validator's two static dependencies. It additionally enforces the
-initial execution policy and exact STARTED/terminal identities. It does not
-implement an alternative ranking rule, weaken validation, batch terminal
-revisions, or write an invalid intermediate state. If any prefix fails, the
-entire plan returns `UNSUPPORTED_PUBLICATION_SCHEDULE` with no steps or capture
-identities. The interleaved example is rejected at A, before any source retrieval.
-Generated parity tests compare approved prefixes with the actual full store
-validator; public store append/reload tests cover serial execution and replanning.
+`plan_publication(store, protocol_revision_sha256, proposals)` obtains the complete
+canonical snapshot from the trusted `LiteratureStore` under its shared lock. The
+existing loader validates canonical bytes, paths, hashes, global sequence and
+ownership, revision chains, and full cross-record semantics before planning.
+All protocol revisions and all canonical families remain in the snapshot; an
+exact protocol reference does not replace the earlier frozen lane authority.
+
+The loader's global sequence/ownership/revision block is extracted unchanged as
+`_validate_canonical_sequence`. The loader still reads/decodes/checks paths and
+hashes, sorts, calls that helper, calls `_validate_cross_record_state`, and returns
+the records. No validation condition, order, error class, or message is changed.
+The helper does not mutate its input. There is no second canonical validator.
+
+Each proposed append extends the complete snapshot, including earlier proposals,
+and passes both the same global helper and full cross-record validation. This
+checks global record IDs, idempotency ownership, append sequence and predecessor,
+revision predecessors, and protocol/search semantics. Unrelated canonical families
+remain visible for ownership while retaining their existing semantics. A valid
+recoverable completion tail blocks hypothetical appends as it does real writes.
+Serial execution policy and exact STARTED/terminal matching are additional checks.
+No ranking rule, frozen protocol choice, durability barrier, or schema is changed.
+
+Persisted-state failures, including `LiteratureIntegrityError`, propagate before
+proposal classification. Only after a valid snapshot is obtained can intentionally
+invalid hypothetical records or unsupported schedules return
+`UNSUPPORTED_PUBLICATION_SCHEDULE`, with no steps or capture identities. Unexpected
+`TypeError`, `RuntimeError`, and `ValueError` defects propagate. The interleaved F4
+example is rejected before source retrieval. Permanent real-store regressions
+cover earlier protocol revisions, foreign search ownership, cross-family keys,
+hypothetical collisions, rehashed persisted corruption, and interleaved records.
 
 The guarantee is for **planner-approved executions** of the restricted profile,
 not all outcomes expressible by canonical P3 contracts. Every approval requires
@@ -78,22 +98,28 @@ provider response can satisfy the frozen minima or be captured as proposed.
 ## Timing and caller obligations
 
 1. Before dispatch, admit the exact protocol and derive its frozen execution plan.
-2. A future trusted caller supplies the complete ordered search-history projection
-   from a currently validated canonical snapshot for that exact protocol revision.
-   The planner revalidates hashes, search identities, serial order, and search
-   prefixes. It cannot establish projection completeness from worker testimony.
-3. After the provider search response, normalize bounded inspections and propose
-   exact capture-attempt identities and ordinals. This slice uses fake data only.
+2. Only the trusted AlphaQuest controller loads validated `LiteratureStore` state
+   and invokes publication planning. The untrusted provider/worker must **not**
+   supply authoritative canonical history or construct a trusted planning context.
+   The planner accepts a store and exact protocol hash, not `search_history`.
+3. Provider output supplies only bounded external result data. The trusted
+   controller converts it to typed proposed records, including exact inspections,
+   capture identities and ordinals. This slice uses fake data only; the worker
+   does not receive store access.
 4. Plan the proposed terminal outcome before retrieving any source body.
 5. `CAPTURE_RETRIEVAL_ALLOWED` exposes only the first, already-STARTED search's
    `next_capture_attempts`. Zero attempts authorize no retrieval. Later planned
    pairs are hypothetical: publish the first terminal through the canonical
    store, read fresh history, and replan before any later provider's retrieval.
 
-A plan snapshots terminal bytes and binds the protocol and search-history hashes.
-It is an F4 ordering decision for exact known inputs, not a durable authorization
-token, dispatch reservation, or safety approval. Do not transplant it to another
-history, change selections, or use it after outcome drift. Actual terminal
+A plan snapshots terminal bytes and binds the protocol hash plus the complete
+validated snapshot's final `snapshot_append_sequence` and
+`snapshot_head_record_sha256`. The head binds the entire canonical hash chain;
+no search-only hash is presented as store authority. **Any canonical append makes
+the plan stale**, including an append in another family. Read fresh state and
+rebuild proposed envelopes before replanning. These fields are evidence, not a
+durable F3 reservation, authorization token, or safety approval. F3 remains open.
+Do not transplant a plan to another history or use it after outcome drift. Actual terminal
 publication remains subject to the store's locked, full-history validation and
 durability barrier. Intervening canonical writes may require new envelope hashes.
 Post-retrieval status/accounting changes require validation again; this planner
@@ -111,4 +137,6 @@ F1 SSRF transport, F2 worker/PnL isolation, F3 dispatch reservation, F5 resource
 limits, F6 secret boundaries, and F7 pre-retention authorization remain open.
 The dedicated security review is complete with remaining blockers. Owner
 activation is pending, and Stage 2 is blocked. F4's bounded candidate requires
-independent audit; no live execution is activated by this module or its tests.
+independent re-audit after the initial F4 audit failed. B1/B2/B3 remediation does
+not itself establish independent verification. No live execution is activated by
+this module or its tests.
