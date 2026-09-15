@@ -5,16 +5,22 @@ from contextlib import contextmanager
 from dataclasses import replace
 import hashlib
 import itertools
+import json
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 from tempfile import TemporaryDirectory
 
+from pydantic import ValidationError
 import pytest
 
 from alphaquest.research.literature.contracts import (
     LiteratureConflictError,
     LiteratureIntegrityError,
+    ClaimExtractionRevisionV1,
+    P2EmissionOperationRevisionV1,
+    P2EmissionReceiptV1,
     ResearchProtocolRevisionV1,
     SearchRunRevisionV1,
     canonical_json_bytes,
@@ -23,8 +29,8 @@ from alphaquest.research.literature.contracts import (
     record_sha256,
 )
 from alphaquest.research.literature import stage2_policy as policy
-from alphaquest.research.literature.store import LiteratureStore, _record_intent_material
-from tests.test_literature_stage1 import _actor, _project, _protocol_payload, _search_result, _source, NOW
+from alphaquest.research.literature.store import LiteratureStore, _read_canonical_record_files, _record_intent_material
+from tests.test_literature_stage1 import _actor, _initial_slice, _project, _protocol_payload, _search_result, _source, NOW
 
 
 def _record(cls, payload, previous=None):
@@ -794,7 +800,7 @@ def test_unexpected_programming_errors_are_not_schedule_rejections(store, monkey
         raise error("unexpected implementation defect")
 
     if boundary == "load":
-        monkeypatch.setattr(store, "_load_and_validate", defect)
+        monkeypatch.setattr(store, "_load_and_validate_p3_intrinsic_snapshot", defect)
     else:
         original = store._validate_canonical_sequence
 
@@ -867,3 +873,287 @@ def test_extracted_global_validator_does_not_mutate_records(store):
     with pytest.raises(LiteratureIntegrityError, match="idempotency"):
         store._validate_canonical_sequence(invalid)
     assert canonical_json_bytes(invalid) == invalid_before
+
+
+@pytest.fixture(scope="module")
+def model_a_emitted_base(tmp_path_factory):
+    root = _project(tmp_path_factory.mktemp("model-a-emitted"))
+    store = LiteratureStore(root)
+    payload = _record_intent_material(_protocol(1))
+    payload.update(protocol_id="protocol.planning", execution_lineage_id="lineage.planning")
+    payload.pop("methodology_sha256")
+    protocol = store.append_protocol(payload, actor=_actor(), idempotency_key="planning.protocol", recorded_at=NOW)
+    pair = _proposals(protocol, [_outcome()])[0]
+    _publish_start(store, pair)
+    _initial_slice(root)
+    pair = replace(pair, terminal=_after(pair.terminal, store.records()[-1]))
+    return root, protocol, pair
+
+
+@pytest.fixture
+def model_a_emitted(model_a_emitted_base, tmp_path):
+    source, protocol, pair = model_a_emitted_base
+    root = tmp_path / "copy"
+    shutil.copytree(source, root)
+    return LiteratureStore(root), protocol, pair
+
+
+def _p3_bytes(store):
+    return dict(_read_canonical_record_files(store.project_root))
+
+
+def _change_external(store, change):
+    root = store.project_root
+    if change in {"ledger", "staged-ledger", "committed-ledger"}:
+        path = root / "research_ledger.csv"
+        path.write_text(
+            "campaign_id,variant_id,instrument,timeframe,edge,result,failure_reason\n"
+            "unrelated,v01,ES,1m,Unrelated historical edge,FAIL,Synthetic independent audit history\n"
+        )
+        if change != "ledger":
+            subprocess.run(["git", "add", "research_ledger.csv"], cwd=root, check=True)
+        if change == "committed-ledger":
+            subprocess.run(["git", "commit", "-q", "-m", "Unrelated synthetic research history"], cwd=root, check=True)
+    elif change == "p2-corruption":
+        operation = next(
+            r for r in store.records()
+            if isinstance(r, P2EmissionOperationRevisionV1) and r.observation_bindings
+        )
+        digest = operation.observation_bindings[0].record_sha256
+        paths = (root / "research/edge_backlog").rglob("*.json")
+        path = next(p for p in paths if json.loads(p.read_bytes()).get("record_sha256") == digest)
+        path.write_bytes(b"{}\n")
+    else:
+        paths = {
+            "campaign": store.layout.active_campaign_root / "unrelated/campaign.yaml",
+            "experiment": store.layout.research_artifact_root / "governance/experiment_registry.jsonl",
+            "reset": store.layout.research_artifact_root / "governance/research_reset_unrelated.json",
+            "backtest": root / "unrelated-results/trades.csv",
+            "bootstrap": store.layout.edge_backlog_history_index,
+        }
+        path = paths[change]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("campaign_id: unrelated\nresult_summary: {verdict: FAIL}\n" if change == "campaign" else "{}\n")
+
+
+def test_r1_committed_research_history_does_not_change_intrinsic_f4(model_a_emitted):
+    store, protocol, pair = model_a_emitted
+    before = _p3_bytes(store)
+    inputs = canonical_json_bytes([pair.started, pair.terminal])
+    expected = policy.plan_publication(store, protocol.record_sha256, (pair,))
+    assert expected.status == "CAPTURE_RETRIEVAL_ALLOWED"
+    _change_external(store, "committed-ledger")
+    assert _p3_bytes(store) == before
+    assert canonical_json_bytes([pair.started, pair.terminal]) == inputs
+    assert policy.plan_publication(store, protocol.record_sha256, (pair,)) == expected
+    with pytest.raises(LiteratureIntegrityError, match="P2_SEMANTIC_DEPENDENCY_UNAVAILABLE") as error:
+        store.records()
+    assert "historical source commit changed" in str(error.value.__cause__)
+    with pytest.raises(LiteratureIntegrityError, match="P2_SEMANTIC_DEPENDENCY_UNAVAILABLE"):
+        _publish_terminal(store, pair)
+    assert _p3_bytes(store) == before
+
+
+@pytest.mark.parametrize("change", ["ledger", "staged-ledger", "campaign", "experiment", "reset", "backtest", "bootstrap", "p2-corruption"])
+def test_r1_external_state_noninterference(model_a_emitted, change):
+    store, protocol, pair = model_a_emitted
+    before = _p3_bytes(store)
+    expected = policy.plan_publication(store, protocol.record_sha256, (pair,))
+    assert expected.status == "CAPTURE_RETRIEVAL_ALLOWED"
+    _change_external(store, change)
+    assert _p3_bytes(store) == before
+    assert policy.plan_publication(store, protocol.record_sha256, (pair,)) == expected
+
+
+def test_r1_emitted_history_planning_never_reaches_external_authority(model_a_emitted, monkeypatch):
+    from alphaquest.research import edge_backlog, edge_backlog_bootstrap
+
+    store, protocol, pair = model_a_emitted
+    expected = policy.plan_publication(store, protocol.record_sha256, (pair,))
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("external authority reached from F4")
+
+    monkeypatch.setattr(edge_backlog, "EdgeBacklogStore", forbidden)
+    for name in ["historical_records_for_current_review", "historical_repository_state", "repository_head"]:
+        monkeypatch.setattr(edge_backlog_bootstrap, name, forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    monkeypatch.setattr(socket, "socket", forbidden)
+    monkeypatch.setattr(socket, "getaddrinfo", forbidden)
+    monkeypatch.setattr("os.getenv", forbidden)
+    # The canonical reader uses safe directory descriptors and os.fdopen;
+    # arbitrary path reads and ordinary file opens are not planning inputs.
+    monkeypatch.setattr(Path, "read_bytes", forbidden)
+    monkeypatch.setattr(Path, "read_text", forbidden)
+    monkeypatch.setattr(Path, "open", forbidden)
+    monkeypatch.setattr("builtins.open", forbidden)
+    assert policy.plan_publication(store, protocol.record_sha256, (pair,)) == expected
+
+
+def test_model_a_healthy_external_state_retains_publication_parity(model_a_emitted):
+    store, protocol, pair = model_a_emitted
+    plan = policy.plan_publication(store, protocol.record_sha256, (pair,))
+    assert plan.status == "CAPTURE_RETRIEVAL_ALLOWED"
+    prefix = [*store._load_and_validate_p3_intrinsic_snapshot(), pair.terminal]
+    store._validate_canonical_sequence(prefix)
+    assert store._validate_p3_intrinsic_cross_record_state(prefix) is None
+    _publish_terminal(store, pair)
+    assert store.records()[-1] == pair.terminal
+
+
+@pytest.mark.parametrize("boundary", [
+    "_validate_canonical_sequence", "_validate_p3_intrinsic_cross_record_state",
+    "_validate_protocol_search_history", "_validate_prepared_emission_state", "_validate_receipt_ownership",
+])
+def test_r2_internal_validationerror_propagates_from_hypothetical_validation(model_a_emitted, monkeypatch, boundary):
+    store, protocol, pair = model_a_emitted
+    size = len(store.records())
+    original = getattr(store, boundary)
+    defect = ValidationError.from_exception_data("UnexpectedInternalModel", [{
+        "type": "value_error", "loc": ("internal_derived_field",), "input": None,
+        "ctx": {"error": ValueError("internal validator defect")},
+    }])
+
+    def validate(*args, **kwargs):
+        rows = args[1] if boundary == "_validate_prepared_emission_state" else args[0]
+        if len(rows) > size:
+            raise defect
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, boundary, validate)
+    with pytest.raises(ValidationError) as caught:
+        policy.plan_publication(store, protocol.record_sha256, (pair,))
+    assert caught.value is defect
+
+
+def test_r2_malformed_proposal_model_is_still_an_ordinary_rejection(store):
+    protocol = _protocol(1)
+    pair = _proposals(protocol, [_outcome()])[0]
+    _publish_protocol(store, protocol)
+    _publish_start(store, pair)
+    pair = replace(pair, terminal=pair.terminal.model_copy(update={"elapsed_seconds": -1}))
+    _assert_rejected(policy.plan_publication(store, protocol.record_sha256, (pair,)))
+
+
+def _rewrite_snapshot(store, transform):
+    records = store.records()
+    hashes = {}
+
+    def references(value):
+        if isinstance(value, dict):
+            return {key: references(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [references(item) for item in value]
+        return hashes.get(value, value) if isinstance(value, str) else value
+
+    rebuilt = []
+    for record in records:
+        material = references(record.model_dump(mode="json", by_alias=True))
+        transform(record, material)
+        changed = _rewrite(record, **material)
+        hashes[record.record_sha256] = changed.record_sha256
+        rebuilt.append(changed)
+    _persist(store, rebuilt)
+    return rebuilt
+
+
+def test_model_a_recoverable_tail_is_local_and_blocks_even_with_external_failure(model_a_emitted):
+    store, protocol, pair = model_a_emitted
+    completion = store.records()[-1]
+    assert isinstance(completion, P2EmissionOperationRevisionV1) and completion.state == "COMPLETED"
+    (store.project_root / store._record_relative(completion)).unlink()
+    rows = store._load_and_validate_p3_intrinsic_snapshot()
+    assert isinstance(rows[-1], P2EmissionReceiptV1)
+    pair = replace(pair, terminal=_after(pair.terminal, rows[-1]))
+    _change_external(store, "committed-ledger")
+    _assert_rejected(policy.plan_publication(store, protocol.record_sha256, (pair,)), "completion tail")
+    receipt = _rewrite(rows[-1], freeze_id="freeze.wrong")
+    _persist(store, [receipt])
+    with pytest.raises(LiteratureIntegrityError, match="repeat operation field"):
+        policy.plan_publication(store, protocol.record_sha256, (pair,))
+
+
+@pytest.mark.parametrize("fault", ["payload-hash", "reservation", "freeze", "snapshot-query"])
+def test_model_a_persisted_intrinsic_emission_faults_propagate(model_a_emitted, fault):
+    store, protocol, pair = model_a_emitted
+
+    def corrupt(record, material):
+        if isinstance(record, (P2EmissionOperationRevisionV1, P2EmissionReceiptV1)):
+            if fault == "freeze":
+                material["freeze_id"] = "freeze.wrong"
+            if fault == "snapshot-query" and material.get("duplicate_snapshot"):
+                material["duplicate_snapshot"]["entry_id"] = "entry.wrong"
+        if isinstance(record, P2EmissionOperationRevisionV1):
+            if fault == "payload-hash":
+                material["observation_plans"][0]["payload_sha256"] = "a" * 64
+            if fault == "reservation":
+                material["reservations"][0]["canonical_locator"] = "https://synthetic.invalid/wrong"
+
+    _rewrite_snapshot(store, corrupt)
+    with pytest.raises(LiteratureIntegrityError):
+        policy.plan_publication(store, protocol.record_sha256, (pair,))
+
+
+@pytest.mark.parametrize("fault", ["valid", "search-before-external", "external-before-reference", "external-before-prepared", "prepared-with-healthy-external"])
+def test_full_path_first_error_compatibility(model_a_emitted, fault):
+    store, _protocol, pair = model_a_emitted
+    if fault == "valid":
+        assert store.records()
+        return
+    if fault in {"external-before-prepared", "prepared-with-healthy-external"}:
+        def corrupt(record, material):
+            if isinstance(record, (P2EmissionOperationRevisionV1, P2EmissionReceiptV1)):
+                material["freeze_id"] = "freeze.wrong"
+        _rewrite_snapshot(store, corrupt)
+    elif fault == "search-before-external":
+        # A rehashed, globally appended search terminal with invalid rank proof.
+        result = _inspection("fault")
+        bad = _record(SearchRunRevisionV1, LiteratureStore._terminal_search_material(
+            pair.started, _outcome([result], [(2, result)])
+        ), store.records()[-1])
+        _persist(store, [bad])
+    else:
+        rows = store.records()
+        claim = next(r for r in rows if isinstance(r, ClaimExtractionRevisionV1))
+        payload = claim.model_dump(mode="json", by_alias=True)
+        payload.update(claim_id="claim.new", record_id="claim.new.r000001", revision=1,
+                       previous_revision_sha256=None,
+                       conflict_refs=[{"record_id": "claim.missing.r000001", "record_sha256": "a" * 64}])
+        _persist(store, [_record(ClaimExtractionRevisionV1, payload, rows[-1])])
+    if fault != "prepared-with-healthy-external":
+        _change_external(store, "committed-ledger")
+    expected = {
+        "search-before-external": "capture selection ordinals must be lane-global, ordered, and gap-free",
+        "external-before-reference": "P2_SEMANTIC_DEPENDENCY_UNAVAILABLE: could not verify emission bindings",
+        "external-before-prepared": "P2_SEMANTIC_DEPENDENCY_UNAVAILABLE: could not verify emission bindings",
+        "prepared-with-healthy-external": "prepared emission freeze identity/hash mismatch",
+    }[fault]
+    with pytest.raises(LiteratureIntegrityError) as caught:
+        store.records()
+    assert type(caught.value) is LiteratureIntegrityError
+    assert str(caught.value) == expected
+
+
+@pytest.mark.parametrize("scenario", [
+    "test_invalid_claim_withdrawal_preserves_history_and_removes_current_support",
+    "test_corrected_extraction_revises_same_logical_p2_observation",
+    "test_active_retraction_overrides_active_claim_and_removes_current_positive_support",
+    "test_human_same_version_resolution_freezes_one_canonical_reservation",
+    "test_reviewed_continue_revises_same_entry_stales_review_and_records_sha",
+])
+def test_model_a_intrinsic_accepts_healthy_full_emission_lifecycles(tmp_path, monkeypatch, scenario):
+    from tests import test_literature_stage1 as stage1
+
+    original = LiteratureStore._load_and_validate
+    checked = 0
+
+    def load_with_intrinsic_parity(store):
+        nonlocal checked
+        records = original(store)
+        store._validate_p3_intrinsic_cross_record_state(records)
+        checked += 1
+        return records
+
+    monkeypatch.setattr(LiteratureStore, "_load_and_validate", load_with_intrinsic_parity)
+    getattr(stage1, scenario)(tmp_path)
+    assert checked > 0

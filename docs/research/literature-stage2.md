@@ -59,41 +59,73 @@ be appended first. The duplicate R2 does not shift ranking: it lets a later
 provider propose ownership of a capture whose rank comes from an earlier
 inspection. Protocol admission alone is therefore insufficient.
 
-`plan_publication(store, protocol_revision_sha256, proposals)` obtains the complete
-canonical snapshot from the trusted `LiteratureStore` under its shared lock. The
-existing loader validates canonical bytes, paths, hashes, global sequence and
-ownership, revision chains, and full cross-record semantics before planning.
-All protocol revisions and all canonical families remain in the snapshot; an
-exact protocol reference does not replace the earlier frozen lane authority.
+## Approved Model A boundary
 
-The loader's global sequence/ownership/revision block is extracted unchanged as
-`_validate_canonical_sequence`. The loader still reads/decodes/checks paths and
-hashes, sorts, calls that helper, calls `_validate_cross_record_state`, and returns
-the records. No validation condition, order, error class, or message is changed.
-The helper does not mutate its input. There is no second canonical validator.
+The owner approved Model A: F4 approval establishes intrinsic P3 scheduling
+validity for the exact complete snapshot and restricted profile. It does not
+establish that unrelated downstream P2 or historical operational dependencies
+are healthy. An intrinsically valid terminal can still fail full publication
+because an unrelated emission's P2/historical dependency is unavailable.
 
-Each proposed append extends the complete snapshot, including earlier proposals,
-and passes both the same global helper and full cross-record validation. This
-checks global record IDs, idempotency ownership, append sequence and predecessor,
-revision predecessors, and protocol/search semantics. Unrelated canonical families
-remain visible for ownership while retaining their existing semantics. A valid
-recoverable completion tail blocks hypothetical appends as it does real writes.
-Serial execution policy and exact STARTED/terminal matching are additional checks.
-No ranking rule, frozen protocol choice, durability barrier, or schema is changed.
+`plan_publication(store, protocol_revision_sha256, proposals)` obtains its complete
+snapshot under the trusted store's shared lock through the explicit private
+`_load_and_validate_p3_intrinsic_snapshot()` entry point. All protocol revisions
+and every canonical family remain present, including emission journals and
+receipts. A search projection never supplies authority.
 
-Persisted-state failures, including `LiteratureIntegrityError`, propagate before
-proposal classification. Only after a valid snapshot is obtained can intentionally
-invalid hypothetical records or unsupported schedules return
-`UNSUPPORTED_PUBLICATION_SCHEDULE`, with no steps or capture identities. Unexpected
-`TypeError`, `RuntimeError`, and `ValueError` defects propagate. The interleaved F4
-example is rejected before source retrieval. Permanent real-store regressions
-cover earlier protocol revisions, foreign search ownership, cross-family keys,
-hypothetical collisions, rehashed persisted corruption, and interleaved records.
+Both loaders reuse `_read_and_validate_p3_records()`: safe canonical-file reading,
+decoding, canonical bytes, paths, hashes, sorting, and the unchanged global
+`_validate_canonical_sequence`. Intrinsic planning then uses
+`_validate_p3_intrinsic_cross_record_state`. It validates protocol/search history,
+source provenance, claims/relations, dossiers/freezes, Codex-attempt lifecycle,
+exact P3 references, emission transitions, P3-derived reservations, embedded-plan
+identity/hash/reliability consistency, embedded binding relationships, and receipt
+ownership. An exact recoverable completion tail blocks unrelated append planning;
+malformed tail/receipt structure remains a persisted integrity failure.
 
-The guarantee is for **planner-approved executions** of the restricted profile,
-not all outcomes expressible by canonical P3 contracts. Every approval requires
-all prefixes to pass canonical validation. There is no assertion that every
-provider response can satisfy the frozen minima or be captured as proposed.
+Prepared reservation derivation is shared with full validation. Intrinsic plan
+checks distinguish payload fields determined by P3 from prior statements,
+conflicts, and frozen observations that require external P2 authority. No missing
+external observation is replaced with `None`, an empty record, or invented data.
+Embedded external bindings are assertions, not proof of current P2 existence.
+
+The existing `_load_and_validate()` and `_validate_cross_record_state()` remain
+full validation entry points for every existing Stage 1 caller. Full validation
+still resolves P2 observations/entries, reconstructs decisions/links/dependencies,
+and verifies Git-bound historical duplicate universes. Shared orchestration
+preserves their original interleaving and first-error order, including external
+lookups before later intrinsic checks. There is no public validation-disable
+switch. Publication, durability, contracts, and schemas are unchanged.
+
+Each hypothetical append extends the complete intrinsic snapshot and passes both
+global validation and intrinsic cross-record validation. It includes ownership
+from unrelated families and earlier hypothetical records. The guarantee is:
+planner approval implies intrinsic validity of every proposed prefix. With healthy
+external dependencies, equivalent public appends still succeed. With unhealthy
+external dependencies, F4 can remain approved while full publication fails.
+
+The trusted controller must satisfy full operational publication requirements;
+F4 approval is not a bypass. This slice adds no execution or reservation mechanism.
+Actual publication remains subject to the existing locked full validation and
+durability barrier.
+
+Persisted intrinsic P3 corruption propagates as `LiteratureIntegrityError` before
+proposal classification. Only proposal-controlled `model_validate_json` parsing
+normalizes a Pydantic `ValidationError` into `_UnsupportedProposal`. The proposal
+loop catches only that explicit classification. Unexpected internal
+`ValidationError`, `TypeError`, `RuntimeError`, and `ValueError` propagate, including
+errors from global, intrinsic, protocol/search, prepared, and receipt validators.
+Rejected schedules expose neither steps nor captures.
+
+Permanent regressions retain B1/B2/B3, restricted-profile admission, interleaved
+capture rejection, generated prefix parity, and first-step isolation. Model A
+regressions seed unrelated completed emissions, hold P3 bytes and proposals fixed,
+and vary research ledgers, campaign/bootstrap state, experiment/reset history,
+backtest outputs, Git-bound source state, and P2 corruption. The committed-ledger
+case explicitly leaves F4 unchanged while full Stage 1 validation reports
+`P2_SEMANTIC_DEPENDENCY_UNAVAILABLE`. External authority and subprocess entry points
+are forbidden during instrumented intrinsic planning. Full-path compatibility
+regressions assert first exception class/message on multiply-invalid histories.
 
 ## Timing and caller obligations
 
@@ -113,10 +145,11 @@ provider response can satisfy the frozen minima or be captured as proposed.
    store, read fresh history, and replan before any later provider's retrieval.
 
 A plan snapshots terminal bytes and binds the protocol hash plus the complete
-validated snapshot's final `snapshot_append_sequence` and
+intrinsically validated snapshot's final `snapshot_append_sequence` and
 `snapshot_head_record_sha256`. The head binds the entire canonical hash chain;
 no search-only hash is presented as store authority. **Any canonical append makes
-the plan stale**, including an append in another family. Read fresh state and
+the plan stale**, including an append in another P3 family. External P2 or
+historical changes alone do not change this F4 snapshot identity under Model A. Read fresh state and
 rebuild proposed envelopes before replanning. These fields are evidence, not a
 durable F3 reservation, authorization token, or safety approval. F3 remains open.
 Do not transplant a plan to another history or use it after outcome drift. Actual terminal
@@ -137,6 +170,7 @@ F1 SSRF transport, F2 worker/PnL isolation, F3 dispatch reservation, F5 resource
 limits, F6 secret boundaries, and F7 pre-retention authorization remain open.
 The dedicated security review is complete with remaining blockers. Owner
 activation is pending, and Stage 2 is blocked. F4's bounded candidate requires
-independent re-audit after the initial F4 audit failed. B1/B2/B3 remediation does
-not itself establish independent verification. No live execution is activated by
+independent re-audit after the initial and first-remediation audits failed. B1,
+B2, and B3 were independently closed; R1/R2 remediation under approved Model A
+still requires independent verification. No live execution is activated by
 this module or its tests.

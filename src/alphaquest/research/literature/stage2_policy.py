@@ -88,7 +88,11 @@ R = TypeVar("R", bound=CanonicalRecordV1)
 def _exact_copy(record: R, expected: type[R]) -> R:
     if type(record) is not expected:
         raise _UnsupportedProposal(f"expected exact {expected.__name__} record")
-    copied = expected.model_validate_json(canonical_json_bytes(record))
+    raw = canonical_json_bytes(record)
+    try:
+        copied = expected.model_validate_json(raw)
+    except ValidationError as exc:
+        raise _UnsupportedProposal(str(exc)) from exc
     if copied.intent_sha256 != intent_sha256(_record_intent_material(copied)):
         raise _UnsupportedProposal("canonical record intent hash mismatch")
     return copied
@@ -98,7 +102,7 @@ def admit_protocol(protocol: ResearchProtocolRevisionV1) -> Stage2AdmissionResul
     """Admit an exact canonical revision without changing its methodology."""
     try:
         protocol = _exact_copy(protocol, ResearchProtocolRevisionV1)
-    except (_UnsupportedProposal, ValidationError) as exc:
+    except _UnsupportedProposal as exc:
         raise Stage2UnsupportedProfile(f"invalid exact protocol: {exc}") from exc
     if protocol.lineage_kind != "PRE_RESULT_PROTOCOL":
         raise Stage2UnsupportedProfile("initial Stage 2 requires PRE_RESULT_PROTOCOL")
@@ -167,14 +171,15 @@ def plan_publication(
 
     Only the controller supplies the store and converts bounded provider results
     into proposals. Persisted validation failures propagate before proposal
-    classification begins. Every simulated append uses the existing global and
-    cross-record validators. No canonical files are written.
+    classification begins. Every simulated append uses the shared global and
+    P3-intrinsic cross-record validators. Full publication still checks external
+    P2 operational dependencies; F4 approval does not attest their health. No canonical files are written.
 
     Permission covers only the current STARTED step and becomes stale after any
     canonical append. Snapshot identity is evidence, not an F3 reservation.
     """
     with store.lock(exclusive=False):
-        records = store._load_and_validate()
+        records = store._load_and_validate_p3_intrinsic_snapshot()
         # Keep persisted-state authority failures outside proposal classification.
         recoverable_tail = store._recoverable_completion_tail(records)
         protocol = next(
@@ -201,7 +206,7 @@ def plan_publication(
             prefix = [*records, record]
             try:
                 store._validate_canonical_sequence(prefix)
-                new_tail = store._validate_cross_record_state(prefix)
+                new_tail = store._validate_p3_intrinsic_cross_record_state(prefix)
             except (LiteratureIntegrityError, LiteratureConflictError) as exc:
                 # This boundary surrounds hypothetical validation only. Runtime,
                 # TypeError and unexpected ValueError defects still propagate.
@@ -255,7 +260,7 @@ def plan_publication(
                 tuple(steps),
                 next_captures,
             )
-        except (_UnsupportedProposal, ValidationError) as exc:
+        except _UnsupportedProposal as exc:
             return Stage2PublicationPlan(
                 "UNSUPPORTED_PUBLICATION_SCHEDULE",
                 admission.protocol_revision_sha256,
