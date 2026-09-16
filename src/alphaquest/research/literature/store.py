@@ -2521,6 +2521,17 @@ class LiteratureStore:
         )
 
     def _load_and_validate(self) -> list[CanonicalRecordV1]:
+        records = self._read_and_validate_p3_records()
+        self._validate_cross_record_state(records)
+        return records
+
+    def _load_and_validate_p3_intrinsic_snapshot(self) -> list[CanonicalRecordV1]:
+        """Private Stage 2 controller snapshot; not full publication validation."""
+        records = self._read_and_validate_p3_records()
+        self._validate_p3_intrinsic_cross_record_state(records)
+        return records
+
+    def _read_and_validate_p3_records(self) -> list[CanonicalRecordV1]:
         raw_files = _read_canonical_record_files(self.project_root)
         records: list[CanonicalRecordV1] = []
         seen_paths: set[str] = set()
@@ -2547,6 +2558,12 @@ class LiteratureStore:
                 raise LiteratureIntegrityError(f"record path/identity mismatch: {relative} != {expected}")
             records.append(record)
         records.sort(key=lambda item: item.append_sequence)
+        self._validate_canonical_sequence(records)
+        return records
+
+    @staticmethod
+    def _validate_canonical_sequence(records: list[CanonicalRecordV1]) -> None:
+        """Validate an ordered canonical sequence without changing its records."""
         seen_ids: set[str] = set()
         seen_idempotency: dict[str, tuple[str, str]] = {}
         previous_hash: str | None = None
@@ -2577,8 +2594,6 @@ class LiteratureStore:
                     raise LiteratureIntegrityError("object revision predecessor hash is broken")
                 revisions[key] = record
             previous_hash = record.record_sha256
-        self._validate_cross_record_state(records)
-        return records
 
     def _validate_protocol_search_history(self, records: list[CanonicalRecordV1]) -> None:
         records_by_hash = {item.record_sha256: item for item in records}
@@ -3063,6 +3078,20 @@ class LiteratureStore:
     def _validate_cross_record_state(
         self, records: list[CanonicalRecordV1]
     ) -> P2EmissionReceiptV1 | None:
+        return self._validate_cross_record_state_impl(records, intrinsic_only=False)
+
+    def _validate_p3_intrinsic_cross_record_state(
+        self, records: list[CanonicalRecordV1]
+    ) -> P2EmissionReceiptV1 | None:
+        """All P3-local rules, including emission structure; no P2 resolution."""
+        try:
+            return self._validate_cross_record_state_impl(records, intrinsic_only=True)
+        except LiteratureConflictError as exc:
+            raise LiteratureIntegrityError(str(exc)) from exc
+
+    def _validate_cross_record_state_impl(
+        self, records: list[CanonicalRecordV1], *, intrinsic_only: bool
+    ) -> P2EmissionReceiptV1 | None:
         self._validate_protocol_search_history(records)
         self._validate_source_provenance_history(records)
         self._validate_codex_attempt_history(records)
@@ -3082,7 +3111,10 @@ class LiteratureStore:
                     raise LiteratureIntegrityError(
                         f"persisted emission transition is invalid: {exc}"
                     ) from exc
-                self._validate_p2_emission_semantics(record)
+                if intrinsic_only:
+                    self._validate_p3_emission_bindings(record)
+                else:
+                    self._validate_p2_emission_semantics(record)
 
         def require_reference(reference: Any, expected: type[CanonicalRecordV1] | None = None) -> CanonicalRecordV1:
             target = records_by_hash.get(reference.record_sha256)
@@ -3146,7 +3178,12 @@ class LiteratureStore:
         for record in records:
             if not isinstance(record, P2EmissionOperationRevisionV1) or record.revision != 1:
                 continue
-            self._validate_prepared_emission(record, records, records_by_hash)
+            if intrinsic_only:
+                self._validate_prepared_emission_state(
+                    record, records, records_by_hash, intrinsic_only=True
+                )
+            else:
+                self._validate_prepared_emission(record, records, records_by_hash)
             for item in record.reservations:
                 identity = (
                     item.p2_source_id,
@@ -3281,18 +3318,180 @@ class LiteratureStore:
             )
         return recoverable_tail
 
+    @staticmethod
+    def _validate_p3_emission_bindings(operation: P2EmissionOperationRevisionV1) -> None:
+        """Check embedded relationships without attesting external P2 existence."""
+        if not operation.observation_bindings:
+            return
+        if operation.entry_binding is None:
+            return
+        entry_id = _object_id(operation.entry_binding.record_id)
+        impacts = {
+            item.dependent_entry_id: item
+            for item in operation.dependency_impacts
+            if item.impact_status == "PLANNED_MUTABLE_REVISION"
+        }
+        for binding in operation.dependency_entry_bindings:
+            dependent_id = _object_id(binding.record_id)
+            if dependent_id == entry_id:
+                if binding != operation.entry_binding:
+                    raise LiteratureIntegrityError(
+                        "target dependency binding differs from the exact target entry binding"
+                    )
+            elif dependent_id not in impacts or impacts[dependent_id].entry_plan is None:
+                raise LiteratureIntegrityError("P2 dependency binding has no exact mutable correction plan")
+        snapshot = operation.duplicate_snapshot
+        if snapshot is None:
+            return
+        if snapshot.entry_id != entry_id:
+            raise LiteratureIntegrityError("duplicate snapshot query entry ID differs from the exact P2 entry binding")
+        if snapshot.entry_revision_sha256 != operation.entry_binding.record_sha256:
+            raise LiteratureIntegrityError("duplicate snapshot query revision differs from the exact P2 entry binding")
+        if any(item.candidate_id == entry_id for item in snapshot.candidate_bindings):
+            raise LiteratureIntegrityError("duplicate snapshot cannot contain its query entry as a candidate")
+
+    @staticmethod
+    def _validate_p3_prepared_plans(
+        operation: P2EmissionOperationRevisionV1,
+        dossier: EdgeDossierRevisionV1,
+        resolved_claims: list[tuple[Any, ...]],
+        reservations: Mapping[str, Any],
+        relationships: list[SourceRelationshipRevisionV1],
+    ) -> None:
+        """Validate only the P3-determined portions of embedded emission plans.
+
+        Prior P2 statements/conflicts and frozen external observations remain
+        assertions, never fabricated replacement observations. Their authority
+        is checked only by the unchanged full reconstruction path.
+        """
+        from alphaquest.research.literature.mapper import (
+            derive_p2_observation_id,
+            effective_claim_reliability,
+            map_dossier_entry,
+            p3_conflict_marker,
+        )
+
+        claims = sorted(resolved_claims, key=lambda item: item[:5])
+        if len(operation.observation_plans) != len(claims):
+            raise LiteratureIntegrityError("prepared observation plans do not cover the exact P3 claim set")
+        for plan, resolved in zip(operation.observation_plans, claims, strict=True):
+            canonical_id, _, _, _, _, reference, claim, _capture, _version, _work, _component = resolved
+            reservation = reservations[canonical_id]
+            observation_id = derive_p2_observation_id(claim.claim_id)
+            if (
+                plan.claim_id != claim.claim_id
+                or plan.claim_revision_sha256 != claim.record_sha256
+                or plan.observation_id != observation_id
+                or plan.payload.observation_id != observation_id
+                or plan.role != reference.p2_role
+            ):
+                raise LiteratureIntegrityError("prepared observation plan identity differs from its P3 claim")
+            payload_hash = hashlib.sha256(canonical_json_bytes(plan.payload, trailing_lf=False)).hexdigest()
+            if plan.payload_sha256 != payload_hash:
+                raise LiteratureIntegrityError("prepared observation payload hash is invalid")
+            reliability = effective_claim_reliability(claim, relationships)
+            withdrawn = reliability in {"WITHDRAWN_INVALID", "SOURCE_RETRACTED"} and plan.role in _POSITIVE_P2_ROLES
+            if plan.withdrawn_from_current_support != withdrawn:
+                raise LiteratureIntegrityError("prepared observation support withdrawal differs from P3 reliability")
+            marker_code = {
+                "WITHDRAWN_INVALID": "INVALID_EXTRACTION_WITHDRAWN",
+                "CORRECTED": "CLAIM_CORRECTED",
+                "SOURCE_RETRACTED": "SOURCE_RETRACTED",
+                "SOURCE_VERSION_CORRECTED": "SOURCE_VERSION_CORRECTED",
+            }.get(reliability)
+            if marker_code and p3_conflict_marker(marker_code, claim) not in plan.payload.known_conflicts:
+                raise LiteratureIntegrityError("prepared observation lacks its P3 reliability conflict marker")
+            if reliability == "WITHDRAWN_INVALID" and plan.prior_observation_revision_sha256 is None:
+                raise LiteratureIntegrityError("withdrawn observation plan lacks a prior P2 binding")
+            # These two cases deliberately preserve a prior external payload.
+            # Validate its local hash above, without guessing that prior payload.
+            preserves_prior = reliability == "WITHDRAWN_INVALID" or (
+                reliability == "SOURCE_RETRACTED" and plan.prior_observation_revision_sha256 is not None
+            )
+            if not preserves_prior:
+                evidence = {
+                    "source_id": reservation.p2_source_id,
+                    "source_kind": reservation.source_kind,
+                    "locator": reservation.canonical_locator,
+                    "claim_locator": (
+                        f"p3-claim:{claim.claim_id}:revision-sha256:{claim.record_sha256}:"
+                        f"locator-sha256:{claim.location.locator_sha256}"
+                    ),
+                    "evidence_time": reservation.evidence_time.evidence_time,
+                    "integrity": "HASH_BOUND",
+                    "content_sha256": reservation.content_sha256,
+                }
+                if (
+                    plan.payload.statement != claim.statement.strip()
+                    or plan.payload.statement_kind != claim.statement_kind
+                    or [item.model_dump(mode="python") for item in plan.payload.evidence_refs] != [evidence]
+                ):
+                    raise LiteratureIntegrityError("prepared observation payload differs from its P3 evidence")
+        if operation.target_entry_id is None and (
+            operation.emission_action != "CREATE_NEW_ENTRY"
+            or operation.target_entry_revision_sha256 is not None
+            or operation.target_entry_state is not None
+            or operation.target_entry_link_chain_sha256 is not None
+            or operation.prior_staled_decision_sha256 is not None
+        ):
+            raise LiteratureIntegrityError("prepared target action is not the exact P2 prefix derivation")
+        base_plan = map_dossier_entry(dossier, operation.observation_plans)
+        if operation.emission_action != "REVISE_SAME_ENTRY":
+            if operation.entry_plan != base_plan:
+                raise LiteratureIntegrityError("prepared entry plan differs from its intrinsic dossier derivation")
+            return
+        target_impact = next(
+            (
+                item for item in operation.dependency_impacts
+                if item.dependent_entry_id == operation.target_entry_id
+                and item.impact_status == "PLANNED_MUTABLE_REVISION"
+            ),
+            None,
+        )
+        if target_impact is not None:
+            from alphaquest.research.literature.emission import _with_new_dossier_observations
+
+            assert target_impact.entry_plan is not None
+            expected = _with_new_dossier_observations(target_impact.entry_plan, operation.observation_plans)
+            if operation.entry_plan != expected:
+                raise LiteratureIntegrityError("prepared entry plan differs from its embedded dependency correction")
+        else:
+            actual = operation.entry_plan
+            if (
+                actual.model_dump(exclude={"observation_roles"}) != base_plan.model_dump(exclude={"observation_roles"})
+                or actual.observation_roles[:len(base_plan.observation_roles)] != base_plan.observation_roles
+                or any(
+                    item.role != "CONTRADICTING" or item.frozen_revision_sha256 is None
+                    for item in actual.observation_roles[len(base_plan.observation_roles):]
+                )
+            ):
+                raise LiteratureIntegrityError("prepared entry plan alters its P3 base or external preservation shape")
+
     def _validate_prepared_emission(
         self,
         operation: P2EmissionOperationRevisionV1,
         records: list[CanonicalRecordV1],
         records_by_hash: dict[str, CanonicalRecordV1],
     ) -> None:
-        from alphaquest.research.edge_backlog import EdgeBacklogStore
-        from alphaquest.research.literature.emission import (
-            _dependency_impacts,
-            _hypothesis_link_at_prefix,
-            _with_new_dossier_observations,
+        self._validate_prepared_emission_state(
+            operation, records, records_by_hash, intrinsic_only=False
         )
+
+    def _validate_prepared_emission_state(
+        self,
+        operation: P2EmissionOperationRevisionV1,
+        records: list[CanonicalRecordV1],
+        records_by_hash: dict[str, CanonicalRecordV1],
+        *,
+        intrinsic_only: bool,
+    ) -> None:
+        if not intrinsic_only:
+            from alphaquest.research.edge_backlog import EdgeBacklogStore
+            from alphaquest.research.literature.emission import (
+                _dependency_impacts,
+                _hypothesis_link_at_prefix,
+                _with_new_dossier_observations,
+            )
         from alphaquest.research.literature.mapper import (
             canonical_source_version_resolution,
             effective_claim_reliability,
@@ -3340,7 +3539,8 @@ class LiteratureStore:
                     earlier_reservations.setdefault(
                         reservation.canonical_source_version_id, reservation
                     )
-        backlog = EdgeBacklogStore(self.project_root)
+        if not intrinsic_only:
+            backlog = EdgeBacklogStore(self.project_root)
         resolved_claims = []
         for reference in dossier.claim_refs:
             claim = records_by_hash.get(reference.claim_revision_sha256)
@@ -3405,24 +3605,30 @@ class LiteratureStore:
                 existing=existing,
             )
             expected_reservations[canonical_id] = reservation
-            try:
-                prior_observation = backlog.latest_observation_at_prefix(
-                    f"obs.p3.{hashlib.sha256(f'alphaquest-p3-claim|{claim.claim_id}'.encode()).hexdigest()[:32]}",
-                    operation.p2_snapshot_before_append_sequence,
+            if not intrinsic_only:
+                try:
+                    prior_observation = backlog.latest_observation_at_prefix(
+                        f"obs.p3.{hashlib.sha256(f'alphaquest-p3-claim|{claim.claim_id}'.encode()).hexdigest()[:32]}",
+                        operation.p2_snapshot_before_append_sequence,
+                    )
+                except FileNotFoundError:
+                    prior_observation = None
+                expected_plans.append(
+                    map_claim_to_observation(
+                        claim=claim,
+                        role=reference.p2_role,
+                        reservation=reservation,
+                        prior_observation=prior_observation,
+                        effective_reliability=effective_claim_reliability(claim, relationships),
+                    )
                 )
-            except FileNotFoundError:
-                prior_observation = None
-            expected_plans.append(
-                map_claim_to_observation(
-                    claim=claim,
-                    role=reference.p2_role,
-                    reservation=reservation,
-                    prior_observation=prior_observation,
-                    effective_reliability=effective_claim_reliability(claim, relationships),
-                )
-            )
         if list(operation.reservations) != list(expected_reservations.values()):
             raise LiteratureIntegrityError("prepared reservations are not the complete exact dossier derivation")
+        if intrinsic_only:
+            self._validate_p3_prepared_plans(
+                operation, dossier, resolved_claims, expected_reservations, relationships
+            )
+            return
         if list(operation.observation_plans) != expected_plans:
             raise LiteratureIntegrityError("prepared observation plans are not the complete exact dossier derivation")
 
