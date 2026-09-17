@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 import hashlib
 import json
+import math
 import re
 import time
 from urllib.parse import urlencode
@@ -91,14 +92,15 @@ def fetch(
                     raise OpenAlexError("compressed OpenAlex response is unsupported")
                 if response.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
                     raise OpenAlexError("OpenAlex response is not JSON")
-                for chunk in response.iter_raw(chunk_size=8192):
+                # No chunk_size: account for each delivered fragment before HTTPX can coalesce it.
+                for chunk in response.iter_raw():
                     received += len(chunk)
                     if time.monotonic() > deadline:
                         raise OpenAlexError("OpenAlex elapsed budget exceeded", bytes_received=received)
                     if received > bound:
                         raise OpenAlexError("OpenAlex response exceeds byte bound", bytes_received=received)
                     body.extend(chunk)
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, httpx.StreamError) as exc:
         # Do not persist URLs, response text, environment values, or exception details.
         raise OpenAlexError("OpenAlex transport failed; no retry", bytes_received=received) from exc
     return bytes(body)
@@ -144,6 +146,13 @@ def _reject_constant(value: str) -> None:
     raise OpenAlexError("non-finite JSON")
 
 
+def _finite_float(token: str) -> float:
+    value = float(token)
+    if not math.isfinite(value):
+        raise OpenAlexError("non-finite JSON")
+    return value
+
+
 def _object(pairs: list[tuple[str, object]]) -> dict:
     result = {}
     for key, value in pairs:
@@ -161,6 +170,7 @@ def normalize(body: bytes, limit: int) -> tuple[Work, ...]:
             body.decode("utf-8"),
             object_pairs_hook=_object,
             parse_constant=_reject_constant,
+            parse_float=_finite_float,
         )
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise OpenAlexError("malformed OpenAlex JSON") from exc

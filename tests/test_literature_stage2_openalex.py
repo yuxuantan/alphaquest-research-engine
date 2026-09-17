@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -502,3 +503,159 @@ def test_oversized_json_integer_is_a_provider_failure():
     body = b'{"results":[],"meta":' + b"9" * 5000 + b"}"
     with pytest.raises(oa.OpenAlexError, match="malformed OpenAlex JSON"):
         oa.normalize(body, 1)
+
+
+class _FragmentStream(httpx.SyncByteStream):
+    """Expose actual delivery boundaries, including errors after partial bodies."""
+
+    def __init__(self, fragments, *, error=None, on_fragment=None):
+        self.fragments = fragments
+        self.error = error
+        self.on_fragment = on_fragment
+        self.delivered_bytes = 0
+        self.fragments_delivered = 0
+        self.error_reached = False
+        self.closed = False
+
+    def __iter__(self):
+        for fragment in self.fragments:
+            if self.on_fragment is not None:
+                self.on_fragment()
+            self.delivered_bytes += len(fragment)
+            self.fragments_delivered += 1
+            yield fragment
+        if self.error is not None:
+            self.error_reached = True
+            raise self.error
+
+    def close(self):
+        self.closed = True
+
+
+def _fetch_stream(stream, *, byte_limit=50, elapsed_limit=60):
+    return oa.fetch(
+        "frozen query",
+        1,
+        byte_limit=byte_limit,
+        elapsed_limit=elapsed_limit,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, headers={"content-type": "application/json"}, stream=stream)
+        ),
+    )
+
+
+@pytest.mark.parametrize("budget,fragment_size", [(50, 1), (50, 7), (oa.MAX_BODY_BYTES, 8192)])
+def test_oa1_fragmented_valid_body_at_exact_frozen_limit(budget, fragment_size):
+    body = b'{"results":[]}'.ljust(budget)
+    stream = _FragmentStream([body[i : i + fragment_size] for i in range(0, len(body), fragment_size)])
+    received = _fetch_stream(stream, byte_limit=budget)
+    assert received == body and oa.normalize(received, 1) == ()
+    assert stream.delivered_bytes == budget and stream.closed
+
+
+@pytest.mark.parametrize(
+    "budget,fragments,expected",
+    [
+        (50, [b"x" * 50, b"x"], 51),
+        (50, [b"x"] * 51, 51),
+        (50, [b"x" * 100], 100),
+        (oa.MAX_BODY_BYTES, [b"x" * 8192] * 128 + [b"x"], oa.MAX_BODY_BYTES + 1),
+    ],
+    ids=["limit-plus-one", "one-byte-fragments", "audit-100-with-budget-50", "one-mib-plus-one"],
+)
+def test_oa1_overrun_stops_at_first_excess_fragment_before_later_timeout(budget, fragments, expected):
+    stream = _FragmentStream(fragments, error=httpx.ReadTimeout("must not reach next read"))
+    with pytest.raises(oa.OpenAlexError, match="exceeds byte bound") as caught:
+        _fetch_stream(stream, byte_limit=budget)
+    assert caught.value.bytes_received == stream.delivered_bytes == expected
+    assert stream.fragments_delivered == len(fragments)
+    assert not stream.error_reached and stream.closed
+
+
+@pytest.mark.parametrize(
+    "error_type", [httpx.ReadTimeout, httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError, httpx.StreamError]
+)
+def test_oa1_fragmented_transport_error_preserves_twenty_delivered_bytes(error_type):
+    stream = _FragmentStream([b"x" * 3, b"x" * 7, b"x" * 10], error=error_type("partial response"))
+    with pytest.raises(oa.OpenAlexError, match="transport failed; no retry") as caught:
+        _fetch_stream(stream)
+    assert caught.value.bytes_received == stream.delivered_bytes == 20
+    assert isinstance(caught.value.__cause__, error_type)
+    assert stream.error_reached and stream.closed
+
+
+def test_oa1_fragmented_slow_stream_checks_total_deadline_after_each_delivery(monkeypatch):
+    clock = [0.0]
+
+    def advance():
+        clock[0] += 0.6  # Every fragment arrives within the one-second read timeout.
+
+    monkeypatch.setattr(oa, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    stream = _FragmentStream([b"x"] * 20, on_fragment=advance)
+    with pytest.raises(oa.OpenAlexError, match="elapsed budget exceeded") as caught:
+        _fetch_stream(stream, elapsed_limit=1)
+    assert clock[0] == pytest.approx(1.2)
+    assert caught.value.bytes_received == stream.delivered_bytes == 2
+    assert stream.fragments_delivered == 2 and stream.closed
+
+
+@pytest.mark.parametrize("budget,fragment_size", [(50, 100), (oa.MAX_BODY_BYTES, 8192)])
+def test_oa1_runner_overrun_keeps_started_without_false_terminal_or_redispatch(store, budget, fragment_size):
+    protocol = _protocol(store, maximum_bytes=budget)
+    fragments = [b"x" * 100] if budget == 50 else [b"x" * fragment_size] * (budget // fragment_size) + [b"x"]
+    stream = _FragmentStream(fragments, error=httpx.ReadTimeout("after overrun"))
+    calls = []
+
+    def handler(request):
+        assert store.records()[-1].status == "STARTED"
+        calls.append(request)
+        return httpx.Response(200, headers={"content-type": "application/json"}, stream=stream)
+
+    transport = httpx.MockTransport(handler)
+    with pytest.raises(runner.PilotManualReconciliation, match="exceeded frozen budget"):
+        runner.run_openalex_pilot(store.project_root, protocol.record_sha256, _transport=transport)
+    searches = [record for record in store.records() if isinstance(record, SearchRunRevisionV1)]
+    assert len(searches) == 1 and searches[0].status == "STARTED"
+    assert stream.delivered_bytes == (100 if budget == 50 else budget + 1)
+    assert not stream.error_reached and stream.closed
+    assert store.validate()["status"] == "PASS"
+    assert not any(isinstance(record, SourceCaptureRevisionV1) for record in store.records())
+    with pytest.raises(runner.PilotManualReconciliation, match="no redispatch"):
+        runner.run_openalex_pilot(store.project_root, protocol.record_sha256, _transport=transport)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("error_type", [httpx.ReadTimeout, httpx.ReadError, httpx.StreamError])
+def test_oa1_runner_within_budget_failure_publishes_actual_bytes_once(store, error_type):
+    protocol = _protocol(store, maximum_bytes=50)
+    stream = _FragmentStream([b"x" * 3, b"x" * 7, b"x" * 10], error=error_type("partial response"))
+    calls = []
+
+    def handler(request):
+        assert store.records()[-1].status == "STARTED"
+        calls.append(request)
+        return httpx.Response(200, headers={"content-type": "application/json"}, stream=stream)
+
+    transport = httpx.MockTransport(handler)
+    result = runner.run_openalex_pilot(store.project_root, protocol.record_sha256, _transport=transport)
+    searches = [record for record in store.records() if isinstance(record, SearchRunRevisionV1)]
+    assert [record.status for record in searches] == ["STARTED", "FAILED"]
+    assert searches[-1].bytes_retrieved == stream.delivered_bytes == 20
+    assert stream.error_reached and stream.closed
+    assert not result["complete"] and store.validate()["status"] == "PASS"
+    with pytest.raises(runner.PilotManualReconciliation, match="no redispatch"):
+        runner.run_openalex_pilot(store.project_root, protocol.record_sha256, _transport=transport)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("token", ["1e999", "-1e999", "NaN", "Infinity", "-Infinity"])
+def test_oa2_nonfinite_json_numbers_fail_even_in_ignored_metadata(token):
+    body = ('{"results":[],"meta":{"x":' + token + "}}").encode()
+    with pytest.raises(oa.OpenAlexError, match="malformed OpenAlex JSON"):
+        oa.normalize(body, 1)
+
+
+@pytest.mark.parametrize("token", ["0", "1.5", "-2.5", "1e100", "-1e100", "1e-100"])
+def test_oa2_finite_json_numbers_preserve_normalization(token):
+    body = ('{"results":[],"meta":{"x":' + token + "}}").encode()
+    assert oa.normalize(body, 1) == ()
