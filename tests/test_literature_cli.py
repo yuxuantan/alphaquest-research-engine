@@ -44,3 +44,22 @@ def test_literature_cli_creates_inspects_and_validates_offline_records(tmp_path:
     assert json.loads(capsys.readouterr().out)["record_sha256"] == work["record_sha256"]
     assert main(["literature", "validate", "--project-root", str(root)]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "PASS"
+
+
+def test_openalex_cli_is_narrow_and_uses_frozen_protocol(monkeypatch, capsys):
+    from alphaquest.research.literature import stage2_runner
+    calls = []
+
+    def run(root, sha):
+        calls.append((root, sha))
+        return {"complete": True, "searches": []}
+
+    monkeypatch.setattr(stage2_runner, "run_openalex_pilot", run)
+    assert main(["literature", "openalex-run", "--protocol-revision-sha", "a" * 64]) == 0
+    assert calls == [(".", "a" * 64)]
+    assert json.loads(capsys.readouterr().out)["complete"]
+    import pytest
+    for option in ["--url", "--host", "--provider-endpoint", "--arbitrary-query", "--file", "--shell"]:
+        with pytest.raises(SystemExit):
+            main(["literature", "openalex-run", "--protocol-revision-sha", "a" * 64, option, "forbidden"])
+    assert len(calls) == 1
