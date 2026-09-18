@@ -1,9 +1,173 @@
-# Stage 2A: deterministic admission and publication planning
+# Stage 2: restricted OpenAlex pilot and F4 planning
 
-Stage 2 remains blocked. This prerequisite slice addresses F4 scheduling for
-an initial restricted executor. It contains no provider client, dispatch,
-retrieval, credentials, worker, parsing, retention, or source-byte handling.
-No schema change was made; the thirteen canonical families are unchanged.
+General Stage 2 production activation remains blocked. The owner authorized a
+supervised, keyless OpenAlex pilot after F4 passed independent verification and
+was merged in `019b51e9cf082d53c9ebc1eb58485b35a726313d`. The pilot implementation
+requires independent verification. No schema change was made; the thirteen
+canonical families, Stage 1 writer, and F4 policy are unchanged.
+
+## Supervised OpenAlex pilot
+
+Run one frozen seven-lane workflow with:
+
+```bash
+alphaquest literature openalex-run --project-root /path/to/dedicated-p3-store \
+  --protocol-revision-sha <exact-canonical-protocol-sha256>
+```
+
+The only operator inputs are the project root and exact protocol hash. There are
+no URL, hostname, arbitrary-query, file, shell, provider, or credential options.
+The trusted Python entry point is `stage2_runner.run_openalex_pilot`. Its private
+transport injection is solely for offline tests, not an untrusted worker API.
+
+Every lane requires one initial query, one provider (`openalex`),
+`minimum_provider_attempts = 1`, `maximum_queries = 1`, `adaptive_max_depth = 0`,
+and disabled saturation. Only `PRE_RESULT_PROTOCOL` is admitted. The result cap
+is `min(10, maximum_results)` per lane. Inspection and capture minima must fit
+that cap; capture attempts are bounded by `maximum_captures`. An impossible
+minimum or unsupported protocol fails before STARTED or network dispatch. Frozen
+queries are used verbatim; returned provider order becomes rank `1..N`, with
+provider rank 1. The prefix is never reranked for supportive conclusions.
+
+Use a dedicated, operator-exclusive P3 store with no P2 emission operations.
+The controller validates the complete intrinsic P3 snapshot, then rejects any
+emission-bearing store before invoking public writers or transport. This is a
+pilot admission restriction, not a change to Model A or Stage 1. It avoids P2
+historical reads while preserving full Stage 1 validation at every real append.
+Do not move or delete existing evidence to satisfy this restriction. Do not run
+other canonical writers concurrently with the pilot. Unexpected canonical
+appends during a request make it stop for manual reconciliation.
+
+### Adapter and request contract
+
+`providers/openalex.py` never writes canonical state. The trusted controller
+converts its bounded normalized output into existing records. Requests use only
+`GET https://api.openalex.org/works`, with `search` equal to the frozen query,
+`per_page` equal to the bounded cap, and `select` equal to:
+
+```text
+id,doi,display_name,publication_date,authorships,abstract_inverted_index
+```
+
+These fields support stable identifiers, citation metadata, unverified public
+availability, and abstract reconstruction. No citation counts, OA-location links,
+full-text URLs, or popularity-based reranking are needed. Request encoding is
+deterministic, with a 4,000-byte URL cap; oversized frozen queries are rejected,
+never split or rewritten. This follows OpenAlex's documented
+[Works search](https://help.openalex.org/api/searching/) and
+[field selection](https://help.openalex.org/api/selecting-fields/) mechanisms.
+
+A fresh HTTPX client makes exactly one request per dispatched lane, with HTTPS
+certificate verification enabled, environment trust disabled, redirects disabled,
+no cookies carried between requests, no credentials, and only JSON/identity
+encoding request headers. No response URL is fetched. Connection timeout is at
+most 5 seconds and read timeout at most 10 seconds, tightened for smaller frozen
+elapsed budgets. HTTPX's transport has zero connection retries. Only one
+connection is allowed; idle connections are not retained.
+
+Streaming raw bytes are bounded by `min(1 MiB, maximum_bytes)` before extending
+the buffer. Compressed and non-JSON responses are rejected. A monotonic deadline
+is checked between chunks; read timeout still bounds each blocking read. This is
+not a general process-wide wall-clock/DNS isolation mechanism. Observed frozen
+byte/time overruns are never clamped into false canonical counters: the STARTED
+record remains for manual reconciliation when no truthful terminal fits its
+frozen budget. No archives, PDFs, browsers, OCR, or HTML parsers are involved.
+
+### Identity, captures, and permission
+
+The adapter validates the JSON envelope, bounded result count, work ID syntax,
+DOI shape, metadata types, bounded strings/authorships, and publication date.
+Duplicate work/result identities reject the response rather than silently
+renumbering provider ranks. Extra response fields have no authority.
+
+The canonical locator is the normalized DOI URL when present, otherwise the
+validated OpenAlex work URL; neither is dereferenced. Work identity uses the
+existing `SHA256("work|" + locator)` convention, and `SearchResultInspectionV1`
+checks the canonical work/locator result hash. AlphaQuest derives search, work,
+version, and capture IDs itself. Provider data cannot choose paths, filenames,
+actors, append sequences, or hashes.
+
+Selected results create `SourceIdentityRevisionV1`,
+`SourceVersionIdentityRevisionV1`, and `SourceCaptureRevisionV1` through
+`LiteratureStore`. Identity remains `PROVISIONAL`; publication dates are
+`SOURCE_REPORTED_UNVERIFIED`, never invented exact instants. Source versions are
+explicitly `OTHER` OpenAlex metadata snapshots, not assertions about a publisher's
+paper-version history. The capture retrieval locator is the actual bounded
+OpenAlex Works request.
+
+For a valid abstract index, unique integer positions must be contiguous from
+zero. Reconstruction joins the exact words by position with ASCII spaces and
+encodes UTF-8. It neither invents missing words nor summarizes. Token/position and
+text-byte bounds also apply. Genuine abstract captures retain the selected
+OpenAlex work's validated selected fields as canonical JSON, plus the deterministic UTF-8
+extraction, with hashes and extractor provenance. Missing abstracts yield
+`LOCATOR_METADATA_ONLY`. Malformed abstracts yield a `FAILED` selected capture
+without retaining evidence bytes; neither case substitutes a later-ranked paper.
+
+OpenAlex describes its API data as
+[CC0](https://help.openalex.org/data/how-its-built/). The pilot's retention policy
+applies only to data returned directly by OpenAlex: `OPEN_PUBLIC`, local retention
+`ALLOWED`, redistribution `ALLOWED`, and external processing `LOCAL_ONLY`.
+These are existing contract values. They do not authorize fetching or retaining
+publisher content, PDFs, HTML, DOI targets, or OA-location URLs. No LLM or external
+model processor is invoked.
+
+### Dispatch, F4, and crash behavior
+
+An ephemeral per-store file lock serializes pilot invocations. It is not a durable
+F3 reservation. The canonical STARTED record is persisted before each request.
+Before dispatch the controller calls the merged F4 planner with the exact STARTED
+step and a zero-capture failure contingency. That hypothetical record is never
+published as a fabricated outcome and authorizes no captures. It checks the serial
+execution step before the single provider search. Actual normalized results and
+capture selections require a new F4 plan before any capture is published.
+
+The controller publishes only the plan's exact first-step captures. Work/version
+appends change the snapshot, so it replans immediately before each capture's
+retention/publication. After all selected captures, it obtains another fresh plan
+and publishes its exact terminal bytes through `finish_search`. Every actual
+append still uses the unchanged full validation and durability path. New canonical
+state requires fresh planning; no old plan is transplanted to a different step. The pilot searches serially and stops after the
+first failed request. Missing result minima remain explicit canonical lane gaps.
+A successful provider response does not imply that every lane obligation is met
+or that an abstract was available.
+
+Any existing search history in the execution lineage rejects a new invocation.
+An orphan STARTED anywhere in the pilot store also blocks it. A deterministic
+search ID cannot be regenerated to evade this rule. There are no retries after
+429, 5xx, timeout, crash, or ambiguous outcome, and no automatic continuation of a
+partly completed workflow. Ordinary bounded provider failures get a FAILED
+terminal revision when possible. Internal defects, stale authority, over-budget
+outcomes, or interrupted capture publication require manual reconciliation.
+Never delete canonical history or mint a fresh search ID to force a retry.
+
+The controller reads only P3 state and storage configuration. Requests and
+normalization never consult PnL, campaigns, trade logs, research results, reset
+history, or P2 historical universes. Differential tests hold initial P3 bytes and
+protocol constant while changing unrelated research files. Tests also forbid P2
+store construction, exercise real F4 rejection and snapshot drift, and verify
+that concurrent pilot invocations cannot double-dispatch.
+
+### Qualification and limits
+
+Ordinary tests use fake HTTP transports and require no external network. A real
+OpenAlex smoke is a separately invoked, bounded single request after local
+validation, using disposable state only. It is not a CI requirement or scientific
+evidence and must not be written into historical canonical research.
+
+The pilot does not provide general F3 reservation, automatic recovery, generic
+SSRF-safe arbitrary URL retrieval, PDFs, HTML, multiple providers, concurrency,
+adaptive search, or LLM execution. The live provider corpus can change: request
+construction and normalization of the same bytes are deterministic, not a promise
+that OpenAlex will return the same results on a later date.
+
+F1 general SSRF transport, F3 general reservations, F5 advanced resource limits,
+and F7 general retention policy are deferred. F2 worker/PnL isolation is deferred
+to Stage 3; this trusted serial controller is not a worker sandbox. F6 credentials
+are not required for this keyless pilot. General Stage 2 production activation
+remains blocked, and Stage 3 is not implemented here.
+
+## Audited Stage 2A foundation
 
 ## Admission and execution policy
 
@@ -136,8 +300,7 @@ regressions assert first exception class/message on multiply-invalid histories.
    The planner accepts a store and exact protocol hash, not `search_history`.
 3. Provider output supplies only bounded external result data. The trusted
    controller converts it to typed proposed records, including exact inspections,
-   capture identities and ordinals. This slice uses fake data only; the worker
-   does not receive store access.
+   capture identities and ordinals. The Stage 2A tests use fake data; the provider adapter does not receive store access.
 4. Plan the proposed terminal outcome before retrieving any source body.
 5. `CAPTURE_RETRIEVAL_ALLOWED` exposes only the first, already-STARTED search's
    `next_capture_attempts`. Zero attempts authorize no retrieval. Later planned
@@ -151,7 +314,7 @@ no search-only hash is presented as store authority. **Any canonical append make
 the plan stale**, including an append in another P3 family. External P2 or
 historical changes alone do not change this F4 snapshot identity under Model A. Read fresh state and
 rebuild proposed envelopes before replanning. These fields are evidence, not a
-durable F3 reservation, authorization token, or safety approval. F3 remains open.
+durable F3 reservation, authorization token, or safety approval. General F3 remains deferred for the supervised pilot.
 Do not transplant a plan to another history or use it after outcome drift. Actual terminal
 publication remains subject to the store's locked, full-history validation and
 durability barrier. Intervening canonical writes may require new envelope hashes.
@@ -166,11 +329,8 @@ blocker. A later provider that cannot extend the existing selected prefix is
 rejected before retrieving its source bodies. Previously valid terminal records
 remain intact.
 
-F1 SSRF transport, F2 worker/PnL isolation, F3 dispatch reservation, F5 resource
-limits, F6 secret boundaries, and F7 pre-retention authorization remain open.
-The dedicated security review is complete with remaining blockers. Owner
-activation is pending, and Stage 2 is blocked. F4's bounded candidate requires
-independent re-audit after the initial and first-remediation audits failed. B1,
-B2, and B3 were independently closed; R1/R2 remediation under approved Model A
-still requires independent verification. No live execution is activated by
-this module or its tests.
+The initial and first-remediation F4 audits failed. Remediation 2 under the
+owner-approved Model A passed independent verification for the restricted profile,
+including B1/B2/B3 and R1/R2 closure, and was merged through PR #6. The pilot uses
+that unchanged foundation. Its own independent verification remains pending.
+General production activation is blocked; no Stage 3 work is authorized here.

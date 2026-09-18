@@ -261,6 +261,12 @@ def _parser() -> argparse.ArgumentParser:
         "literature", help="Create, inspect, validate, and emit the offline canonical P3 literature slice."
     )
     literature_commands = literature.add_subparsers(dest="literature_command")
+    literature_pilot = literature_commands.add_parser(
+        "openalex-run", help="Run the supervised, one-shot OpenAlex P3 search pilot."
+    )
+    literature_pilot.add_argument("--project-root", default=".")
+    literature_pilot.add_argument("--protocol-revision-sha", required=True)
+    literature_pilot.set_defaults(handler=_literature_openalex_run)
     literature_put = literature_commands.add_parser("put-artifact", help="Store one offline content-addressed artifact.")
     literature_put.add_argument("--project-root", default=".")
     literature_put.add_argument("--input", required=True)
@@ -1387,6 +1393,14 @@ def _edge_input(value: str | Path) -> dict[str, Any]:
 
 def _edge_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+
+
+def _literature_openalex_run(args: argparse.Namespace) -> int:
+    from alphaquest.research.literature.stage2_runner import run_openalex_pilot
+
+    result = run_openalex_pilot(args.project_root, args.protocol_revision_sha)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["complete"] else 2
 
 
 def _literature_actor(args: argparse.Namespace):
