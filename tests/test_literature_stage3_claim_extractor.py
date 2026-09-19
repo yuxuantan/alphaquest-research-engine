@@ -440,3 +440,180 @@ def test_administrative_protocol_revision_cannot_redispatch_representation(tmp_p
         extraction.run_claim_extraction_pilot(tmp_path, revised.record_sha256,
             _client=lambda _: pytest.fail("administrative change redispatched model"))
     assert len(_records(store, CodexTaskAttemptRevisionV1)) == 2
+
+
+@pytest.mark.parametrize("only_last_occurrence", [False, True])
+def test_selected_work_cannot_authorize_unacquired_representation(tmp_path, monkeypatch, only_last_occurrence):
+    publish = acquisition._publish_capture
+    foreign = _work(2003)
+    foreign["abstract_inverted_index"] = {"UNACQUIRED": [0], "SOURCE": [1], "TEXT": [2]}
+    other, = acquisition.openalex.normalize(_body(foreign), 1)
+    seen = []
+
+    def substitute(store, work, capture_id, request, now, authorize, processing_policy):
+        seen.append(capture_id)
+        replacement = other if not only_last_occurrence or len(seen) == 7 else work
+        return publish(store, replacement, capture_id, request, now, authorize, processing_policy)
+
+    monkeypatch.setattr(acquisition, "_publish_capture", substitute)
+    store, protocol = _acquire(tmp_path, works=[_work(2001)])
+    calls = []
+    with pytest.raises(LiteratureIntegrityError, match="exact acquisition inspection"):
+        extraction.run_claim_extraction_pilot(tmp_path, protocol.record_sha256,
+            _client=lambda request: calls.append(request) or _envelope())
+    assert calls == []
+    assert not _records(store, ClaimExtractionRevisionV1)
+    assert not _records(store, CodexTaskAttemptRevisionV1)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("result_identity_sha256", "1" * 64),
+    ("work_identity_sha256", "2" * 64),
+    ("canonical_locator", "https://doi.org/10.1234/different"),
+    ("locator_sha256", "3" * 64),
+])
+def test_each_selected_inspection_identity_field_is_authoritative(tmp_path, field, value):
+    from alphaquest.research.literature.contracts import SearchRunRevisionV1
+    store, protocol = _acquire(tmp_path)
+    records = store.records()
+    capture = next(r for r in records if isinstance(r, SourceCaptureRevisionV1))
+    search = next(r for r in records if isinstance(r, SearchRunRevisionV1)
+                  and any(c.capture_attempt_id == capture.capture_id for c in r.capture_attempt_records))
+    inspection, = search.inspected_results
+    # In-memory adversarial input deliberately bypasses the contract's own checks.
+    altered = search.model_copy(update={"inspected_results": [inspection.model_copy(update={field: value})]})
+    records = [altered if r.record_sha256 == search.record_sha256 else r for r in records]
+    with pytest.raises(LiteratureIntegrityError):
+        extraction.prepare_extraction(protocol, capture, records, store.verify_artifact)
+
+
+def test_acquisition_binding_rejects_capture_id_from_another_search(tmp_path):
+    from alphaquest.research.literature.contracts import SearchRunRevisionV1
+    store, protocol = _acquire(tmp_path)
+    records = store.records()
+    searches = [r for r in records if isinstance(r, SearchRunRevisionV1) and r.status == "SUCCEEDED"]
+    first, second = searches[:2]
+    attempt, = first.capture_attempt_records
+    altered = first.model_copy(update={"capture_attempt_records": [attempt.model_copy(update={
+        "capture_attempt_id": second.capture_attempt_records[0].capture_attempt_id,
+    })]})
+    records = [altered if r.record_sha256 == first.record_sha256 else r for r in records]
+    with pytest.raises(LiteratureIntegrityError, match="acquisition-result binding"):
+        extraction._lineage_captures(protocol, records)
+
+
+def test_attempt_explicitly_binds_representative_terminal_search(tmp_path):
+    from alphaquest.research.literature.contracts import SearchRunRevisionV1
+    store, protocol = _acquire(tmp_path)
+    result = extraction.run_claim_extraction_pilot(tmp_path, protocol.record_sha256, _client=lambda _: _envelope())
+    assert len(result["attempts"]) == 1 and len(result["attempts"][0]["capture_ids"]) == 7
+    terminal = _records(store, CodexTaskAttemptRevisionV1)[-1]
+    references = {ref.record_sha256 for ref in terminal.referenced_records}
+    search, = [r for r in store.records() if isinstance(r, SearchRunRevisionV1) and r.record_sha256 in references]
+    assert search.status == "SUCCEEDED" and len(references) == 5
+    assert search.capture_attempt_records[0].capture_attempt_id == result["attempts"][0]["capture_ids"][0]
+    assert store.validate()["status"] == "PASS"
+
+
+def test_rehashed_search_to_capture_work_mismatch_rejected_on_reload(tmp_path):
+    from tests.test_literature_stage1 import _rewrite_valid_hash_chains
+    store, protocol = _acquire(tmp_path, works=[_work(2001)])
+    extraction.run_claim_extraction_pilot(tmp_path, protocol.record_sha256,
+        _client=lambda _: _envelope(_output(claims=[])))
+    foreign, = acquisition.openalex.normalize(_body(_work(2003)), 1)
+
+    def mutate(record):
+        if record.get("search_run_id") and record["status"] == "SUCCEEDED":
+            record["inspected_results"] = [foreign.inspection.model_dump(mode="json")]
+            record["capture_attempt_records"][0]["result_identity_sha256"] = foreign.inspection.result_identity_sha256
+            record["result_set_sha256"] = model.sha(canonical_json_bytes(record["inspected_results"], trailing_lf=False))
+
+    _rewrite_valid_hash_chains(tmp_path, mutate)
+    with pytest.raises(LiteratureIntegrityError, match="acquisition-result binding"):
+        LiteratureStore(tmp_path).validate()
+
+
+_REFUSAL = _envelope(output=[dict(type="message", role="assistant", status="completed",
+                                content=[dict(type="refusal", refusal="No")])])
+
+
+@pytest.mark.parametrize("response,status,reason", [
+    (_envelope(_output(claims=[])), "SUCCEEDED", None),
+    (_envelope(), "SUCCEEDED", None),
+    (b"{", "INVALID_OUTPUT", "INVALID_EXTRACTION_OUTPUT"),
+    (_REFUSAL, "FAILED", "REFUSAL_OR_INCOMPLETE_RESPONSE"),
+    (_envelope(status="incomplete"), "FAILED", "REFUSAL_OR_INCOMPLETE_RESPONSE"),
+])
+def test_runtime_and_reload_derive_same_retained_outcome(tmp_path, response, status, reason):
+    store, protocol = _acquire(tmp_path)
+    result = extraction.run_claim_extraction_pilot(tmp_path, protocol.record_sha256, _client=lambda _: response)
+    attempt = _records(store, CodexTaskAttemptRevisionV1)[-1]
+    derived = extraction.classify_response(response, b"Hello world")
+    assert (attempt.status, attempt.failure_reason) == (derived.status, derived.failure_reason) == (status, reason)
+    assert attempt.output_sha256 == model.sha(response)
+    assert result["attempts"][0]["status"] == status
+    assert store.validate()["status"] == "PASS"
+
+
+@pytest.mark.parametrize("response,status,reason", [
+    (_envelope(_output(claims=[])), "INVALID_OUTPUT", "INVALID_EXTRACTION_OUTPUT"),
+    (_envelope(), "INVALID_OUTPUT", "INVALID_EXTRACTION_OUTPUT"),
+    (_envelope(_output(claims=[])), "FAILED", "REFUSAL_OR_INCOMPLETE_RESPONSE"),
+    (_envelope(), "FAILED", "MODEL_INVOCATION_FAILED_NO_RETRY"),
+    (b"{", "SUCCEEDED", None),
+    (_REFUSAL, "INVALID_OUTPUT", "INVALID_EXTRACTION_OUTPUT"),
+    (_envelope(status="incomplete"), "INVALID_OUTPUT", "INVALID_EXTRACTION_OUTPUT"),
+    (b"{", "INVALID_OUTPUT", "INVALID_RESPONSE_BYTES"),
+    (_REFUSAL, "FAILED", "MODEL_INVOCATION_FAILED_NO_RETRY"),
+])
+def test_rehashed_terminal_cannot_contradict_retained_response(tmp_path, response, status, reason):
+    from tests.test_literature_stage1 import _rewrite_valid_hash_chains
+    store, protocol = _acquire(tmp_path)
+    extraction.run_claim_extraction_pilot(tmp_path, protocol.record_sha256, _client=lambda _: response)
+
+    def mutate(record):
+        if record.get("attempt_id", "").startswith("attempt.stage3.") and record["status"] != "STARTED":
+            record.update(status=status, failure_reason=reason)
+
+    _rewrite_valid_hash_chains(tmp_path, mutate)
+    with pytest.raises(LiteratureIntegrityError, match="contradicts retained response"):
+        LiteratureStore(tmp_path).validate()
+
+
+@pytest.mark.parametrize("kind,status,reason", [
+    ("invocation", "FAILED", "MODEL_INVOCATION_FAILED_NO_RETRY"),
+    ("nonbytes", "INVALID_OUTPUT", "INVALID_RESPONSE_BYTES"),
+    ("oversized", "INVALID_OUTPUT", "INVALID_RESPONSE_BYTES"),
+    ("crash", "ABANDONED_AFTER_CRASH", "ORPHANED_ATTEMPT_NO_REDISPATCH"),
+])
+def test_no_response_outcomes_are_closed_and_reloadable(tmp_path, kind, status, reason):
+    from tests.test_literature_stage1 import _rewrite_valid_hash_chains
+    store, protocol = _acquire(tmp_path)
+
+    def client(_):
+        if kind == "invocation":
+            raise RuntimeError("synthetic transport failure")
+        if kind == "crash":
+            raise KeyboardInterrupt
+        return "not bytes" if kind == "nonbytes" else b"x" * (model.MAX_RESPONSE_BYTES + 1)
+
+    if kind == "crash":
+        with pytest.raises(KeyboardInterrupt):
+            extraction.run_claim_extraction_pilot(tmp_path, protocol.record_sha256, _client=client)
+        assert store.validate()["status"] == "PASS"  # STARTED without output is valid.
+        with pytest.raises(acquisition.PilotManualReconciliation):
+            extraction.run_claim_extraction_pilot(tmp_path, protocol.record_sha256,
+                _client=lambda _: pytest.fail("redispatch"))
+    else:
+        extraction.run_claim_extraction_pilot(tmp_path, protocol.record_sha256, _client=client)
+    attempt = _records(store, CodexTaskAttemptRevisionV1)[-1]
+    assert (attempt.status, attempt.output_sha256, attempt.failure_reason) == (status, None, reason)
+    assert store.validate()["status"] == "PASS"
+
+    def mutate(record):
+        if record.get("attempt_id", "").startswith("attempt.stage3.") and record["status"] != "STARTED":
+            record["failure_reason"] = "FREE_FORM_REASON_NOT_ALLOWED"
+
+    _rewrite_valid_hash_chains(tmp_path, mutate)
+    with pytest.raises(LiteratureIntegrityError, match="without retained response"):
+        LiteratureStore(tmp_path).validate()

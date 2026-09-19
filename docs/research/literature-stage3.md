@@ -57,7 +57,12 @@ holds a process lock to prevent concurrent extraction dispatch. It accepts only
 the bounded Stage 2 OpenAlex protocol profile. All selected abstract permissions
 are checked before any model invocation. Before preparing an individual input,
 the controller verifies the exact source chain, artifact sizes/hashes, trusted
-capture policy actor, and deterministic OpenAlex reconstruction. Source fields
+capture policy actor, and deterministic OpenAlex reconstruction. Each capture ID
+must have one terminal search owner, one capture-attempt record, and one exact
+matching inspection. The controller recomputes the Stage 2 capture ID from the
+search ID and result identity. The retained representation must reproduce the
+inspection result hash, work hash, canonical locator and locator hash exactly.
+Every duplicate occurrence is checked before the first model dispatch. Source fields
 are untrusted data. No source locator is dereferenced.
 
 ## Model boundary
@@ -139,7 +144,10 @@ continuation. It does not assert that filesystem materialization occurred.
 
 Content-addressed `codex-io` artifacts retain the exact request, settings,
 instructions, logical input manifest, boundary manifest and bounded API response.
-The input manifest points to the request hash and exact canonical references.
+The input manifest points to the request hash and exact canonical references:
+protocol, work, source version, capture, and the representative capture's terminal
+search revision. The search reference stays in controller provenance; it does not
+add discovery lanes or other search context to the model request.
 No temporary path, staging clock or unrelated store head enters these artifacts.
 
 Before API dispatch the controller publishes STARTED. It appends exactly one of:
@@ -149,6 +157,21 @@ Before API dispatch the controller publishes STARTED. It appends exactly one of:
 - FAILED: API error/timeout, refusal or incomplete response;
 - ABANDONED_AFTER_CRASH: a later exclusive invocation finds an orphaned STARTED.
 
+One deterministic response classifier is shared by runtime terminalization and
+persisted validation. Retained bytes determine both status and fixed failure
+reason; rehashing records cannot authorize a contradictory terminal label.
+
+| Status | Response artifact | Required failure reason | Derived response outcome |
+| --- | --- | --- | --- |
+| STARTED | absent | none | not applicable |
+| SUCCEEDED | present | none | valid extraction, including zero claims |
+| INVALID_OUTPUT | present | INVALID_EXTRACTION_OUTPUT | invalid extraction |
+| FAILED | present | REFUSAL_OR_INCOMPLETE_RESPONSE | model failure/refusal/incomplete |
+| INVALID_OUTPUT | absent | INVALID_RESPONSE_BYTES | response object not bounded bytes |
+| FAILED | absent | MODEL_INVOCATION_FAILED_NO_RETRY | invocation/transport failure |
+| ABANDONED_AFTER_CRASH | absent | ORPHANED_ATTEMPT_NO_REDISPATCH | orphaned invocation |
+
+All other combinations are rejected. No free-form failure category is accepted.
 A refused or incomplete response is never successful zero-claim evidence. A
 permission rejection occurs before model input retention or invocation and
 creates no invoked attempt. Invocation errors retain fixed categories only.

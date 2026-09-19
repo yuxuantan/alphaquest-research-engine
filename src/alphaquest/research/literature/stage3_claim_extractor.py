@@ -11,6 +11,7 @@ from .contracts import (
     ActorProvenanceV1, CanonicalRecordV1, ClaimExtractionRevisionV1, ClaimLocationV1,
     CodexTaskAttemptRevisionV1, LiteratureAuthorityError, LiteratureConflictError,
     LiteratureIntegrityError, ResearchProtocolRevisionV1, SearchRunRevisionV1,
+    SearchCaptureAttemptV1, SearchResultInspectionV1,
     SourceCaptureRevisionV1, SourceIdentityRevisionV1, SourceVersionIdentityRevisionV1,
     canonical_json_bytes,
 )
@@ -53,6 +54,13 @@ def _permission(capture: SourceCaptureRevisionV1) -> None:
         raise LiteratureAuthorityError("capture is outside the fixed owner-authorized OpenAlex policy")
 
 
+@dataclass(frozen=True)
+class AcquisitionBinding:
+    search: SearchRunRevisionV1
+    capture_attempt: SearchCaptureAttemptV1
+    inspection: SearchResultInspectionV1
+
+
 def _lineage_captures(protocol, records):
     heads = {}
     for record in records:
@@ -60,11 +68,23 @@ def _lineage_captures(protocol, records):
             heads[record.search_run_id] = record
     if not heads or any(r.status == "STARTED" for r in heads.values()):
         raise LiteratureConflictError("acquisition must be terminal before extraction")
-    return {
-        c.capture_attempt_id
-        for r in heads.values() if r.status in {"SUCCEEDED", "PARTIAL"}
-        for c in r.capture_attempt_records
-    }
+    bindings = {}
+    for search in heads.values():
+        if search.status not in {"SUCCEEDED", "PARTIAL"}:
+            continue
+        for attempt in search.capture_attempt_records:
+            matches = [r for r in search.inspected_results
+                       if r.result_identity_sha256 == attempt.result_identity_sha256]
+            expected_id = "capture.openalex." + model.sha(
+                f"{search.search_run_id}|{attempt.result_identity_sha256}".encode("utf-8")
+            )
+            if (
+                len(matches) != 1 or attempt.capture_attempt_id != expected_id
+                or attempt.capture_attempt_id in bindings
+            ):
+                raise LiteratureIntegrityError("ambiguous or invalid acquisition-result binding")
+            bindings[attempt.capture_attempt_id] = AcquisitionBinding(search, attempt, matches[0])
+    return bindings
 
 
 @dataclass(frozen=True)
@@ -91,7 +111,8 @@ def prepare_extraction(
     admit(protocol)
     if OPENALEX_STAGE3_PROCESSING_POLICY_V1 not in protocol.inclusion_rules:
         raise LiteratureAuthorityError("protocol lacks the frozen owner processing policy")
-    if capture.capture_id not in _lineage_captures(protocol, records):
+    binding = _lineage_captures(protocol, records).get(capture.capture_id)
+    if binding is None:
         raise LiteratureAuthorityError("capture is outside the exact acquisition lineage")
     version = _exact(records, capture.source_version_revision_sha256, SourceVersionIdentityRevisionV1)
     work = _exact(records, version.work_revision_sha256, SourceIdentityRevisionV1)
@@ -118,10 +139,13 @@ def prepare_extraction(
         or work.title != normalized.title or work.authors != list(normalized.authors)
     ):
         raise LiteratureIntegrityError("OpenAlex representation provenance mismatch")
+    identity_fields = ("result_identity_sha256", "work_identity_sha256", "canonical_locator", "locator_sha256")
+    if any(getattr(normalized.inspection, field) != getattr(binding.inspection, field) for field in identity_fields):
+        raise LiteratureIntegrityError("retained OpenAlex result differs from exact acquisition inspection")
     identifiers = {"openalex": normalized.openalex_id}
     if normalized.doi:
         identifiers["doi"] = normalized.doi
-    refs = tuple(reference(r) for r in (protocol, work, version, capture))
+    refs = tuple(reference(r) for r in (protocol, work, version, capture, binding.search))
     logical = dict(
         research_question=protocol.research_question, market_scope=protocol.market_scope,
         inclusion_rules=protocol.inclusion_rules, exclusion_rules=protocol.exclusion_rules,
@@ -194,17 +218,52 @@ def _verify_attempt_inputs(attempt, prepared, read_artifact) -> None:
         raise LiteratureIntegrityError("Stage 3 exact request mismatch")
 
 
+@dataclass(frozen=True)
+class ResponseOutcome:
+    status: str
+    failure_reason: str | None
+    output: model.ExtractionOutput | None = None
+
+
+def classify_response(response: bytes, abstract: bytes) -> ResponseOutcome:
+    """One semantic classification for runtime terminalization and persisted evidence."""
+    try:
+        output = model.validate_response(response, abstract)
+    except model.InvalidModelOutput:
+        return ResponseOutcome("INVALID_OUTPUT", "INVALID_EXTRACTION_OUTPUT")
+    except model.ModelFailure:
+        return ResponseOutcome("FAILED", "REFUSAL_OR_INCOMPLETE_RESPONSE")
+    return ResponseOutcome("SUCCEEDED", None, output)
+
+
+_NO_RESPONSE_OUTCOMES = frozenset({
+    ("STARTED", None),
+    ("INVALID_OUTPUT", "INVALID_RESPONSE_BYTES"),
+    ("FAILED", "MODEL_INVOCATION_FAILED_NO_RETRY"),
+    ("ABANDONED_AFTER_CRASH", "ORPHANED_ATTEMPT_NO_REDISPATCH"),
+})
+
+
+def _verify_attempt_outcome(attempt, prepared, read_artifact) -> model.ExtractionOutput | None:
+    if attempt.output_sha256 is None:
+        if (attempt.status, attempt.failure_reason) not in _NO_RESPONSE_OUTCOMES:
+            raise LiteratureIntegrityError("invalid Stage 3 outcome without retained response")
+        return None
+    response = read_artifact(attempt.output_sha256, kind="codex-io")
+    if type(response) is not bytes or len(response) > model.MAX_RESPONSE_BYTES or model.sha(response) != attempt.output_sha256:
+        raise LiteratureIntegrityError("invalid Stage 3 response artifact")
+    outcome = classify_response(response, prepared.abstract)
+    if (attempt.status, attempt.failure_reason) != (outcome.status, outcome.failure_reason):
+        raise LiteratureIntegrityError("Stage 3 terminal outcome contradicts retained response")
+    return outcome.output
+
+
 def _verify_attempt(attempt, prepared, read_artifact) -> model.ExtractionOutput:
     _verify_attempt_inputs(attempt, prepared, read_artifact)
-    if attempt.status != "SUCCEEDED" or attempt.output_sha256 is None:
+    output = _verify_attempt_outcome(attempt, prepared, read_artifact)
+    if attempt.status != "SUCCEEDED" or output is None:
         raise LiteratureIntegrityError("Stage 3 publication requires SUCCEEDED")
-    response = read_artifact(attempt.output_sha256, kind="codex-io")
-    if model.sha(response) != attempt.output_sha256:
-        raise LiteratureIntegrityError("Stage 3 response hash mismatch")
-    try:
-        return model.validate_response(response, prepared.abstract)
-    except (model.InvalidModelOutput, model.ModelFailure):
-        raise LiteratureIntegrityError("Stage 3 succeeded output is invalid") from None
+    return output
 
 
 def validate_published_attempt(attempt, records, read_artifact) -> None:
@@ -217,12 +276,7 @@ def validate_published_attempt(attempt, records, read_artifact) -> None:
         raise LiteratureIntegrityError("invalid Stage 3 attempt authority or provenance")
     prepared = prepare_extraction(protocols[0], captures[0], before, read_artifact)
     _verify_attempt_inputs(attempt, prepared, read_artifact)
-    if attempt.output_sha256 is not None:
-        raw = read_artifact(attempt.output_sha256, kind="codex-io")
-        if len(raw) > model.MAX_RESPONSE_BYTES or model.sha(raw) != attempt.output_sha256:
-            raise LiteratureIntegrityError("invalid Stage 3 response artifact")
-    if attempt.status == "SUCCEEDED":
-        _verify_attempt(attempt, prepared, read_artifact)
+    _verify_attempt_outcome(attempt, prepared, read_artifact)
 
 
 def validate_published_claim(claim, records, read_artifact) -> None:
@@ -299,16 +353,13 @@ def _run_one(store, prepared, records, client):
         attempt = _terminal(store, started, "INVALID_OUTPUT", reason="INVALID_RESPONSE_BYTES")
         return dict(attempt_id=attempt.attempt_id, status=attempt.status, claim_ids=[], reused=False)
     output_sha = store.put_artifact(response, kind="codex-io")
-    try:
-        output = model.validate_response(response, prepared.abstract)
-        payloads = claim_payloads(prepared, output)  # validate the entire output before any append
-    except model.ModelFailure:
-        attempt = _terminal(store, started, "FAILED", output_sha=output_sha, reason="REFUSAL_OR_INCOMPLETE_RESPONSE")
+    outcome = classify_response(response, prepared.abstract)
+    if outcome.output is None:
+        attempt = _terminal(store, started, outcome.status, output_sha=output_sha, reason=outcome.failure_reason)
         return dict(attempt_id=attempt.attempt_id, status=attempt.status, claim_ids=[], reused=False)
-    except model.InvalidModelOutput:
-        attempt = _terminal(store, started, "INVALID_OUTPUT", output_sha=output_sha, reason="INVALID_EXTRACTION_OUTPUT")
-        return dict(attempt_id=attempt.attempt_id, status=attempt.status, claim_ids=[], reused=False)
-    attempt = _terminal(store, started, "SUCCEEDED", output_sha=output_sha)
+    output = outcome.output
+    payloads = claim_payloads(prepared, output)  # validate the entire output before any append
+    attempt = _terminal(store, started, outcome.status, output_sha=output_sha, reason=outcome.failure_reason)
     _verify_attempt(attempt, prepared, store.verify_artifact)
     actor = ActorProvenanceV1(actor_class="CODEX", actor_id=ACTOR_ID, task_id=attempt.attempt_id)
     try:
@@ -340,7 +391,7 @@ def run_claim_extraction_pilot(
         for r in records:
             if isinstance(r, SourceCaptureRevisionV1) and r.capture_id in selected:
                 captures[r.capture_id] = r
-        if selected != set(captures):
+        if set(selected) != set(captures):
             raise LiteratureIntegrityError("acquisition capture records are missing")
         unique = {}
         skipped = []
@@ -352,9 +403,14 @@ def run_claim_extraction_pilot(
             version = _exact(records, capture.source_version_revision_sha256, SourceVersionIdentityRevisionV1)
             key = representation_key(capture, version.work_id)
             unique.setdefault(key, []).append(capture)
+        # Every occurrence, including duplicates, must pass before the first dispatch.
+        prepared_captures = {
+            capture.capture_id: prepare_extraction(protocol, capture, records, store.verify_artifact)
+            for group in unique.values() for capture in group
+        }
         attempts = []
         for group in unique.values():
-            prepared = prepare_extraction(protocol, group[0], records, store.verify_artifact)
+            prepared = prepared_captures[group[0].capture_id]
             outcome = _run_one(store, prepared, records, _client or model.ResponsesClient())
             outcome["capture_ids"] = [c.capture_id for c in group]
             attempts.append(outcome)
