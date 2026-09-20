@@ -2,7 +2,7 @@
 
 Status date: 2026-09-20
 
-Snapshot observed at: `2026-09-20T01:53:02Z`
+Snapshot observed at: `2026-09-20T02:15:00Z`
 
 Observed main: `a3a5789ebae5d4509b5c2b764b65592a198b7d0e`
 
@@ -14,6 +14,15 @@ phase-completion authority. The machine-readable companion is
 [factory-phase-ledger.json](factory-phase-ledger.json). Repository source,
 canonical policy, immutable research evidence, independent audits, and exact CI
 remain authoritative.
+
+The initial observational candidate `7b53255fa43d8fd173fd1f515baeb5fe5b6e8ee9`
+and its ordinary history remain preserved. Its three-report documentation audit
+was consolidated as `AUDIT_FAILED` because of findings `LEDGER-C1` and
+`LEDGER-M1` through `LEDGER-M3`. The workstation-local consolidation is
+`/private/tmp/alphaquest-factory-evidence-20260920/ledger-audit-consolidation.json`
+with SHA-256
+`a7dcb9bc811c8bc5b2bc8117fdbcf724bb832562b04c3ad0e49fb003bd43777a`.
+This revision records the required corrections without rewriting that candidate.
 
 ## Current factory state
 
@@ -75,14 +84,18 @@ AlphaQuest backend. Their SHA-256 values are
 
 | Phase | Evidence boundary | Result |
 | --- | --- | --- |
-| P0 | Candidate `a9d80d0d...` merged as `b2a5e227...`; tag `engine-v0.1.0-p0` points to that merge. The verified integration base is merge first parent `5ce247c3...`. | Complete engine baseline. This does not approve a strategy or deployment. |
+| P0 | The audited P0-only range is `0d89ab434...a9d80d0d...` and contains seven commits. Candidate `a9d80d0d...` merged as `b2a5e227...`; tag `engine-v0.1.0-p0` points to that merge. Merge first parent `5ce247c3...` is separate integration metadata; its range to the candidate contains eleven commits. | Complete engine baseline. This does not approve a strategy or deployment. |
 | P1 | Candidate `38b39e782...` merged as `287969b1f...`. | Complete canonical operating model. Its `POLICY_ONLY` and `EXISTING_PARTIAL` entries do not claim downstream runtime completion. |
 | P2 | Candidate `ab75c6e7e...` merged as `011d9ff5f...`. | Complete canonical Edge Backlog. It remains pre-hypothesis discovery memory. |
 
 These results are historical evidence. They do not imply that a new audit has
 rerun every P0-P2 qualification against the current main tree.
 
-## Partial phases
+## Partial capabilities in phases not started
+
+P4 through P17 are `NOT_STARTED`. The table inventories reusable code, policy,
+schemas, and tests at pinned main; inspection of that substrate does not advance
+a roadmap phase. P3 alone is in progress and currently `AUDIT_FAILED`.
 
 | Phase | Existing substrate | Missing closure |
 | --- | --- | --- |
@@ -93,9 +106,12 @@ rerun every P0-P2 qualification against the current main tree.
 | P13-P15 | Red-team policy, candidate review substrate, experiment registry, WFA, Monte Carlo, incubation, and locked acceptance primitives. | Independent survivor-attack orchestration, full search-universe accounting, selection-bias evidence, canonical holdout transition, and end-to-end robustness qualification. |
 | P16-P17 | Dataset manifests, hashes, roll/timezone contracts, ES/NQ adapters, and extensive focused tests. | Cross-source invalidation, private-data workstation inventory, universal production/synthetic barrier, approved-market routing, and bounded real ES/NQ factory qualification. |
 
-P6 and P7 are `NOT_STARTED` because the repository has descriptive horizon,
-timeframe, required-field, and dataset-quality primitives, but no deterministic
-frequency router or cheapest-legitimate-data router.
+P6 and P7 illustrate the distinction: the repository has descriptive horizon,
+timeframe, required-field, and dataset-quality primitives, but neither phase has
+started because no deterministic frequency router or cheapest-legitimate-data
+router exists. The ledger's top-level `phase_evidence` map binds every phase
+classification to exact commit-and-path pointers while preserving the same ten
+fields in every phase row.
 
 ## Missing dependencies
 
@@ -144,13 +160,13 @@ frequency router or cheapest-legitimate-data router.
    Only a candidate with no unresolved BLOCKER/HIGH may proceed through ordinary
    PR integration and exact post-merge CI. No real model call is authorized.
 3. **After engineering closure, resolve one Stage 3 backend boundary.** Follow
-   [factory-owner-decisions.md](factory-owner-decisions.md). The recommended
-   option keeps the $0 incremental-cost limit and authorizes a separately
-   reviewed subscription-backed feasibility/design study while preserving the
-   direct backend's history and regression coverage. No backend becomes
-   canonical until an isolated no-research-repository, no-PnL qualification
-   passes within the verified cost boundary. The decision pack is prepared but
-   should not be presented for choice until `S3-M1` engineering closure.
+   [factory-owner-decisions.md](factory-owner-decisions.md). The completed local
+   design study found that inspected subscription surfaces do not establish the
+   direct backend's tool-free, byte-only equivalence. The $0/no-submission choice
+   remains the default without reconfirmation. A later owner may instead authorize
+   either one precisely bounded changed-capability schema-only Cloud synthetic
+   task or an exact capped direct-API qualification. The pack should not be
+   presented for choice until the remediation and qualification source are ready.
 
 ## Owner gates expected
 
@@ -158,6 +174,10 @@ No owner decision is required for the immediate `S3-M1` engineering remedy or
 its fresh audits. The Stage 3 backend/cost choice becomes the next owner gate
 only after engineering closure. Routine integration of a remediated exact
 history needs no additional approval if all required audits and gates pass.
+
+In the ledger, `owner_decision_required` means that some owner gate remains
+necessary before the phase can be complete. P3 is therefore `true` even though
+its immediate authorized remediation and fresh audits require no owner action.
 
 Later owner gates remain: disposition of semantic-review ambiguities that the
 future eligibility contract cannot resolve objectively; hypothesis admission;

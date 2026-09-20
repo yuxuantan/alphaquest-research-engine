@@ -44,63 +44,113 @@ Those files are workstation-local and are not durable repository evidence. They
 do not qualify `1c9f684`, prove model identity or semantics, establish a current
 environment, or authorize canonical wiring.
 
-### Option A — retain the $0 limit and design an isolated subscription backend
+The completed workstation-local design study is
+`/private/tmp/alphaquest-factory-evidence-20260920/subscription-boundary-design.md`
+with SHA-256
+`b4b730645b51573a0036ec87fc6fbdfdecf2d2494c6a72ed5cb55b6473f6db13`.
+It is design evidence, not repository authority. Its inspection of documented
+Codex surfaces does not establish a tool-free, byte-only equivalent to the
+direct backend.
 
-**Recommended.** Authorize a separate feasibility, architecture, and security
-design for a possible backend available through the existing subscription with
-zero additional cost. This option makes no claim that current Codex Cloud can
-preserve the direct backend's literal no-workspace or no-tools boundary.
+| Capability | Existing direct backend | Inspected Cloud surface |
+| --- | --- | --- |
+| Input and context | Canonical request bytes only | Task prompt plus repository, environment, and agent context |
+| Tools and filesystem | `tools=[]`; no model workspace | Repository-backed agent with terminal capability |
+| Model identity | Requested and returned model checked | Provider model identity is not attested by the inspected command surface |
+| Response custody | Exact bounded Responses envelope retained | Task status, diff, and result artifact; not the raw provider envelope |
+| Retry and state | Controller and transport have fixed no-retry semantics | One assistant attempt does not prove one underlying model request |
+| Billing | API-key use is separately billed | Subscription allowance and any credit or overage behavior require an owner-verified guard |
 
-The design must:
+Official references used by the study are OpenAI's
+[authentication and billing guidance](https://learn.chatgpt.com/docs/auth),
+[Codex pricing](https://learn.chatgpt.com/docs/pricing),
+[Codex cloud](https://learn.chatgpt.com/docs/cloud),
+[cloud environments](https://learn.chatgpt.com/docs/environments/cloud-environment),
+and [agent internet controls](https://learn.chatgpt.com/docs/cloud/internet-access).
 
-- preserve the audited direct backend's history and regression coverage;
-  separately audited bug corrections remain allowed;
-- use a new explicit backend identity with no hidden direct API fallback;
-- verify the environment, authentication boundary, model observability,
-  isolation, retention, request/response limits, terminal states, and failure
-  semantics before use;
-- start from an isolated fresh schema-only environment containing no AlphaQuest
-  research repository, campaign, PnL, result, trade, winner, credential, or
-  historical literature store;
-- accept only bounded in-memory synthetic inputs for its first qualification;
-- prove zero additional monetary cost before any submission;
-- permit at most one bounded no-cost qualification attempt with no automatic
-  retry; and
-- remain noncanonical until a reviewed adapter and adversarial qualification
-  provide equivalent or stricter evidence and PnL isolation, provenance,
-  noninterference, and fail-closed guarantees.
+### Option A — retain the existing $0 limit and make no submission
 
-The reviewed design must enumerate every changed capability boundary, including
-workspace visibility, tools, repository access, continuation/state, model
-identity, authentication, retention, networking, and request/response custody,
-for an explicit owner decision. If equivalent or stricter isolation cannot be
-proven, this option fails closed and cannot be wired into canonical P3.
+**Recommended and current default.** This choice continues without owner
+reconfirmation. Keep `NOT_RUN_COST_NOT_AUTHORIZED`, preserve the direct backend
+source, history, and regressions, and allow separately audited bug corrections.
+Engineering may continue with synthetic fixtures, fake transports, source work,
+documentation, and independent audits. No alternate backend may be silently
+substituted, and P3 cannot claim real model qualification.
 
-This option authorizes design work only until those conditions are written and
-independently reviewed. It does not authorize a model submission, canonical
-wiring, real literature processing, P2 emission, or downstream synthesis.
+### Option B — authorize one changed-capability Cloud synthetic task
 
-### Option B — grant a capped direct API qualification exception
+This option accepts a new identity,
+`CHATGPT_CODEX_CLOUD_SCHEMA_WORKSPACE_V1`, for a schema-only synthetic pilot. It
+does not claim or qualify the direct backend's no-workspace/no-tools semantics.
+It requires a separately reviewed controller and validator, a closed backend
+selector, and no API fallback. A pass is evidence only for the explicitly
+changed agent/workspace boundary; it cannot publish canonical claims or process
+real literature.
 
-Choose this only by explicitly setting a maximum spend and authorizing one
-bounded disposable qualification of the exact integrated direct backend.
+Before any submission, the owner gate record must supply:
 
-The authorization would need to bind the exact merge SHA, maximum charge, model
-and account boundary, a new `PRE_RESULT_PROTOCOL`, dedicated empty store, fixed
-OpenAlex profile, one controller invocation, zero automatic retries, terminal
-receipt requirements, and a stop at canonical claims. Historical `LOCAL_ONLY`
-captures cannot be reused or upgraded. The run may create no evidence relation,
-dossier, P2 record, hypothesis, mechanic, campaign, backtest, or live action.
+1. The exact Cloud environment ID, ChatGPT-managed account/workspace category,
+   and UI-verified binding to private sandbox repository
+   `yuxuantan/alphaquest-stage3-inference-sandbox` at exact commit
+   `a86c234b27074f149f1da19709f9b3cf503d9505`.
+2. Agent internet `Off`; empty setup and maintenance scripts; empty application
+   environment-variable and secret-name inventories; and a fresh cache.
+3. The UI-observable absence of connected MCP servers, browser/search access,
+   external apps, and additional repositories. Any control the product does not
+   expose remains an explicit unknown.
+4. A verified billing guard showing included allowance remains and no purchased
+   credit, shared credit, overage, or incremental charge can be consumed. A
+   usage alert alone is insufficient.
+5. Authorization for exactly one synthetic task, one assistant attempt, no
+   follow-up, no automatic retry, and no canonical use.
 
-No credential check, credit purchase, API call, or qualification run is
-authorized by this document.
+The environment may contain only the pinned `schema.json`; it may contain no
+AlphaQuest repository, literature store, real abstract, campaign, PnL, result,
+trade, winner, credential value, or historical evidence. The pilot must retain
+the exact repository/tree/inventory/schema, prompt/input hashes, CLI identity,
+task ID/status, diff/result bytes, deterministic validation result, and post-task
+billing check without retaining credential or secret values.
 
-### Option C — keep real Stage 3 qualification paused
+The exact pre-submission STOP is
+`BLOCKED_OWNER_ENVIRONMENT_OR_BILLING_GATE`: if any owner, environment,
+isolation, or billing field is absent, ambiguous, stale, or uninspectable without
+reading credential contents, make no submission. After submission, any missing
+or ambiguous task ID, timeout, unsuccessful terminal state, identity mismatch,
+extra or invalid output, contradictory provenance, or unproven zero spend is
+terminal with no retry, repair, alternate environment, local-agent fallback, or
+direct-Responses fallback. An unresolved task requires manual reconciliation and
+permanent no-redispatch for that synthetic input.
 
-Retain `NOT_RUN_COST_NOT_AUTHORIZED`. Engineering may continue with synthetic
-fixtures, fake transports, contract design, documentation, and independent
-audits, but P3 cannot claim real model qualification or complete its real
-end-to-end proof. No alternate backend may be silently substituted.
+The pilot succeeds only as `QUALIFIED_FOR_CHANGED_BOUNDARY_ONLY` after one task
+reaches a successful terminal state, exact sandbox `HEAD` is observed, the diff
+adds only one bounded schema-valid `result.json`, deterministic byte-span and
+hostile-input checks pass, configured network probes fail, no credential or
+local path is disclosed, and the owner confirms no incremental charge or paid
+credit use. If equivalent or stricter evidence and PnL isolation cannot be
+implemented and independently audited, canonical wiring fails closed.
+
+### Option C — grant an exact capped direct API qualification exception
+
+This is the only inspected route that preserves the existing audited backend
+boundary. An authorization must bind the exact integrated merge, backend
+`OPENAI_RESPONSES_TOOL_FREE_V1`, model and reasoning settings, account and
+credential-provisioning boundary, maximum incremental USD spend, request/body
+limits, terminal receipts, a new `PRE_RESULT_PROTOCOL`, dedicated empty store,
+fixed OpenAlex profile, zero retries, and a stop at canonical claims.
+
+The current controller processes all eligible representations in a run. Calling
+it once does not prove that only one paid model request occurs. Therefore an
+"exactly one request" exception also requires a separately frozen and reviewed
+bounded protocol/controller that mechanically limits the whole qualification to
+one actual provider call. A maximum-request statement is not a substitute for
+that enforcement. Historical `LOCAL_ONLY` captures cannot be reused or upgraded,
+and the run may create no relation, dossier, P2 record, hypothesis, mechanic,
+campaign, backtest, or live action.
+
+No credential check, purchase, API call, Cloud submission, qualification run,
+or canonical backend change is authorized by this document. Do not ask the owner
+to choose until the ongoing Stage 3 engineering remedy and its qualification
+source are ready.
 
 ## Consequences of no decision
 
