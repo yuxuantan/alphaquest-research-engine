@@ -2,9 +2,13 @@
 
 Status date: 2026-09-20
 
-Observed main: `a3a5789ebae5d4509b5c2b764b65592a198b7d0e`
+Observed main: `da6940ef0f5b68ba34f35cf3a27a36b7f190e018`
 
-Stage 3 subject: `1c9f684312f6da1b8e4e48f1a352adddad8c08a0`
+Stage 3 subject: `03f8bc0999606dd37f0a1e40682f773f874579e2`
+
+Stage 3 pull request: [PR 8](https://github.com/yuxuantan/alphaquest-research-engine/pull/8)
+
+Stage 3 source merge: `da6940ef0f5b68ba34f35cf3a27a36b7f190e018`
 
 This pack records decisions that cannot be supplied by implementation or test
 results. It creates no approval, authorization, policy change, backend, model
@@ -13,19 +17,23 @@ bind it to the exact subject and resulting reviewed contract.
 
 ## Prepared later decision: Stage 3 backend and cost boundary
 
-Do not request this decision yet. The earlier dependency is the authorized
-engineering remediation of reproduced methodology BLOCKER `S3-M1`, followed by
-fresh independent audits. This pack remains prepared so the cost/backend choices
-are concrete after engineering closure.
+The Stage 3 remediation is independently verified, normally merged with exact
+parent and tree checks, and qualified by the bounded post-merge offline synthetic
+gate. Those engineering preconditions are closed within the audited
+dedicated-store scope. Further bounded P3 semantic eligibility, evidence-relation,
+dossier, freeze, and P2-projection engineering may proceed with synthetic stores
+and fake transports. The backend/cost boundary is deferred until real
+qualification becomes the next dependency; this pack records the later options
+but makes no choice or authorization.
 
-The audited Stage 3 subject implements a fixed direct Responses API backend. It
-is unmerged and has no real-model qualification. Its live status is
-`NOT_RUN_COST_NOT_AUTHORIZED`; credentials, account access, and balance were not
-inspected. The consolidated current audit failed because `S3-M1` permits an
-identifier-only post-result replacement lineage to redispatch the same
-representation without result-informed provenance. Candidate `1c9f684` cannot
-be integrated. An ordinary remediation commit and fresh independent re-audit are
-required; that engineering work needs no owner approval under the master request.
+The current Stage 3 source implements and preserves the fixed direct Responses
+API backend. It has no real-model qualification. Its live status is
+`NOT_RUN_COST_NOT_AUTHORIZED`; exact account/workspace binding, balance, and
+billing guard were not inspected. No credential values or direct API credentials
+were inspected.
+Historical candidate `1c9f684...` and its reproduced `S3-M1` failure remain
+preserved. The remediation closes that finding only for one dedicated,
+operator-exclusive store and makes no cross-store anti-shopping claim.
 
 OpenAI's [billing guidance](https://learn.chatgpt.com/docs/auth) states that API
 key use is billed separately from ChatGPT. A ChatGPT subscription therefore does
@@ -41,8 +49,29 @@ submissions. The receipt hashes are:
 - `a23f4aa42d0cb43885d134f96b519f989ee5468337d773b329e945f9207b44f0`
 
 Those files are workstation-local and are not durable repository evidence. They
-do not qualify `1c9f684`, prove model identity or semantics, establish a current
+do not qualify source merge `da6940e...`, prove model identity or semantics, establish a current
 environment, or authorize canonical wiring.
+
+A safe local access inspection recorded `codex login status` only as
+`CHATGPT_MANAGED` with exit code zero. It retained no credential value and did
+not inspect a direct API credential, submit or list a Cloud task, or invoke a
+model. The workstation-local receipt is
+`/private/tmp/alphaquest-factory-evidence-20260920/subscription-access-inspection.json`
+with SHA-256
+`4562fc699c984ed025669bc761ac9864544a6c596ddd53abc16f649461cb7b0a`.
+The connected tool catalog and `codex cloud` CLI help expose no Cloud environment
+configuration or billing-guard inspection interface, so exact account/workspace
+binding, environment controls, and a no-charge billing guard remain unresolved.
+
+A bounded metadata study at
+`/private/tmp/alphaquest-factory-evidence-20260920/subscription-account-surface-check.md`
+has SHA-256
+`ef20ddcc1ccca6042dd0fa1460d257dee76af351bd34ec61f1d78e4913a1c2d0`.
+It found that the separate app-server schema exposes account and rate-limit read
+methods that could support current account and allowance snapshots, but no method
+provides an atomic guarantee that a future Cloud task cannot incur a charge or
+proves its environment binding. No account RPC was called; optional or null
+fields cannot satisfy the billing gate.
 
 The completed workstation-local design study is
 `/private/tmp/alphaquest-factory-evidence-20260920/subscription-boundary-design.md`
@@ -87,10 +116,16 @@ selector, and no API fallback. A pass is evidence only for the explicitly
 changed agent/workspace boundary; it cannot publish canonical claims or process
 real literature.
 
+No Cloud controller, backend adapter, or backend-specific validator currently
+exists. Selecting this option would authorize only the exact bounded pilot after
+that implementation and its independent audits pass; this pack does not itself
+authorize a task submission.
+
 Before any submission, the owner gate record must supply:
 
-1. The exact Cloud environment ID, ChatGPT-managed account/workspace category,
-   and UI-verified binding to private sandbox repository
+1. The exact Cloud environment ID and UI-verified binding of the observed
+   `CHATGPT_MANAGED` CLI session to the exact owner-approved account/workspace and
+   private sandbox repository
    `yuxuantan/alphaquest-stage3-inference-sandbox` at exact commit
    `a86c234b27074f149f1da19709f9b3cf503d9505`.
 2. Agent internet `Off`; empty setup and maintenance scripts; empty application
@@ -104,12 +139,25 @@ Before any submission, the owner gate record must supply:
 5. Authorization for exactly one synthetic task, one assistant attempt, no
    follow-up, no automatic retry, and no canonical use.
 
-The environment may contain only the pinned `schema.json`; it may contain no
-AlphaQuest repository, literature store, real abstract, campaign, PnL, result,
-trade, winner, credential value, or historical evidence. The pilot must retain
-the exact repository/tree/inventory/schema, prompt/input hashes, CLI identity,
-task ID/status, diff/result bytes, deterministic validation result, and post-task
-billing check without retaining credential or secret values.
+The sandbox repository's tracked inventory must contain exactly the pinned
+`schema.json`. The platform and agent environment necessarily add context and
+tooling; these remain part of the explicitly changed capability boundary. The
+sandbox repository may contain no AlphaQuest source, literature store, real
+abstract, campaign, PnL, result, trade, winner, credential value, or historical
+evidence. The exact reviewable local fixture bytes are:
+
+- `/private/tmp/alphaquest-stage3-cloud-qualification/c2-prompt.txt`, SHA-256
+  `7219fb9fd9c84b24a951519ed77864865cd090233d489409e94a8adf30ad1566`;
+- `/private/tmp/alphaquest-stage3-cloud-qualification/c2-input.json`, SHA-256
+  `c131e6eb1ffd26db95d7730f7794dab8a47e95c89daf21ff28ddf4915cf76806`;
+- `/private/tmp/alphaquest-stage3-cloud-qualification/cloud-repo-inspection/schema.json`, SHA-256
+  `2bf50aa1693d8796f78aa30c2cb7f871c5c095fd86775870e061b3c0f11de6ea`.
+
+These files are workstation-local design inputs, not durable repository evidence
+or a submission receipt. The pilot must retain the exact repository, tree,
+tracked inventory, schema, prompt/input hashes, CLI identity, task ID/status,
+diff/result bytes, deterministic validation result, and post-task billing check
+without retaining credential or secret values.
 
 The exact pre-submission STOP is
 `BLOCKED_OWNER_ENVIRONMENT_OR_BILLING_GATE`: if any owner, environment,
@@ -148,16 +196,13 @@ and the run may create no relation, dossier, P2 record, hypothesis, mechanic,
 campaign, backtest, or live action.
 
 No credential check, purchase, API call, Cloud submission, qualification run,
-or canonical backend change is authorized by this document. Do not ask the owner
-to choose until the ongoing Stage 3 engineering remedy and its qualification
-source are ready.
+or canonical backend change is authorized by this document.
 
 ## Consequences of no decision
 
-Without a later backend decision, real claim production remains paused even if
-an ordinary `S3-M1` remediation is independently verified and integrated. P3
-stays incomplete, and P4 cannot treat legacy Studio source bundles as a
-substitute for a current P3 dossier freeze.
+Without an Option B or C authorization, Option A remains in force and real claim
+production stays paused. P3 remains incomplete, and P4 cannot treat legacy
+Studio source bundles as a substitute for a current P3 dossier freeze.
 
 ## Downstream owner gates
 

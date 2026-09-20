@@ -18,9 +18,9 @@
 ## Research
 
 - [Canonical research operating model](research/research-operating-model.md)
-- [Autonomous research factory state](research/autonomous-factory-state.md)
-- [Factory phase ledger](research/factory-phase-ledger.json)
-- [Factory owner decisions](research/factory-owner-decisions.md)
+- [Autonomous research factory state](research/autonomous-factory-state.md) — current observational snapshot and next gates
+- [Factory phase ledger](research/factory-phase-ledger.json) — machine-readable P0-P17 status and evidence pointers
+- [Factory owner decisions](research/factory-owner-decisions.md) — deferred cost, backend, and downstream gates
 - [Campaign authoring](research/campaign-authoring.md)
 - [Davey methodology alignment](research/davey-methodology-alignment.md)
 - [Validation stages](research/validation-stages.md)

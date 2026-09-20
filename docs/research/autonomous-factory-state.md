@@ -2,9 +2,9 @@
 
 Status date: 2026-09-20
 
-Snapshot observed at: `2026-09-20T02:15:00Z`
+Snapshot observed at: `2026-09-20T03:41:39Z`
 
-Observed main: `a3a5789ebae5d4509b5c2b764b65592a198b7d0e`
+Observed main: `da6940ef0f5b68ba34f35cf3a27a36b7f190e018`
 
 Master request SHA-256: `485c5b68e9df6822b976f819c97afcc721f2d96d4e6360fe492414d012f283f7`
 
@@ -28,44 +28,56 @@ This revision records the required corrections without rewriting that candidate.
 
 P0 through P2 are complete. P3 is the earliest incomplete dependency. Main
 contains the canonical offline literature layer and the bounded, real-qualified
-OpenAlex acquisition pilot. The exact Stage 3 claim-extraction subject is
-`1c9f684312f6da1b8e4e48f1a352adddad8c08a0`, two ordinary commits above main
-with merge-base `a3a5789ebae5d4509b5c2b764b65592a198b7d0e`. It is unmerged.
+OpenAlex acquisition pilot. The current Stage 3 remediation subject is
+`03f8bc0999606dd37f0a1e40682f773f874579e2`, an ordinary child of failed
+candidate `1c9f684312f6da1b8e4e48f1a352adddad8c08a0`, with tree
+`c61729beb3847869ae254afd1f28132d342c9076`. [PR 8](https://github.com/yuxuantan/alphaquest-research-engine/pull/8)
+merged it normally as `da6940ef0f5b68ba34f35cf3a27a36b7f190e018` with exact parents
+`a3a5789e...` and `03f8bc0...`; the merge tree equals the candidate tree.
 
-The four current audits are consolidated. Correctness and adversarial review
-passed; security/reproducibility passed with a local-environment limitation.
-Methodology found BLOCKER `S3-M1`, which the root independently reproduced:
-identifier-only post-result protocol replacement can redispatch the identical
-representation without result-informed provenance. This is a same-store manual-
-caller lineage-replacement gap, distinct from the earlier acquisition-binding
-defect. No automatic protocol creation, automatic retry, live call, or paid call
-occurred.
-
-This snapshot therefore records P3 as `AUDIT_FAILED`. Candidate `1c9f684` must
-remain unmerged. Its earlier exact-head CI success and historical remediation
-re-audit do not override the current blocker. Root broad validation of the old
-candidate was deliberately interrupted after the finding: focused progress
-stopped at 327 passes and full progress stopped at 459 passes. Neither is a
-completed validation pass. Separate auditor suites remain evidence only within
-their stated scopes.
-
-The audit consolidation is workstation-local, non-durable evidence at
-`/private/tmp/alphaquest-factory-evidence-20260920/stage3-audit-consolidation.json`
+All four fresh remediation audits completed with no findings. Their local
+consolidation is
+`/private/tmp/alphaquest-factory-evidence-20260920/remediation-audit-consolidation.json`
 with SHA-256
+`385bb55244ae9f2211d18184b1e7cc43d56a5d43524fe5e20bbc9d5f4bcee42e`.
+Correctness, methodology, adversarial, and security report hashes are
+`1622a8213733a9caae576c1614800a403c9574418665fa231c353befac05a4a2`,
+`727da41d36a818cd628998fb8878953cfd969053f53a098b2fa910e8fb6268bd`,
+`edaf13c785992e7ac256ac6ed2fabb61de71e0edcd3ccacc3bd8ffb01f04c6ce`,
+and `47ab6ea2bb6b6eaa3a23b561f4a13f7525e2531a1fdac96b4267c30a58e88e47`.
+The remediation closes `S3-M1` only within one dedicated, operator-exclusive
+store; it makes no cross-store anti-shopping claim.
+
+The failed `1c9f684` audit remains historical evidence. Its consolidation at
+`/private/tmp/alphaquest-factory-evidence-20260920/stage3-audit-consolidation.json`
+has SHA-256
 `cad597703c500e5d12b629b5be8bb1750a605a97f3fb293b082535fe1934b091`.
-Its supporting local hashes include methodology report
-`68f1c85cb3b0343a383f02fb8ba21d9157f64e374781e017690b734abe97520a`,
-methodology probe
-`7696aa0fcb2e44c465db7f93a3c6e51f2b569cc148b40e66114994a0b29f0c60`,
-root reproduction log
-`66171f3544aa4315836799e8a9ebd7c08d1afbd6c52cf3cbae32ee80f63ef6df`,
-adversarial report
-`a79cf1e8dd8bcf2521233ea201d1799a20ce7b2e9988d3d5c2d7db9f09b6b564`,
-and security XML evidence
-`8fb94dc003dcb079c391eddbc896a0e9bcd8ce08bc9c765f2ae3834906a5b775`
-and `6b1b17d002a9cd870e2564a574cb3796db178983f1335aa610ee49fde66c7573`.
-The security result carries a local Python 3.12.5 limitation; reference full
-gates require Python 3.12.14.
+It records the original reproduced `S3-M1` BLOCKER and is not rewritten by the
+new pass.
+
+Exact-head CI run
+[35483830942](https://github.com/yuxuantan/alphaquest-research-engine/actions/runs/35483830942)
+passed all seven jobs. The duplicate workflow was reconciled by successful
+attempt 2 of run `35483788383`; it did not change the candidate. Post-merge run
+[35486747543](https://github.com/yuxuantan/alphaquest-research-engine/actions/runs/35486747543)
+is the immutable exact-merge verification pointer. It remained in progress at
+this snapshot and must succeed before this ledger candidate is integrated.
+
+The post-merge synthetic receipt has SHA-256
+`ca728fb21c45a285355b95db2d41ab4b04d160094f8c170453a149907da6d795`.
+It records a fake acquisition-to-claim path, same-attempt reuse, rejection of a
+renamed lineage before writes, clean reload, one synthetic model call, zero real
+network or paid calls, 49 canonical records, one claim, 14 captures, two attempt
+revisions, and zero relation/dossier/freeze/P2 output. This is Stage 3 offline
+engineering evidence for the exact merge, not real-model or full-P3
+qualification. The pre-merge receipt remains preserved under SHA-256
+`ec0ae1d471d1d66b8066d58cc34b8d0390b8f7b25f3adddca5020feeb46e355a`.
+
+P3 remains in progress and is recorded as `INSPECTION` while the next bounded
+design contract is reviewed. Engineering integration and offline synthetic
+qualification are closed for the claim-extraction slice. Real model qualification
+remains `NOT_RUN_COST_NOT_AUTHORIZED`, but that later owner gate does not block
+synthetic-only downstream P3 engineering with injected fake transports.
 
 The Stage 3 subject stops at canonical claims. It does not create evidence
 relations, dossiers, freezes, P2 records, hypotheses, mechanics, campaigns, or
@@ -94,12 +106,13 @@ rerun every P0-P2 qualification against the current main tree.
 ## Partial capabilities in phases not started
 
 P4 through P17 are `NOT_STARTED`. The table inventories reusable code, policy,
-schemas, and tests at pinned main; inspection of that substrate does not advance
-a roadmap phase. P3 alone is in progress and currently `AUDIT_FAILED`.
+schemas, and tests at the pinned inspection base; inspection of that substrate
+does not advance a roadmap phase. P3 alone is in progress and currently
+`INSPECTION` pending review of the next bounded synthetic-only design contract.
 
 | Phase | Existing substrate | Missing closure |
 | --- | --- | --- |
-| P3 | Thirteen canonical literature families, durable store, bounded P2 emission machinery, and the qualified Stage 2 acquisition pilot; unmerged Stage 3 claim extraction. | Remediate `S3-M1` on an ordinary descendant, run fresh independent audits and complete gates, then consider exact integration. Real claim qualification, semantic-review eligibility, relation and dossier production, freeze, bounded P2 projection, and end-to-end proof remain open. |
+| P3 | Thirteen canonical literature families, durable store, bounded P2 emission machinery, the qualified Stage 2 acquisition pilot, and merged independently verified Stage 3 remediation candidate `03f8bc0...` with post-merge offline synthetic qualification. | Review and implement the synthetic-only independent semantic eligibility contract, then evidence relations, dossier production/freeze, and bounded P2 projection. Real end-to-end qualification later needs an owner backend/cost decision. |
 | P4-P5 | Strict proposal/context/import contracts and human reviewed-hypothesis artifacts. | Exact current P3 dossier-freeze and P2 linkage, one canonical proposal ingress, compact decision pack, and qualified admission. |
 | P8-P10 | Deterministic authoring, atomic publication, component certification, and custom engineering handoff. | Mandatory bindings to current P5-P7 outputs and roadmap phase qualification. |
 | P11-P12 | Mature mechanics validation, limited core screening, and randomized-entry monkey tests. | End-to-end qualification from the roadmap lineage and a complete accounting handoff. |
@@ -134,13 +147,11 @@ fields in every phase row.
 
 ## Blockers
 
-- `S3-M1` is a reproduced methodology BLOCKER. Integration of `1c9f684` is
-  prohibited. Engineering must implement the reviewed no-redispatch remedy as
-  an ordinary descendant and obtain fresh independent review.
 - Any paid direct API qualification requires a separate owner cost decision.
-  No key, balance, or entitlement was checked for this snapshot.
+  No credential values or direct API credentials were inspected.
 - The subscription-backed cloud experiment has no resolved environment or
-  integrated backend. Zero submissions prove neither execution nor semantics.
+  integrated backend. Exact account/workspace binding and a zero-charge billing
+  guard remain unresolved; zero submissions prove neither execution nor semantics.
 - Historical research inventory preflight findings and the retained expected
   failure for a hash-drifted strategy package require governed lifecycle work;
   they must not be repaired by rewriting frozen evidence.
@@ -149,35 +160,33 @@ fields in every phase row.
 
 ## Proposed next three implementation slices
 
-1. **Remediate `S3-M1` without rewriting history.** Add one ordinary commit after
-   `1c9f684` that enforces the reviewed no-redispatch architecture for identical
-   representations across post-result protocol lineages. Preserve the original
-   candidate and its failed audit evidence. This engineering remedy is already
-   authorized and needs no owner decision.
-2. **Re-audit and conditionally integrate the remediated Stage 3 history.** Rerun
-   the exact reproduction and permanent regression, focused tests, complete
-   validation under the reference environment, and fresh independent audits.
-   Only a candidate with no unresolved BLOCKER/HIGH may proceed through ordinary
-   PR integration and exact post-merge CI. No real model call is authorized.
-3. **After engineering closure, resolve one Stage 3 backend boundary.** Follow
-   [factory-owner-decisions.md](factory-owner-decisions.md). The completed local
-   design study found that inspected subscription surfaces do not establish the
-   direct backend's tool-free, byte-only equivalence. The $0/no-submission choice
-   remains the default without reconfirmation. A later owner may instead authorize
-   either one precisely bounded changed-capability schema-only Cloud synthetic
-   task or an exact capped direct-API qualification. The pack should not be
-   presented for choice until the remediation and qualification source are ready.
+1. **Review, then implement synthetic semantic eligibility.** Use a separate
+   `METHODOLOGY_DESCRIPTOR` attempt bound to the exact current claim head,
+   acquisition lineage, retained abstract, extraction attempt, and input hashes.
+   It must decide entailment, quote support, relevance, epistemic consistency,
+   downstream eligibility, and methodology descriptors with fake transport only.
+2. **Build synthetic evidence relations and dossiers.** Consume only eligible
+   reviewed claim heads, preserve contrary evidence and gaps, bind every derived
+   record to its producing attempt, and allow zero eligible claims as a terminal
+   no-dossier outcome. Keep real inputs and PnL structurally unavailable.
+3. **Freeze and project bounded P2, then stop.** Deterministically freeze one
+   exact dossier and exercise the existing recoverable P2 projection with
+   synthetic canonical stores. Independently audit and integrate each bounded
+   slice. Only after this gate-free work is exhausted should the prepared backend
+   and cost decision become the next owner gate. P4 remains `NOT_STARTED`.
 
 ## Owner gates expected
 
-No owner decision is required for the immediate `S3-M1` engineering remedy or
-its fresh audits. The Stage 3 backend/cost choice becomes the next owner gate
-only after engineering closure. Routine integration of a remediated exact
-history needs no additional approval if all required audits and gates pass.
+No owner decision was required for the completed exact CI, ordinary integration,
+ref checks, or post-merge offline synthetic gate. No owner decision is required
+now to review and implement bounded post-extraction P3 work using synthetic stores
+and fake transports. Option A remains in force without reconfirmation and keeps
+real qualification paused. The backend/cost choice becomes an owner gate only
+when bounded real qualification is the next dependency.
 
 In the ledger, `owner_decision_required` means that some owner gate remains
 necessary before the phase can be complete. P3 is therefore `true` even though
-its immediate authorized remediation and fresh audits require no owner action.
+its next synthetic-only design and implementation work requires no owner action.
 
 Later owner gates remain: disposition of semantic-review ambiguities that the
 future eligibility contract cannot resolve objectively; hypothesis admission;
@@ -196,6 +205,7 @@ historical results as historical labels. Never advance a phase because code or a
 schema exists; record candidate identity, independent audit, ordinary merge,
 qualification, open findings, and the next unresolved dependency separately.
 
-Stage 3 candidate verdict: **FAIL** pending `S3-M1` remediation.
+Stage 3 slice verdict: **PASS within the audited dedicated-store and offline
+synthetic scope; P3 remains in progress and real qualification is deferred**.
 
 Overall factory verdict: **NEEDS MANUAL REVIEW**.
