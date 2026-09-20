@@ -266,17 +266,72 @@ def _verify_attempt(attempt, prepared, read_artifact) -> model.ExtractionOutput:
     return output
 
 
-def validate_published_attempt(attempt, records, read_artifact) -> None:
-    """Verify even zero-claim attempts and STARTED manifests on append/reload."""
-    before = [r for r in records if r.append_sequence < attempt.append_sequence]
-    bound = [_exact(before, ref.record_sha256, CanonicalRecordV1) for ref in attempt.referenced_records]
+def _is_stage3_attempt(attempt: CodexTaskAttemptRevisionV1) -> bool:
+    return attempt.isolation_backend == model.BACKEND or attempt.attempt_id.startswith("attempt.stage3.")
+
+
+def _attempt_representation(attempt, records, read_artifact) -> tuple[str, PreparedExtraction]:
+    bound = [_exact(records, ref.record_sha256, CanonicalRecordV1) for ref in attempt.referenced_records]
     protocols = [r for r in bound if isinstance(r, ResearchProtocolRevisionV1)]
     captures = [r for r in bound if isinstance(r, SourceCaptureRevisionV1)]
     if len(protocols) != 1 or len(captures) != 1 or attempt.actor != CONTROLLER:
         raise LiteratureIntegrityError("invalid Stage 3 attempt authority or provenance")
-    prepared = prepare_extraction(protocols[0], captures[0], before, read_artifact)
+    prepared = prepare_extraction(protocols[0], captures[0], records, read_artifact)
     _verify_attempt_inputs(attempt, prepared, read_artifact)
+    return representation_key(prepared.capture, prepared.work.work_id), prepared
+
+
+@dataclass(frozen=True)
+class AttemptHistory:
+    attempt_id: str
+    revisions: tuple[CodexTaskAttemptRevisionV1, ...]
+
+
+def _stage3_dispatch_index(records, read_artifact) -> dict[str, AttemptHistory]:
+    """Reconstruct every prior invocation and enforce one owner per representation."""
+    grouped: dict[str, list[CodexTaskAttemptRevisionV1]] = {}
+    for record in records:
+        if isinstance(record, CodexTaskAttemptRevisionV1) and _is_stage3_attempt(record):
+            grouped.setdefault(record.attempt_id, []).append(record)
+    result = {}
+    terminals = {"SUCCEEDED", "FAILED", "INVALID_OUTPUT", "ABANDONED_AFTER_CRASH"}
+    for attempt_id, revisions in grouped.items():
+        revisions.sort(key=lambda item: item.append_sequence)
+        if (
+            len(revisions) not in {1, 2}
+            or revisions[0].status != "STARTED"
+            or (len(revisions) == 2 and revisions[1].status not in terminals)
+        ):
+            raise LiteratureIntegrityError("invalid Stage 3 attempt invocation history")
+        first = revisions[0]
+        first_prefix = [r for r in records if r.append_sequence < first.append_sequence]
+        key, prepared = _attempt_representation(first, first_prefix, read_artifact)
+        _verify_attempt_outcome(first, prepared, read_artifact)
+        for revision in revisions[1:]:
+            prefix = [r for r in records if r.append_sequence < revision.append_sequence]
+            revision_key, revision_prepared = _attempt_representation(revision, prefix, read_artifact)
+            if revision_key != key:
+                raise LiteratureIntegrityError("Stage 3 attempt representation changed across revisions")
+            _verify_attempt_outcome(revision, revision_prepared, read_artifact)
+        owner = result.get(key)
+        if owner is not None and owner.attempt_id != attempt_id:
+            raise LiteratureIntegrityError("Stage 3 representation has multiple invoked attempt owners")
+        result[key] = AttemptHistory(attempt_id, tuple(revisions))
+    return result
+
+
+def validate_published_attempt(attempt, records, read_artifact) -> None:
+    """Verify even zero-claim attempts and STARTED manifests on append/reload."""
+    before = [r for r in records if r.append_sequence < attempt.append_sequence]
+    key, prepared = _attempt_representation(attempt, before, read_artifact)
     _verify_attempt_outcome(attempt, prepared, read_artifact)
+    owner = _stage3_dispatch_index(before, read_artifact).get(key)
+    if attempt.status == "STARTED":
+        if owner is not None:
+            raise LiteratureIntegrityError("Stage 3 representation was already invoked")
+        return
+    if owner is None or owner.attempt_id != attempt.attempt_id or len(owner.revisions) != 1:
+        raise LiteratureIntegrityError("invalid Stage 3 terminal self-transition")
 
 
 def validate_published_claim(claim, records, read_artifact) -> None:
@@ -316,21 +371,55 @@ def _terminal(store, started, status, *, output_sha=None, reason=None):
     return store.append_codex_attempt(payload, actor=CONTROLLER, idempotency_key=started.attempt_id + ".terminal")
 
 
-def _run_one(store, prepared, records, client):
-    history = [r for r in records if isinstance(r, CodexTaskAttemptRevisionV1) and r.attempt_id == prepared.attempt_id]
-    if history:
-        attempt = history[-1]
+def _preflight_extraction_plan(planned, records, read_artifact) -> list[AttemptHistory | None]:
+    """Admit the complete batch before the controller writes or invokes anything."""
+    groups = list(planned)
+    keys = []
+    for group in groups:
+        if not group:
+            raise LiteratureIntegrityError("invalid Stage 3 planned extraction group")
+        group_keys = {
+            representation_key(item.capture, item.work.work_id) for item in group
+        }
+        if len(group_keys) != 1:
+            raise LiteratureIntegrityError("planned extraction group mixes representations")
+        keys.append(group_keys.pop())
+    if len(keys) != len(set(keys)):
+        raise PilotManualReconciliation("representation already planned in this batch; no redispatch")
+
+    index = _stage3_dispatch_index(records, read_artifact)
+    claims = {r.claim_id for r in records if isinstance(r, ClaimExtractionRevisionV1)}
+    histories = []
+    for key, group in zip(keys, groups, strict=True):
+        prepared = group[0]
+        history = index.get(key)
+        if history is None:
+            histories.append(None)
+            continue
+        if history.attempt_id != prepared.attempt_id:
+            raise PilotManualReconciliation("representation already invoked in this store; no redispatch")
+        _verify_attempt_inputs(history.revisions[0], prepared, read_artifact)
+        latest = history.revisions[-1]
+        if latest.status == "SUCCEEDED":
+            output = _verify_attempt(latest, prepared, read_artifact)
+            expected = claim_payloads(prepared, output)
+            if any(payload["claim_id"] not in claims for payload in expected):
+                raise PilotManualReconciliation("partial claim publication; reconcile without a model call")
+        elif latest.status != "STARTED":
+            raise PilotManualReconciliation("terminal model failure; no automatic retry")
+        histories.append(history)
+    return histories
+
+
+def _run_one(store, prepared, history, client):
+    if history is not None:
+        attempt = history.revisions[-1]
         if attempt.status == "STARTED":
             # The outer process lock is held: the prior controller is no longer running.
             _terminal(store, attempt, "ABANDONED_AFTER_CRASH", reason="ORPHANED_ATTEMPT_NO_REDISPATCH")
             raise PilotManualReconciliation("orphaned model attempt; no redispatch")
-        if attempt.status != "SUCCEEDED":
-            raise PilotManualReconciliation("terminal model failure; no automatic retry")
         output = _verify_attempt(attempt, prepared, store.verify_artifact)
         payloads = claim_payloads(prepared, output)
-        existing = {r.claim_id: r for r in records if isinstance(r, ClaimExtractionRevisionV1)}
-        if any(p["claim_id"] not in existing for p in payloads):
-            raise PilotManualReconciliation("partial claim publication; reconcile without a model call")
         return dict(attempt_id=attempt.attempt_id, status=attempt.status, relevance=output.relevance,
                     claim_ids=[p["claim_id"] for p in payloads], reused=True)
     for artifact in (prepared.request, prepared.input_manifest, prepared.boundary_manifest,
@@ -408,11 +497,19 @@ def run_claim_extraction_pilot(
             capture.capture_id: prepare_extraction(protocol, capture, records, store.verify_artifact)
             for group in unique.values() for capture in group
         }
+        planned = [
+            tuple(prepared_captures[capture.capture_id] for capture in group)
+            for group in unique.values()
+        ]
+        histories = _preflight_extraction_plan(planned, records, store.verify_artifact)
+        orphan_index = next((index for index, history in enumerate(histories)
+                             if history is not None and history.revisions[-1].status == "STARTED"), None)
+        if orphan_index is not None:
+            _run_one(store, planned[orphan_index][0], histories[orphan_index], _client or model.ResponsesClient())
         attempts = []
-        for group in unique.values():
-            prepared = prepared_captures[group[0].capture_id]
-            outcome = _run_one(store, prepared, records, _client or model.ResponsesClient())
-            outcome["capture_ids"] = [c.capture_id for c in group]
+        for group, history in zip(planned, histories, strict=True):
+            outcome = _run_one(store, group[0], history, _client or model.ResponsesClient())
+            outcome["capture_ids"] = [item.capture.capture_id for item in group]
             attempts.append(outcome)
             if outcome["status"] != "SUCCEEDED":
                 break

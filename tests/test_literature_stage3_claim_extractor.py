@@ -64,6 +64,55 @@ def _records(store, kind):
     return [r for r in store.records() if isinstance(r, kind)]
 
 
+_MANAGED = {
+    "schema_name", "record_id", "append_sequence", "previous_store_record_sha256", "recorded_at",
+    "actor", "idempotency_key", "intent_sha256", "record_sha256", "revision",
+    "previous_revision_sha256", "methodology_sha256",
+}
+
+
+def _reacquire(root, store, prior_protocol, works, suffix):
+    payload = prior_protocol.model_dump(mode="json", exclude=_MANAGED)
+    payload.update(
+        protocol_id=f"protocol.{suffix}", execution_lineage_id=f"lineage.{suffix}",
+        change_reason=f"Synthetic {suffix} acquisition",
+    )
+    protocol = store.append_protocol(
+        payload, actor=_actor(f"{suffix}-author"), idempotency_key=f"{suffix}-protocol",
+    )
+    acquisition.run_openalex_pilot(
+        root, protocol.record_sha256,
+        processing_policy=acquisition.OPENALEX_STAGE3_PROCESSING_POLICY_V1,
+        _transport=httpx.MockTransport(lambda _: _response(_body(*works))),
+    )
+    return protocol
+
+
+def _literature_bytes(root):
+    base = Path(root) / "run-store/literature"
+    return {
+        str(path.relative_to(base)): path.read_bytes()
+        for path in base.rglob("*") if path.is_file() and path.suffix != ".lock"
+    }
+
+
+def _ordered_prepared_representations(store, protocol):
+    records = store.records()
+    selected = extraction._lineage_captures(protocol, records)
+    captures = sorted(
+        (r for r in records if isinstance(r, SourceCaptureRevisionV1) and r.capture_id in selected),
+        key=lambda capture: capture.capture_id,
+    )
+    ordered = {}
+    for capture in captures:
+        if capture.status != "GENUINE_ABSTRACT_CAPTURED":
+            continue
+        prepared = extraction.prepare_extraction(protocol, capture, records, store.verify_artifact)
+        key = extraction.representation_key(prepared.capture, prepared.work.work_id)
+        ordered.setdefault(key, prepared)
+    return list(ordered.values())
+
+
 def test_real_store_dedup_attempt_order_request_boundary_and_idempotence(tmp_path):
     store, protocol = _acquire(tmp_path)
     requests = []
@@ -252,6 +301,13 @@ def test_partial_publication_preserves_prefix_without_retry(tmp_path, monkeypatc
     assert store.validate()["status"] == "PASS"
     with pytest.raises(acquisition.PilotManualReconciliation, match="partial"):
         extraction.run_claim_extraction_pilot(tmp_path, protocol.record_sha256, _client=lambda _: pytest.fail("redispatch"))
+    foreign = _reacquire(tmp_path, store, protocol, [_work()], "partial-foreign")
+    before = _literature_bytes(tmp_path)
+    with pytest.raises(acquisition.PilotManualReconciliation, match="already invoked"):
+        extraction.run_claim_extraction_pilot(
+            tmp_path, foreign.record_sha256, _client=lambda _: pytest.fail("foreign redispatch"),
+        )
+    assert _literature_bytes(tmp_path) == before
 
 
 def test_public_store_rejects_claim_without_succeeded_attempt_and_tampered_output(tmp_path):
@@ -617,3 +673,280 @@ def test_no_response_outcomes_are_closed_and_reloadable(tmp_path, kind, status, 
     _rewrite_valid_hash_chains(tmp_path, mutate)
     with pytest.raises(LiteratureIntegrityError, match="without retained response"):
         LiteratureStore(tmp_path).validate()
+
+
+@pytest.mark.parametrize("kind,terminal_status", [
+    ("claims", "SUCCEEDED"),
+    ("zero", "SUCCEEDED"),
+    ("refusal", "FAILED"),
+    ("invocation", "FAILED"),
+    ("invalid", "INVALID_OUTPUT"),
+    ("nonbytes", "INVALID_OUTPUT"),
+    ("abandoned", "ABANDONED_AFTER_CRASH"),
+])
+def test_every_prior_terminal_consumes_representation_across_lineages(tmp_path, kind, terminal_status):
+    store, first_protocol = _acquire(tmp_path, works=[_work(2001)])
+
+    def first_client(_):
+        if kind == "invocation":
+            raise RuntimeError("synthetic invocation failure")
+        if kind == "abandoned":
+            raise KeyboardInterrupt
+        if kind == "nonbytes":
+            return "not bytes"
+        if kind == "invalid":
+            return b"{"
+        if kind == "refusal":
+            return _REFUSAL
+        if kind == "zero":
+            return _envelope(_output(claims=[], relevance="OUT_OF_SCOPE"))
+        return _envelope()
+
+    if kind == "abandoned":
+        with pytest.raises(KeyboardInterrupt):
+            extraction.run_claim_extraction_pilot(tmp_path, first_protocol.record_sha256, _client=first_client)
+        with pytest.raises(acquisition.PilotManualReconciliation, match="orphaned"):
+            extraction.run_claim_extraction_pilot(
+                tmp_path, first_protocol.record_sha256, _client=lambda _: pytest.fail("redispatch"),
+            )
+    else:
+        extraction.run_claim_extraction_pilot(tmp_path, first_protocol.record_sha256, _client=first_client)
+
+    second_protocol = _reacquire(tmp_path, store, first_protocol, [_work(2001)], f"second-{kind}")
+    before = _literature_bytes(tmp_path)
+    calls = []
+    with pytest.raises(acquisition.PilotManualReconciliation, match="already invoked"):
+        extraction.run_claim_extraction_pilot(
+            tmp_path, second_protocol.record_sha256,
+            _client=lambda request: calls.append(request) or _envelope(),
+        )
+    assert calls == [] and _literature_bytes(tmp_path) == before
+    assert _records(store, CodexTaskAttemptRevisionV1)[-1].status == terminal_status
+    assert store.validate()["status"] == "PASS"
+
+
+def test_foreign_started_consumes_without_terminalization(tmp_path):
+    store, first_protocol = _acquire(tmp_path, works=[_work(2001)])
+    with pytest.raises(KeyboardInterrupt):
+        extraction.run_claim_extraction_pilot(
+            tmp_path, first_protocol.record_sha256, _client=lambda _: (_ for _ in ()).throw(KeyboardInterrupt),
+        )
+    second_protocol = _reacquire(tmp_path, store, first_protocol, [_work(2001)], "foreign-started")
+    before = _literature_bytes(tmp_path)
+    with pytest.raises(acquisition.PilotManualReconciliation, match="already invoked"):
+        extraction.run_claim_extraction_pilot(
+            tmp_path, second_protocol.record_sha256, _client=lambda _: pytest.fail("redispatch"),
+        )
+    assert _literature_bytes(tmp_path) == before
+    assert [a.status for a in _records(store, CodexTaskAttemptRevisionV1)] == ["STARTED"]
+    assert store.validate()["status"] == "PASS"
+
+
+def test_duplicate_simultaneous_plan_groups_reject_without_writes(tmp_path):
+    store, protocol = _acquire(tmp_path, works=[_work(2001)])
+    records = store.records()
+    capture = next(r for r in records if isinstance(r, SourceCaptureRevisionV1))
+    prepared = extraction.prepare_extraction(protocol, capture, records, store.verify_artifact)
+    before = _literature_bytes(tmp_path)
+    with pytest.raises(acquisition.PilotManualReconciliation, match="already planned"):
+        extraction._preflight_extraction_plan([(prepared,), (prepared,)], records, store.verify_artifact)
+    assert _literature_bytes(tmp_path) == before
+
+
+def test_changed_version_of_same_work_remains_eligible(tmp_path):
+    store, first_protocol = _acquire(tmp_path, works=[_work(2001)])
+    extraction.run_claim_extraction_pilot(
+        tmp_path, first_protocol.record_sha256,
+        _client=lambda _: _envelope(_output(claims=[], relevance="OUT_OF_SCOPE")),
+    )
+    changed = _work(2001)
+    changed["abstract_inverted_index"] = {"Changed": [0], "representation": [1]}
+    second_protocol = _reacquire(tmp_path, store, first_protocol, [changed], "changed-version")
+    calls = []
+    result = extraction.run_claim_extraction_pilot(
+        tmp_path, second_protocol.record_sha256,
+        _client=lambda request: calls.append(request)
+        or _envelope(_output(claims=[], relevance="OUT_OF_SCOPE")),
+    )
+    attempts = _records(store, CodexTaskAttemptRevisionV1)
+    assert result["complete"] and len(calls) == 1
+    assert len({attempt.attempt_id for attempt in attempts}) == 2
+    assert store.validate()["status"] == "PASS"
+
+
+def test_local_only_history_does_not_consume_fresh_permissioned_acquisition(tmp_path):
+    store, local_protocol = _acquire(tmp_path, works=[_work(2001)], permission="LOCAL_ONLY")
+    fresh_protocol = _reacquire(tmp_path, store, local_protocol, [_work(2001)], "fresh-permissioned")
+    calls = []
+    result = extraction.run_claim_extraction_pilot(
+        tmp_path, fresh_protocol.record_sha256,
+        _client=lambda request: calls.append(request)
+        or _envelope(_output(claims=[], relevance="OUT_OF_SCOPE")),
+    )
+    assert result["complete"] and len(calls) == 1
+    assert len({attempt.attempt_id for attempt in _records(store, CodexTaskAttemptRevisionV1)}) == 1
+    assert store.validate()["status"] == "PASS"
+
+
+def test_later_batch_conflict_blocks_earlier_fresh_dispatch(tmp_path):
+    works = [_work(2001), _work(2002)]
+    store, batch_protocol = _acquire(tmp_path, works=works)
+    ordered = _ordered_prepared_representations(store, batch_protocol)
+    assert len(ordered) == 2
+    by_work_id = {
+        "work.openalex." + item.inspection.work_identity_sha256: work
+        for item, work in zip(acquisition.openalex.normalize(_body(*works), 2), works, strict=True)
+    }
+    later_work = by_work_id[ordered[-1].work.work_id]
+    prior_protocol = _reacquire(tmp_path, store, batch_protocol, [later_work], "later-prior")
+    extraction.run_claim_extraction_pilot(
+        tmp_path, prior_protocol.record_sha256,
+        _client=lambda _: _envelope(_output(claims=[], relevance="OUT_OF_SCOPE")),
+    )
+    before = _literature_bytes(tmp_path)
+    calls = []
+    with pytest.raises(acquisition.PilotManualReconciliation, match="already invoked"):
+        extraction.run_claim_extraction_pilot(
+            tmp_path, batch_protocol.record_sha256,
+            _client=lambda request: calls.append(request) or _envelope(),
+        )
+    assert calls == [] and _literature_bytes(tmp_path) == before
+
+
+def test_later_foreign_conflict_prevents_own_orphan_terminalization(tmp_path):
+    works = [_work(2001), _work(2002)]
+    store, batch_protocol = _acquire(tmp_path, works=works)
+    ordered = _ordered_prepared_representations(store, batch_protocol)
+    assert len(ordered) == 2
+    with pytest.raises(KeyboardInterrupt):
+        extraction.run_claim_extraction_pilot(
+            tmp_path, batch_protocol.record_sha256,
+            _client=lambda _: (_ for _ in ()).throw(KeyboardInterrupt),
+        )
+    by_work_id = {
+        "work.openalex." + item.inspection.work_identity_sha256: work
+        for item, work in zip(acquisition.openalex.normalize(_body(*works), 2), works, strict=True)
+    }
+    foreign_protocol = _reacquire(
+        tmp_path, store, batch_protocol, [by_work_id[ordered[-1].work.work_id]], "later-foreign",
+    )
+    with pytest.raises(KeyboardInterrupt):
+        extraction.run_claim_extraction_pilot(
+            tmp_path, foreign_protocol.record_sha256,
+            _client=lambda _: (_ for _ in ()).throw(KeyboardInterrupt),
+        )
+    before = _literature_bytes(tmp_path)
+    with pytest.raises(acquisition.PilotManualReconciliation, match="already invoked"):
+        extraction.run_claim_extraction_pilot(
+            tmp_path, batch_protocol.record_sha256, _client=lambda _: pytest.fail("redispatch"),
+        )
+    assert _literature_bytes(tmp_path) == before
+    assert [attempt.status for attempt in _records(store, CodexTaskAttemptRevisionV1)] == ["STARTED", "STARTED"]
+
+
+def test_administrative_mismatch_in_batch_blocks_fresh_representation(tmp_path):
+    store, protocol = _acquire(tmp_path, works=[_work(2001), _work(2002)])
+    prepared = _ordered_prepared_representations(store, protocol)
+    assert len(prepared) == 2
+    prior = extraction._run_one(
+        store, prepared[0], None,
+        lambda _: _envelope(_output(claims=[], relevance="OUT_OF_SCOPE")),
+    )
+    assert prior["status"] == "SUCCEEDED"
+    payload = protocol.model_dump(mode="json", exclude=_MANAGED)
+    payload.update(administrative_annotations=["administrative update"], change_reason="Administrative only")
+    revised = store.append_protocol(payload, actor=_actor("admin-batch"), idempotency_key="admin-batch")
+    before = _literature_bytes(tmp_path)
+    calls = []
+    with pytest.raises(LiteratureIntegrityError, match="input identity mismatch"):
+        extraction.run_claim_extraction_pilot(
+            tmp_path, revised.record_sha256,
+            _client=lambda request: calls.append(request) or _envelope(),
+        )
+    assert calls == [] and _literature_bytes(tmp_path) == before
+
+
+@pytest.mark.parametrize("kind", ["started", "succeeded", "failed", "invalid", "abandoned"])
+def test_reload_rejects_bypassed_cross_lineage_history(tmp_path, monkeypatch, kind):
+    store, first_protocol = _acquire(tmp_path, works=[_work(2001)])
+
+    def first_client(_):
+        if kind in {"started", "abandoned"}:
+            raise KeyboardInterrupt
+        if kind == "failed":
+            raise RuntimeError("synthetic invocation failure")
+        if kind == "invalid":
+            return b"{"
+        return _envelope(_output(claims=[], relevance="OUT_OF_SCOPE"))
+
+    if kind in {"started", "abandoned"}:
+        with pytest.raises(KeyboardInterrupt):
+            extraction.run_claim_extraction_pilot(tmp_path, first_protocol.record_sha256, _client=first_client)
+        if kind == "abandoned":
+            with pytest.raises(acquisition.PilotManualReconciliation, match="orphaned"):
+                extraction.run_claim_extraction_pilot(
+                    tmp_path, first_protocol.record_sha256, _client=lambda _: pytest.fail("redispatch"),
+                )
+    else:
+        extraction.run_claim_extraction_pilot(tmp_path, first_protocol.record_sha256, _client=first_client)
+
+    second_protocol = _reacquire(tmp_path, store, first_protocol, [_work(2001)], f"reload-{kind}")
+    with monkeypatch.context() as bypass:
+        bypass.setattr(extraction, "_preflight_extraction_plan", lambda planned, records, read: [None])
+        bypass.setattr(extraction, "validate_published_attempt", lambda attempt, records, read: None)
+        extraction.run_claim_extraction_pilot(
+            tmp_path, second_protocol.record_sha256,
+            _client=lambda _: _envelope(_output(claims=[], relevance="OUT_OF_SCOPE")),
+        )
+    with pytest.raises(LiteratureIntegrityError, match="already invoked|multiple invoked"):
+        LiteratureStore(tmp_path).validate()
+
+
+def test_direct_second_started_append_is_rejected_before_canonical_publication(tmp_path):
+    store, first_protocol = _acquire(tmp_path, works=[_work(2001)])
+    extraction.run_claim_extraction_pilot(
+        tmp_path, first_protocol.record_sha256,
+        _client=lambda _: _envelope(_output(claims=[], relevance="OUT_OF_SCOPE")),
+    )
+    second_protocol = _reacquire(tmp_path, store, first_protocol, [_work(2001)], "direct-append")
+    records = store.records()
+    selected = extraction._lineage_captures(second_protocol, records)
+    capture = next(
+        r for r in records if isinstance(r, SourceCaptureRevisionV1) and r.capture_id in selected
+    )
+    prepared = extraction.prepare_extraction(second_protocol, capture, records, store.verify_artifact)
+    for artifact in (
+        prepared.request, prepared.input_manifest, prepared.boundary_manifest,
+        model.settings_bytes(), model.PROMPT.encode("utf-8"),
+    ):
+        store.put_artifact(artifact, kind="codex-io")
+    payload = dict(
+        attempt_id=prepared.attempt_id, task_type="CLAIM_EXTRACTOR", status="STARTED", model=model.MODEL,
+        settings_sha256=model.sha(model.settings_bytes()), prompt_sha256=model.sha(model.PROMPT.encode("utf-8")),
+        input_manifest_sha256=model.sha(prepared.input_manifest),
+        workspace_manifest_sha256=model.sha(prepared.boundary_manifest), output_sha256=None,
+        referenced_records=list(prepared.references), isolation_backend=model.BACKEND, failure_reason=None,
+    )
+    before = _literature_bytes(tmp_path)
+    with pytest.raises(LiteratureIntegrityError, match="already invoked"):
+        store.append_codex_attempt(
+            payload, actor=extraction.CONTROLLER, idempotency_key=prepared.attempt_id + ".start",
+        )
+    assert _literature_bytes(tmp_path) == before
+
+
+def test_reserved_stage3_permission_rejection_cannot_bypass_pilot_validator(tmp_path):
+    store = LiteratureStore(_project(tmp_path))
+    before = _literature_bytes(tmp_path)
+    payload = dict(
+        attempt_id="attempt.stage3.reserved-rejection", task_type="CLAIM_EXTRACTOR",
+        status="REJECTED_PROCESSING_PERMISSION", model=None,
+        settings_sha256="1" * 64, prompt_sha256="2" * 64, input_manifest_sha256="3" * 64,
+        workspace_manifest_sha256=None, output_sha256=None, referenced_records=[],
+        isolation_backend="NOT_INVOKED_PROCESSING_PERMISSION", failure_reason="permission denied",
+    )
+    with pytest.raises(LiteratureIntegrityError, match="authority or provenance"):
+        store.append_codex_attempt(
+            payload, actor=extraction.CONTROLLER, idempotency_key="reserved-rejection",
+        )
+    assert _literature_bytes(tmp_path) == before

@@ -26,7 +26,10 @@ The original qualification lineage and its `LOCAL_ONLY` archive must not be
 processed. Do not rerun it. An unchanged, predeclared reacquisition can use a new
 `PRE_RESULT_PROTOCOL`. A result-informed change requires the existing extension
 contract and separate acquisition support; this pilot does not broaden Stage 2
-admission to extensions or adaptive search.
+admission to extensions or adaptive search. A historical `LOCAL_ONLY` capture
+without a Stage 3 attempt consumes no extraction opportunity; it remains
+ineligible and cannot be upgraded. A fresh owner-permissioned acquisition may be
+processed once under the rules below.
 
 ## Supervised Python entrypoints
 
@@ -176,6 +179,15 @@ A refused or incomplete response is never successful zero-claim evidence. A
 permission rejection occurs before model input retention or invocation and
 creates no invoked attempt. Invocation errors retain fixed categories only.
 
+The first persisted Stage 3 `STARTED` consumes its exact representation across
+the entire dedicated store. `SUCCEEDED` (including zero claims and partial claim
+publication), `FAILED`, `INVALID_OUTPUT`, `ABANDONED_AFTER_CRASH`, and an orphan
+`STARTED` all remain consumed regardless of protocol or execution-lineage IDs.
+The attempt's own `STARTED` to terminal transition is allowed. Exact reentry may
+reuse a completely published `SUCCEEDED` attempt, or terminalize its own orphan
+as `ABANDONED_AFTER_CRASH`; it never invokes the model again. A failed terminal
+or partial publication still requires reconciliation.
+
 After SUCCEEDED, all claims are constructed deterministically and published with
 `actor.task_id` bound to that attempt. Store append and persisted reload verify
 pilot claims against the preceding successful attempt, its exact manifests,
@@ -193,15 +205,27 @@ STARTED and likewise requires reconciliation. No generic recovery engine exists.
 
 ## Deduplication and noninterference
 
-Deduplication uses work ID, source-version ID, content hash, extracted hash,
-extractor ID/version/config hash. Eligible captures are sorted by capture ID;
-one representative is processed per exact group. The result lists all capture
-appearances. Attempt ID binds that representation and the execution lineage; its immutable
-input references bind the exact protocol revision. Administrative protocol
-revisions cannot create another model attempt for the same representation.
-Reentry reuses the same successful result; it cannot silently change model,
-prompt or settings. Unrelated works sharing text remain distinct. Suspected
-2001/2003 versions are not merged.
+Deduplication and dispatch admission use work ID, source-version ID, content
+hash, extracted hash, and extractor ID/version/config hash. Eligible captures
+are sorted by capture ID; one representative is processed per exact group. The
+result lists all capture appearances. The controller preflights the complete
+batch before any new artifacts, STARTED record, or model call. A prior Stage 3
+attempt with the same exact representation blocks a different attempt ID across
+all lineages and outcomes. A later conflict therefore prevents an earlier fresh
+group from dispatching.
+
+Attempt ID continues to bind the representation and execution lineage, while
+its immutable input references bind the exact protocol revision. Administrative
+protocol revisions cannot create another model attempt for the same
+representation. A genuine different source version or representation remains
+eligible, and unrelated works sharing text remain distinct. Suspected 2001/2003
+versions are not merged.
+
+This once-per-representation rule is local to one dedicated, operator-exclusive
+`LiteratureStore`; it makes no global or cross-store anti-shopping guarantee. A
+future contract for re-extracting the same representation under materially new
+semantic context requires separate review and a durable context identity. This
+pilot treats a changed context as reconciliation, not permission to redispatch.
 
 Synthetic differential tests vary unrelated PnL, strategy, trade, result and P2
 files while keeping canonical inputs fixed. Request bytes, input/boundary
