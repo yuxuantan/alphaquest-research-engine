@@ -11,14 +11,21 @@ results. It creates no approval, authorization, policy change, backend, model
 run, research record, or phase transition. Record an owner choice separately and
 bind it to the exact subject and resulting reviewed contract.
 
-## Immediate decision: Stage 3 backend and cost boundary
+## Prepared later decision: Stage 3 backend and cost boundary
+
+Do not request this decision yet. The earlier dependency is the authorized
+engineering remediation of reproduced methodology BLOCKER `S3-M1`, followed by
+fresh independent audits. This pack remains prepared so the cost/backend choices
+are concrete after engineering closure.
 
 The audited Stage 3 subject implements a fixed direct Responses API backend. It
 is unmerged and has no real-model qualification. Its live status is
 `NOT_RUN_COST_NOT_AUTHORIZED`; credentials, account access, and balance were not
-inspected. Integration of the inactive exact history remains conditional on the
-current audits and ordinary CI, but it does not require another routine merge
-approval under the master request.
+inspected. The consolidated current audit failed because `S3-M1` permits an
+identifier-only post-result replacement lineage to redispatch the same
+representation without result-informed provenance. Candidate `1c9f684` cannot
+be integrated. An ordinary remediation commit and fresh independent re-audit are
+required; that engineering work needs no owner approval under the master request.
 
 OpenAI's [billing guidance](https://learn.chatgpt.com/docs/auth) states that API
 key use is billed separately from ChatGPT. A ChatGPT subscription therefore does
@@ -97,10 +104,10 @@ end-to-end proof. No alternate backend may be silently substituted.
 
 ## Consequences of no decision
 
-The exact inactive Stage 3 subject may still be integrated after all engineering
-gates pass. Real claim production remains paused. P3 stays incomplete, and P4
-cannot treat legacy Studio source bundles as a substitute for a current P3
-dossier freeze.
+Without a later backend decision, real claim production remains paused even if
+an ordinary `S3-M1` remediation is independently verified and integrated. P3
+stays incomplete, and P4 cannot treat legacy Studio source bundles as a
+substitute for a current P3 dossier freeze.
 
 ## Downstream owner gates
 

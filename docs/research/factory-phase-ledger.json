@@ -1,6 +1,6 @@
 {
   "schema": "alphaquest.factory-phase-ledger/v1",
-  "observed_at": "2026-09-20T01:50:38Z",
+  "observed_at": "2026-09-20T01:53:02Z",
   "observed_main_sha": "a3a5789ebae5d4509b5c2b764b65592a198b7d0e",
   "source_request_sha256": "485c5b68e9df6822b976f819c97afcc721f2d96d4e6360fe492414d012f283f7",
   "observational_only": true,
@@ -24,7 +24,17 @@
     "stage2_post_run_validation_sha256": "1d36cff07cdc8930d2d43ecea2f824e99e8e817e1656c04afe3163c2661939d6",
     "stage2_file_manifest_sha256": "83b3501148b3c17630541046ac254a4f57fba92411144bc3c47c278165c92d26",
     "cloud_qualification_receipt_sha256": "dfb8012b6c90efa0f838d202cb2bf64796da1ea8f3cbfd5b6844572c7950035f",
-    "cloud_resume_receipt_sha256": "a23f4aa42d0cb43885d134f96b519f989ee5468337d773b329e945f9207b44f0"
+    "cloud_resume_receipt_sha256": "a23f4aa42d0cb43885d134f96b519f989ee5468337d773b329e945f9207b44f0",
+    "stage3_audit_consolidation_sha256": "cad597703c500e5d12b629b5be8bb1750a605a97f3fb293b082535fe1934b091",
+    "stage3_methodology_audit_sha256": "68f1c85cb3b0343a383f02fb8ba21d9157f64e374781e017690b734abe97520a",
+    "stage3_methodology_probe_sha256": "7696aa0fcb2e44c465db7f93a3c6e51f2b569cc148b40e66114994a0b29f0c60",
+    "stage3_root_reproduction_log_sha256": "66171f3544aa4315836799e8a9ebd7c08d1afbd6c52cf3cbae32ee80f63ef6df",
+    "stage3_adversarial_report_sha256": "a79cf1e8dd8bcf2521233ea201d1799a20ce7b2e9988d3d5c2d7db9f09b6b564",
+    "stage3_correctness_probe_sha256": "c88d3171dd13c56101ab7f360df7403107184a816dadd7bd5941fdfbab2a76f1",
+    "stage3_security_focused_xml_sha256": "8fb94dc003dcb079c391eddbc896a0e9bcd8ce08bc9c765f2ae3834906a5b775",
+    "stage3_security_probe_xml_sha256": "6b1b17d002a9cd870e2564a574cb3796db178983f1335aa610ee49fde66c7573",
+    "old_candidate_focused_log_sha256": "89ad576aed67c648843f5fd998b8fefd6ddd690a5e0e5578a1e33835d1cfd184",
+    "old_candidate_validation_log_sha256": "d8f8a605e13ce9d975bc41e9d06c9bf14065f2f36d7e35da50ceda78611beca2"
   },
   "phases": [
     {
@@ -70,22 +80,25 @@
     },
     {
       "phase": "P3",
-      "status": "IMPLEMENTATION",
+      "status": "AUDIT_FAILED",
       "base_sha": "a3a5789ebae5d4509b5c2b764b65592a198b7d0e",
       "candidate_sha": "1c9f684312f6da1b8e4e48f1a352adddad8c08a0",
-      "audit_result": "HISTORICAL_REMEDIATION_REAUDIT_PASS; CURRENT_FACTORY_AUDITS_PENDING_CONSOLIDATION",
+      "audit_result": "CURRENT_AUDIT_FAILED; BLOCKER_S3_M1_REPRODUCED_BY_METHODOLOGY_AUDITOR_AND_ROOT; CORRECTNESS_PASS; ADVERSARIAL_PASS; SECURITY_REPRODUCIBILITY_PASS_WITH_LOCAL_ENVIRONMENT_LIMIT",
       "merge_sha": null,
       "qualification_result": "STAGE2_REAL_ACQUISITION_ONLY_COMPLETE; STAGE3_DIRECT_API_NOT_RUN_COST_NOT_AUTHORIZED; CLOUD_LOCAL_TRIAL_ZERO_SUBMISSIONS_NOT_QUALIFICATION",
       "open_findings": [
-        "The exact Stage 3 candidate is not integrated.",
-        "Current factory audits may still yield findings and have not been consolidated.",
+        "BLOCKER S3-M1: identifier-only post-result protocol replacement can redispatch the identical representation without result-informed provenance.",
+        "S3-M1 is a same-store manual-caller lineage-replacement gap; no automatic protocol creation, automatic retry, live call, or paid call occurred.",
+        "The original Stage 3 candidate is preserved and integration is prohibited pending an ordinary remediation commit and fresh independent re-audit.",
+        "The earlier exact-head CI success and historical remediation re-audit do not override the current reproduced blocker.",
+        "Root broad validation on the old candidate was deliberately interrupted after the blocker: focused progress stopped at 327 passes and full progress stopped at 459 passes; neither is a completed pass.",
         "A real direct Responses API run is not authorized; credentials were not inspected.",
         "The local cloud trial used unrelated sandbox commit a86c234b27074f149f1da19709f9b3cf503d9505, had zero submissions and an unresolved environment, and is not a current backend or live proof.",
         "No canonical downstream semantic-review eligibility gate exists for model claims.",
         "Evidence-relation production, dossier construction and freeze, bounded P2 projection, and end-to-end P3 qualification remain incomplete."
       ],
-      "next_dependency": "CONSOLIDATE_CURRENT_AUDITS_THEN_INTEGRATE_EXACT_STAGE3_HISTORY; RESOLVE_STAGE3_BACKEND_AND_COST_DECISION_BEFORE_ANY_REAL_MODEL_RUN",
-      "owner_decision_required": true
+      "next_dependency": "IMPLEMENT_S3_M1_REMEDIATION_AS_AN_ORDINARY_DESCENDANT_OF_1C9F684_THEN_RUN_FRESH_INDEPENDENT_REAUDITS",
+      "owner_decision_required": false
     },
     {
       "phase": "P4",

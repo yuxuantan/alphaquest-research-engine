@@ -2,7 +2,7 @@
 
 Status date: 2026-09-20
 
-Snapshot observed at: `2026-09-20T01:50:38Z`
+Snapshot observed at: `2026-09-20T01:53:02Z`
 
 Observed main: `a3a5789ebae5d4509b5c2b764b65592a198b7d0e`
 
@@ -23,10 +23,40 @@ OpenAlex acquisition pilot. The exact Stage 3 claim-extraction subject is
 `1c9f684312f6da1b8e4e48f1a352adddad8c08a0`, two ordinary commits above main
 with merge-base `a3a5789ebae5d4509b5c2b764b65592a198b7d0e`. It is unmerged.
 
-A historical remediation re-audit passed, and the current adversarial audit
-reported no product finding. The current factory audit set is still being
-consolidated and may produce findings. This snapshot therefore records P3 as
-`IMPLEMENTATION`, not independently verified, merged, qualified, or complete.
+The four current audits are consolidated. Correctness and adversarial review
+passed; security/reproducibility passed with a local-environment limitation.
+Methodology found BLOCKER `S3-M1`, which the root independently reproduced:
+identifier-only post-result protocol replacement can redispatch the identical
+representation without result-informed provenance. This is a same-store manual-
+caller lineage-replacement gap, distinct from the earlier acquisition-binding
+defect. No automatic protocol creation, automatic retry, live call, or paid call
+occurred.
+
+This snapshot therefore records P3 as `AUDIT_FAILED`. Candidate `1c9f684` must
+remain unmerged. Its earlier exact-head CI success and historical remediation
+re-audit do not override the current blocker. Root broad validation of the old
+candidate was deliberately interrupted after the finding: focused progress
+stopped at 327 passes and full progress stopped at 459 passes. Neither is a
+completed validation pass. Separate auditor suites remain evidence only within
+their stated scopes.
+
+The audit consolidation is workstation-local, non-durable evidence at
+`/private/tmp/alphaquest-factory-evidence-20260920/stage3-audit-consolidation.json`
+with SHA-256
+`cad597703c500e5d12b629b5be8bb1750a605a97f3fb293b082535fe1934b091`.
+Its supporting local hashes include methodology report
+`68f1c85cb3b0343a383f02fb8ba21d9157f64e374781e017690b734abe97520a`,
+methodology probe
+`7696aa0fcb2e44c465db7f93a3c6e51f2b569cc148b40e66114994a0b29f0c60`,
+root reproduction log
+`66171f3544aa4315836799e8a9ebd7c08d1afbd6c52cf3cbae32ee80f63ef6df`,
+adversarial report
+`a79cf1e8dd8bcf2521233ea201d1799a20ce7b2e9988d3d5c2d7db9f09b6b564`,
+and security XML evidence
+`8fb94dc003dcb079c391eddbc896a0e9bcd8ce08bc9c765f2ae3834906a5b775`
+and `6b1b17d002a9cd870e2564a574cb3796db178983f1335aa610ee49fde66c7573`.
+The security result carries a local Python 3.12.5 limitation; reference full
+gates require Python 3.12.14.
 
 The Stage 3 subject stops at canonical claims. It does not create evidence
 relations, dossiers, freezes, P2 records, hypotheses, mechanics, campaigns, or
@@ -56,7 +86,7 @@ rerun every P0-P2 qualification against the current main tree.
 
 | Phase | Existing substrate | Missing closure |
 | --- | --- | --- |
-| P3 | Thirteen canonical literature families, durable store, bounded P2 emission machinery, and the qualified Stage 2 acquisition pilot; unmerged Stage 3 claim extraction. | Current audit consolidation, exact integration, real claim qualification, semantic-review eligibility, relation and dossier production, freeze, bounded P2 projection, and end-to-end proof. |
+| P3 | Thirteen canonical literature families, durable store, bounded P2 emission machinery, and the qualified Stage 2 acquisition pilot; unmerged Stage 3 claim extraction. | Remediate `S3-M1` on an ordinary descendant, run fresh independent audits and complete gates, then consider exact integration. Real claim qualification, semantic-review eligibility, relation and dossier production, freeze, bounded P2 projection, and end-to-end proof remain open. |
 | P4-P5 | Strict proposal/context/import contracts and human reviewed-hypothesis artifacts. | Exact current P3 dossier-freeze and P2 linkage, one canonical proposal ingress, compact decision pack, and qualified admission. |
 | P8-P10 | Deterministic authoring, atomic publication, component certification, and custom engineering handoff. | Mandatory bindings to current P5-P7 outputs and roadmap phase qualification. |
 | P11-P12 | Mature mechanics validation, limited core screening, and randomized-entry monkey tests. | End-to-end qualification from the roadmap lineage and a complete accounting handoff. |
@@ -88,9 +118,9 @@ frequency router or cheapest-legitimate-data router.
 
 ## Blockers
 
-- Current Stage 3 correctness, methodology, adversarial, and security evidence
-  must be consolidated. A BLOCKER or HIGH finding would stop integration and
-  require remediation plus fresh review.
+- `S3-M1` is a reproduced methodology BLOCKER. Integration of `1c9f684` is
+  prohibited. Engineering must implement the reviewed no-redispatch remedy as
+  an ordinary descendant and obtain fresh independent review.
 - Any paid direct API qualification requires a separate owner cost decision.
   No key, balance, or entitlement was checked for this snapshot.
 - The subscription-backed cloud experiment has no resolved environment or
@@ -103,32 +133,31 @@ frequency router or cheapest-legitimate-data router.
 
 ## Proposed next three implementation slices
 
-1. **Integrate the exact inactive Stage 3 history.** After all current audits are
-   consolidated with no unresolved BLOCKER/HIGH, use ordinary PR history for
-   `a3a5789e -> 209f3c578 -> 1c9f684`. Reverify exact ancestry, tree, focused and
-   full gates, and post-merge CI. This routine conditional integration is already
-   authorized by the master request and needs no separate merge approval. It
-   authorizes no real model call.
-2. **Resolve and qualify one Stage 3 backend boundary.** Follow
+1. **Remediate `S3-M1` without rewriting history.** Add one ordinary commit after
+   `1c9f684` that enforces the reviewed no-redispatch architecture for identical
+   representations across post-result protocol lineages. Preserve the original
+   candidate and its failed audit evidence. This engineering remedy is already
+   authorized and needs no owner decision.
+2. **Re-audit and conditionally integrate the remediated Stage 3 history.** Rerun
+   the exact reproduction and permanent regression, focused tests, complete
+   validation under the reference environment, and fresh independent audits.
+   Only a candidate with no unresolved BLOCKER/HIGH may proceed through ordinary
+   PR integration and exact post-merge CI. No real model call is authorized.
+3. **After engineering closure, resolve one Stage 3 backend boundary.** Follow
    [factory-owner-decisions.md](factory-owner-decisions.md). The recommended
    option keeps the $0 incremental-cost limit and authorizes a separately
    reviewed subscription-backed feasibility/design study while preserving the
    direct backend's history and regression coverage. No backend becomes
    canonical until an isolated no-research-repository, no-PnL qualification
-   passes within the verified cost boundary.
-3. **Implement post-claim semantic eligibility, then relation/dossier freeze.**
-   Define a canonical independent semantic-review eligibility contract and its
-   authority before coding, consume only exact eligible current claim heads,
-   preserve contrary/null/regime/execution evidence and declared gaps, and stop
-   at an immutable dossier freeze. Ambiguity escalates to the owner; this does
-   not assume that every claim requires human review. Do not emit P2 or create a
-   hypothesis in this slice.
+   passes within the verified cost boundary. The decision pack is prepared but
+   should not be presented for choice until `S3-M1` engineering closure.
 
 ## Owner gates expected
 
-The immediate owner decision is the Stage 3 backend/cost choice. Routine exact-
-history integration does not need another approval if all required audits and
-gates pass.
+No owner decision is required for the immediate `S3-M1` engineering remedy or
+its fresh audits. The Stage 3 backend/cost choice becomes the next owner gate
+only after engineering closure. Routine integration of a remediated exact
+history needs no additional approval if all required audits and gates pass.
 
 Later owner gates remain: disposition of semantic-review ambiguities that the
 future eligibility contract cannot resolve objectively; hypothesis admission;
@@ -146,5 +175,7 @@ Update the JSON and this page together after exact evidence changes. Preserve
 historical results as historical labels. Never advance a phase because code or a
 schema exists; record candidate identity, independent audit, ordinary merge,
 qualification, open findings, and the next unresolved dependency separately.
+
+Stage 3 candidate verdict: **FAIL** pending `S3-M1` remediation.
 
 Overall factory verdict: **NEEDS MANUAL REVIEW**.
