@@ -659,3 +659,58 @@ def test_oa2_nonfinite_json_numbers_fail_even_in_ignored_metadata(token):
 def test_oa2_finite_json_numbers_preserve_normalization(token):
     body = ('{"results":[],"meta":{"x":' + token + "}}").encode()
     assert oa.normalize(body, 1) == ()
+
+
+@pytest.mark.parametrize("mode,declared", [
+    ("UNKNOWN_POLICY", False),
+    (runner.OPENALEX_STAGE3_PROCESSING_POLICY_V1, False),
+    (runner.OPENALEX_LOCAL_ONLY_POLICY_V1, True),
+])
+def test_processing_policy_requires_exact_predeclared_mode(store, mode, declared):
+    protocol = _protocol(store)
+    if declared:
+        payload = protocol.model_dump(mode="json", exclude={
+            "schema_name", "record_id", "append_sequence", "previous_store_record_sha256", "recorded_at",
+            "actor", "idempotency_key", "intent_sha256", "record_sha256", "revision", "previous_revision_sha256",
+            "methodology_sha256",
+        })
+        payload["inclusion_rules"].append(runner.OPENALEX_STAGE3_PROCESSING_POLICY_V1)
+        protocol = store.append_protocol(payload, actor=_actor(), idempotency_key="predeclared")
+    with pytest.raises(policy.Stage2UnsupportedProfile, match="policy|mode"):
+        runner.run_openalex_pilot(store.project_root, protocol.record_sha256, processing_policy=mode,
+            _transport=httpx.MockTransport(lambda _: pytest.fail("must reject before provider response")))
+    assert not any(isinstance(r, SearchRunRevisionV1) for r in store.records())
+
+
+def test_fresh_stage3_lineage_preserves_local_only_history_and_frozen_permission(store):
+    original = _protocol(store)
+    transport = httpx.MockTransport(lambda _: _response(_body(_work())))
+    runner.run_openalex_pilot(store.project_root, original.record_sha256, _transport=transport)
+    old_captures = [r for r in store.records() if isinstance(r, SourceCaptureRevisionV1)]
+    old_bytes = [r.model_dump_json() for r in old_captures]
+    payload = original.model_dump(mode="json", exclude={
+        "schema_name", "record_id", "append_sequence", "previous_store_record_sha256", "recorded_at",
+        "actor", "idempotency_key", "intent_sha256", "record_sha256", "revision", "previous_revision_sha256",
+        "methodology_sha256",
+    })
+    payload.update(protocol_id="protocol.stage3", execution_lineage_id="lineage.stage3",
+                   inclusion_rules=[runner.OPENALEX_STAGE3_PROCESSING_POLICY_V1])
+    fresh = store.append_protocol(payload, actor=_actor(), idempotency_key="fresh.protocol")
+    def observe(request):
+        # Before *every* response, STARTED already binds the protocol's permission policy.
+        starts = [r for r in store.records() if isinstance(r, SearchRunRevisionV1)
+                  and r.execution_lineage_id == fresh.execution_lineage_id and r.status == "STARTED"]
+        assert starts and all(r.protocol_revision_sha256 == fresh.record_sha256 for r in starts)
+        return _response(_body(_work()))
+    runner.run_openalex_pilot(store.project_root, fresh.record_sha256,
+        processing_policy=runner.OPENALEX_STAGE3_PROCESSING_POLICY_V1, _transport=httpx.MockTransport(observe))
+    assert [store.get(r.record_id).model_dump_json() for r in old_captures] == old_bytes
+    assert all(r.external_model_processing_permission == "LOCAL_ONLY" for r in old_captures)
+    new_captures = [r for r in store.records() if isinstance(r, SourceCaptureRevisionV1) and r not in old_captures]
+    assert len(new_captures) == 7
+    assert all(r.external_model_processing_permission == "ALLOWED_EXTERNAL_PROCESSOR" for r in new_captures)
+    assert all(r.actor == runner.STAGE3_CAPTURE_ACTOR for r in new_captures)
+    with pytest.raises(runner.PilotManualReconciliation):
+        runner.run_openalex_pilot(store.project_root, fresh.record_sha256,
+            processing_policy=runner.OPENALEX_STAGE3_PROCESSING_POLICY_V1,
+            _transport=httpx.MockTransport(lambda _: pytest.fail("redispatch")))

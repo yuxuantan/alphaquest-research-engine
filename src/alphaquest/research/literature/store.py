@@ -3144,6 +3144,10 @@ class LiteratureStore:
                 for reference in record.assertion_evidence_refs:
                     require_reference(reference)
             elif isinstance(record, ClaimExtractionRevisionV1):
+                if record.actor.actor_id == "p3-stage3-claim-extractor" or record.claim_id.startswith("claim.stage3."):
+                    from .stage3_claim_extractor import validate_published_claim
+
+                    validate_published_claim(record, records, self._verify_artifact_unlocked)
                 for reference in record.conflict_refs:
                     require_reference(reference)
             elif isinstance(record, EvidenceRelationRevisionV1):
@@ -3172,6 +3176,10 @@ class LiteratureStore:
                 for reference in record.evidence_relation_refs:
                     require_reference(reference, EvidenceRelationRevisionV1)
             elif isinstance(record, CodexTaskAttemptRevisionV1):
+                if record.isolation_backend == "OPENAI_RESPONSES_TOOL_FREE_V1" or record.attempt_id.startswith("attempt.stage3."):
+                    from .stage3_claim_extractor import validate_published_attempt
+
+                    validate_published_attempt(record, records, self._verify_artifact_unlocked)
                 for reference in record.referenced_records:
                     require_reference(reference)
         reservations: dict[str, tuple[Any, ...]] = {}
