@@ -28,6 +28,11 @@ from . import stage2_policy as policy
 from .store import LiteratureStore, _record_intent_material
 
 ACTOR = ActorProvenanceV1(actor_class="ALPHAQUEST_DETERMINISTIC_ENGINE", actor_id="p3-openalex-pilot")
+OPENALEX_LOCAL_ONLY_POLICY_V1 = "OPENALEX_LOCAL_ONLY_POLICY_V1"
+OPENALEX_STAGE3_PROCESSING_POLICY_V1 = "OPENALEX_STAGE3_PROCESSING_POLICY_V1"
+STAGE3_CAPTURE_ACTOR = ActorProvenanceV1(
+    actor_class="ALPHAQUEST_DETERMINISTIC_ENGINE", actor_id="p3-openalex-stage3-policy-v1"
+)
 
 
 class PilotManualReconciliation(LiteratureConflictError):
@@ -121,6 +126,7 @@ def _publish_capture(
     request: str,
     now: datetime,
     authorize: Callable[[], None],
+    processing_policy: str = OPENALEX_LOCAL_ONLY_POLICY_V1,
 ) -> None:
     """Publish only a first-step capture already approved by F4; no retrieval here."""
     work_id = "work.openalex." + work.inspection.work_identity_sha256
@@ -173,7 +179,11 @@ def _publish_capture(
         access_basis="OPEN_PUBLIC",
         local_retention_permission="ALLOWED",
         redistribution_permission="ALLOWED",
-        external_model_processing_permission="LOCAL_ONLY",
+        external_model_processing_permission=(
+            "ALLOWED_EXTERNAL_PROCESSOR"
+            if processing_policy == OPENALEX_STAGE3_PROCESSING_POLICY_V1
+            else "LOCAL_ONLY"
+        ),
     )
     authorize()  # Work/version appends changed the snapshot: replan before retention/publication.
     if work.abstract is not None:
@@ -194,11 +204,18 @@ def _publish_capture(
         capture.update(status="FAILED", failure_reason="Malformed OpenAlex abstract index; no evidence retained")
     else:
         capture.update(status="LOCATOR_METADATA_ONLY")
-    store.append_capture(capture, actor=ACTOR, idempotency_key=capture_id, recorded_at=now)
+    store.append_capture(
+        capture,
+        actor=STAGE3_CAPTURE_ACTOR if processing_policy == OPENALEX_STAGE3_PROCESSING_POLICY_V1 else ACTOR,
+        idempotency_key=capture_id,
+        recorded_at=now,
+    )
 
 
 def run_openalex_pilot(
-    project_root: str | Path, protocol_revision_sha: str, *, _transport: httpx.BaseTransport | None = None
+    project_root: str | Path, protocol_revision_sha: str, *,
+    processing_policy: str = OPENALEX_LOCAL_ONLY_POLICY_V1,
+    _transport: httpx.BaseTransport | None = None,
 ) -> dict:
     """Execute the seven frozen lanes once in an operator-exclusive P3 store.
 
@@ -206,6 +223,8 @@ def run_openalex_pilot(
     a reservation. Any prior search in this lineage refuses the whole run,
     including orphaned STARTED and partially completed workflows. No resume.
     """
+    if processing_policy not in {OPENALEX_LOCAL_ONLY_POLICY_V1, OPENALEX_STAGE3_PROCESSING_POLICY_V1}:
+        raise policy.Stage2UnsupportedProfile("unknown fixed OpenAlex processing policy")
     store = LiteratureStore(project_root)
     with repository_file_lock(store.project_root, "run-store/literature/openalex-pilot.lock", exclusive=True):
         records = _snapshot(store)
@@ -220,6 +239,11 @@ def run_openalex_pilot(
         if protocol is None:
             raise policy.Stage2UnsupportedProfile("missing exact canonical protocol revision")
         admission = admit(protocol)
+        # The choice is frozen in the protocol before the first provider response.
+        # No result, DOI, title, or capture quality participates in this decision.
+        declared = OPENALEX_STAGE3_PROCESSING_POLICY_V1 in protocol.inclusion_rules
+        if declared != (processing_policy == OPENALEX_STAGE3_PROCESSING_POLICY_V1):
+            raise policy.Stage2UnsupportedProfile("processing mode must match the predeclared protocol policy")
         if any(
             isinstance(r, SearchRunRevisionV1) and r.execution_lineage_id == protocol.execution_lineage_id
             for r in records
@@ -340,6 +364,7 @@ def run_openalex_pilot(
                     url,
                     datetime.now(timezone.utc),
                     authorize_capture,
+                    processing_policy,
                 )
             # Capture metadata appends invalidate earlier plans. Publish only
             # the newly planned exact terminal after all selected captures.

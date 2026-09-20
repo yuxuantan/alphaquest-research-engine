@@ -334,3 +334,15 @@ owner-approved Model A passed independent verification for the restricted profil
 including B1/B2/B3 and R1/R2 closure, and was merged through PR #6. The pilot uses
 that unchanged foundation. Its own independent verification remains pending.
 General production activation is blocked; no Stage 3 work is authorized here.
+
+### Opt-in fresh Stage 3 acquisition
+
+The default thin pilot remains `LOCAL_ONLY`. A fresh protocol may predeclare
+`OPENALEX_STAGE3_PROCESSING_POLICY_V1` in its inclusion rules and invoke
+`run_openalex_pilot(..., processing_policy=OPENALEX_STAGE3_PROCESSING_POLICY_V1)`.
+The runner rejects a mode/protocol mismatch before provider dispatch. New
+captures then record the owner-authorized external-processing permission at
+creation; historical captures and the original qualification lineage remain
+unchanged. This adds no adaptive queries, providers, full-text acquisition, or
+permission-upgrade path. See [Stage 3 claim extraction](literature-stage3.md) for
+the exact processing boundary and separately authorized qualification workflow.
