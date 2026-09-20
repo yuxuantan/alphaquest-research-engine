@@ -133,6 +133,11 @@ or complete coverage. Epistemic classification and relevance are model judgments
 requiring independent semantic review before downstream use. The pilot does not
 certify causal interpretation, replication relationships, or trading value.
 
+The separate [Stage 4 Slice A synthetic review](literature-stage4.md) implements
+only a fixture-backed advisory engineering harness. It authorizes no real model
+dispatch and its outputs cannot be consumed as production semantic eligibility
+or downstream evidence.
+
 ## Attempt lifecycle and artifacts
 
 `CodexTaskAttemptRevisionV1` is reused without schema changes. Its task type,

@@ -3180,6 +3180,29 @@ class LiteratureStore:
                     from .stage3_claim_extractor import validate_published_attempt
 
                     validate_published_attempt(record, records, self._verify_artifact_unlocked)
+                elif (
+                    record.isolation_backend
+                    == "SYNTHETIC_RESPONSES_FIXTURE_SEMANTIC_REVIEW_V1"
+                    or record.attempt_id.startswith("attempt.stage4.semantic.")
+                ):
+                    from .stage4_semantic_reviewer import (
+                        validate_published_semantic_review_attempt,
+                    )
+
+                    validate_published_semantic_review_attempt(
+                        record, records, self._verify_artifact_unlocked
+                    )
+                elif (
+                    record.isolation_backend.startswith("OPENAI_RESPONSES_")
+                    or record.isolation_backend.startswith(
+                        "SYNTHETIC_RESPONSES_FIXTURE_"
+                    )
+                    or record.attempt_id.startswith("attempt.stage3.")
+                    or record.attempt_id.startswith("attempt.stage4.")
+                ):
+                    raise LiteratureIntegrityError(
+                        "reserved Codex attempt has no registered validator"
+                    )
                 for reference in record.referenced_records:
                     require_reference(reference)
         reservations: dict[str, tuple[Any, ...]] = {}
