@@ -13,6 +13,7 @@ from typing import Annotated, Literal, Mapping, NoReturn
 from pydantic import Field
 
 from alphaquest.research.edge_backlog_io import repository_file_lock
+from alphaquest.research.storage import StorageLayout
 
 from . import stage3_claim_extractor as stage3
 from . import stage4_semantic_model as model
@@ -49,6 +50,39 @@ CONTROLLER = ActorProvenanceV1(
 _TERMINAL_STATUSES = {
     "SUCCEEDED", "FAILED", "INVALID_OUTPUT", "ABANDONED_AFTER_CRASH"
 }
+
+
+def _stage4_store(project_root: str | Path) -> LiteratureStore:
+    """Construct the fixed Slice A store without consulting ambient layout state."""
+
+    root = Path(project_root).resolve()
+    layout = StorageLayout(
+        project_root=root,
+        active_campaign_root=root / "research/campaigns/active",
+        archive_campaign_roots=(root / "research/campaigns/archive",),
+        evidence_roots=(root / "research/evidence/runs",),
+        research_artifact_root=root / "research_artifacts",
+        catalog_root=root / "catalogs",
+        views_root=root / "views",
+        run_store_root=root / "run-store",
+        draft_root=root / "research/drafts",
+        dataset_root=root / "research/datasets",
+        handoff_root=root / "research/handoffs",
+        studio_runtime_root=root / "run-store/studio-runtime",
+        edge_backlog_root=root / "research/edge_backlog",
+        edge_backlog_history_index=root / "catalogs/edge_backlog_history.jsonl",
+        literature_root=root / "research/literature",
+        literature_runtime_root=root / "run-store/literature",
+        migration_manifest=(
+            root
+            / "research_artifacts/migrations/research_storage_layout_20260715.json"
+        ),
+        legacy_prefixes=(
+            ("backtest-campaigns/", "research/evidence/runs/"),
+            ("campaigns/", "research/campaigns/archive/"),
+        ),
+    )
+    return LiteratureStore(root, layout=layout)
 
 
 def reference(record: CanonicalRecordV1) -> dict:
@@ -399,7 +433,7 @@ def prepare_semantic_review_requests(
 ) -> dict[str, bytes]:
     """Read-only helper returning exact request-hash keys for synthetic fixtures."""
 
-    store = LiteratureStore(project_root)
+    store = _stage4_store(project_root)
     records = _snapshot(store)
     protocol = _exact(records, protocol_revision_sha, ResearchProtocolRevisionV1)
     planned = _prepare_plan(protocol, records, store.verify_artifact)
@@ -493,7 +527,7 @@ def _receipt_material(
         "reused_owner_bindings": reused,
         "fresh_fixture_bindings": fresh,
         "request_response_bindings": request_response,
-        "fixture_set_sha256": model.sha(canonical_json_bytes(fresh)),
+        "fixture_set_sha256": model.sha(canonical_json_bytes(request_response)),
     }
     material["receipt_sha256"] = model.sha(
         canonical_json_bytes(material, trailing_lf=False)
@@ -523,7 +557,10 @@ def _parse_receipt(
         raise LiteratureIntegrityError("synthetic semantic receipt self-hash mismatch")
     if receipt.fixture_set_sha256 != model.sha(
         canonical_json_bytes(
-            [item.model_dump(mode="json") for item in receipt.fresh_fixture_bindings]
+            [
+                item.model_dump(mode="json")
+                for item in receipt.request_response_bindings
+            ]
         )
     ):
         raise LiteratureIntegrityError("synthetic semantic fixture-set hash mismatch")
@@ -928,12 +965,87 @@ def _dispatch_index(records, read_artifact) -> dict[str, AttemptHistory]:
     return by_context
 
 
+def _validate_receipt_owned_progress(
+    receipt: SyntheticSemanticQualificationReceiptV1,
+    receipt_sha256: str,
+    index: dict[str, AttemptHistory],
+    *,
+    pending: CodexTaskAttemptRevisionV1 | None = None,
+) -> None:
+    """Require one receipt's fresh work to be a contiguous successful prefix."""
+
+    states: list[str] = []
+    pending_seen = pending is None
+    for binding in receipt.fresh_fixture_bindings:
+        context = binding.review_context_sha256
+        owner = index.get(context)
+        if owner is not None and owner.receipt_sha256 != receipt_sha256:
+            raise LiteratureIntegrityError(
+                "Stage 4 receipt-owned context has a different owner receipt"
+            )
+        state = owner.revisions[-1].status if owner is not None else "ABSENT"
+        if pending is not None and pending.attempt_id == model.ATTEMPT_PREFIX + context:
+            if pending_seen:
+                raise LiteratureIntegrityError(
+                    "Stage 4 pending revision matches multiple receipt contexts"
+                )
+            pending_seen = True
+            if pending.status == "STARTED":
+                if owner is not None:
+                    raise LiteratureIntegrityError(
+                        "Stage 4 pending STARTED overlays an existing owner"
+                    )
+                state = "STARTED"
+            else:
+                if (
+                    pending.status not in _TERMINAL_STATUSES
+                    or owner is None
+                    or owner.attempt_id != pending.attempt_id
+                    or len(owner.revisions) != 1
+                    or owner.revisions[0].status != "STARTED"
+                ):
+                    raise LiteratureIntegrityError(
+                        "Stage 4 pending terminal does not follow its sole STARTED"
+                    )
+                state = pending.status
+        states.append(state)
+    if not pending_seen:
+        raise LiteratureIntegrityError(
+            "Stage 4 pending revision is absent from its owner receipt"
+        )
+
+    blocked = False
+    for state in states:
+        if not blocked and state == "SUCCEEDED":
+            continue
+        if not blocked and state in {
+            "STARTED",
+            "FAILED",
+            "INVALID_OUTPUT",
+            "ABANDONED_AFTER_CRASH",
+        }:
+            blocked = True
+            continue
+        if state == "ABSENT":
+            blocked = True
+            continue
+        raise LiteratureIntegrityError(
+            "Stage 4 receipt progress is not a contiguous successful prefix"
+        )
+
+
 def validate_published_semantic_review_attempt(attempt, records, read_artifact) -> None:
     """Append/reload guard for every reserved Slice A attempt revision."""
 
     before = [item for item in records if item.append_sequence < attempt.append_sequence]
     reconstructed = _reconstruct_attempt(attempt, before, read_artifact)
     index = _dispatch_index(before, read_artifact)
+    _validate_receipt_owned_progress(
+        reconstructed.receipt,
+        reconstructed.receipt_artifact_sha256,
+        index,
+        pending=attempt,
+    )
     owner = index.get(reconstructed.prepared.review_context_sha256)
     if attempt.status == "STARTED":
         if owner is not None:
@@ -1020,17 +1132,37 @@ def _fresh_started_payload(
 
 
 def _snapshot_fixture_mapping(mapping: Mapping[str, bytes]) -> dict[str, bytes]:
-    snapshot = dict(mapping)
-    for key, value in snapshot.items():
-        if (
-            type(key) is not str
-            or len(key) != 64
-            or any(character not in "0123456789abcdef" for character in key)
-            or type(value) is not bytes
-            or len(value) > model.MAX_RESPONSE_BYTES
-        ):
-            raise ValueError("invalid bounded synthetic fixture mapping")
-    return snapshot
+    try:
+        raw_keys: list[object] = []
+        iterator = iter(mapping)
+        while True:
+            try:
+                raw_keys.append(next(iterator))
+            except StopIteration:
+                break
+        if len(mapping) != len(raw_keys):
+            raise ValueError
+        for key in raw_keys:
+            if (
+                type(key) is not str
+                or len(key) != 64
+                or any(character not in "0123456789abcdef" for character in key)
+            ):
+                raise ValueError
+        for index, key in enumerate(raw_keys):
+            if any(key == prior for prior in raw_keys[:index]):
+                raise ValueError
+        pairs: list[tuple[str, bytes]] = []
+        for key in raw_keys:
+            value = mapping[key]
+            if type(value) is not bytes or len(value) > model.MAX_RESPONSE_BYTES:
+                raise ValueError
+            pairs.append((key, value))
+    except ValueError:
+        raise ValueError("invalid bounded synthetic fixture mapping") from None
+    except Exception:
+        raise ValueError("invalid bounded synthetic fixture mapping") from None
+    return dict(pairs)
 
 
 def _result(protocol, attempts: list[dict], planned_count: int) -> dict:
@@ -1074,14 +1206,14 @@ def run_semantic_review_synthetic(
         raise LiteratureAuthorityError(
             "synthetic semantic review requires the literal SYNTHETIC_FIXTURE_ONLY"
         )
-    fixtures = _snapshot_fixture_mapping(response_by_request_sha256)
-    store = LiteratureStore(project_root)
+    store = _stage4_store(project_root)
     lock_name = "run-store/literature/stage4-semantic-review.lock"
     with repository_file_lock(store.project_root, lock_name, exclusive=True):
         records = _snapshot(store)
         protocol = _exact(records, protocol_revision_sha, ResearchProtocolRevisionV1)
         planned = _prepare_plan(protocol, records, store.verify_artifact)
         if not planned:
+            fixtures = _snapshot_fixture_mapping(response_by_request_sha256)
             if fixtures:
                 raise ValueError("zero-claim semantic review requires an empty fixture mapping")
             return _result(protocol, [], 0)
@@ -1089,7 +1221,8 @@ def run_semantic_review_synthetic(
         index = _dispatch_index(records, store.verify_artifact)
         histories = [index.get(item.review_context_sha256) for item in planned]
 
-        # Whole-batch conflict scan precedes every new artifact or fresh STARTED.
+        terminal_result: list[dict] | None = None
+        # Whole-batch conflict scan precedes caller-mapping access and every write.
         for prepared, history in zip(planned, histories, strict=True):
             if history is None:
                 continue
@@ -1099,10 +1232,6 @@ def run_semantic_review_synthetic(
                 )
             latest = history.revisions[-1]
             if latest.status in {"FAILED", "INVALID_OUTPUT", "ABANDONED_AFTER_CRASH"}:
-                if fixtures:
-                    raise PilotManualReconciliation(
-                        "terminal semantic review consumed context; alternative fixture rejected"
-                    )
                 reconstructed = _reconstruct_attempt(
                     latest,
                     [r for r in records if r.append_sequence < latest.append_sequence],
@@ -1122,43 +1251,30 @@ def run_semantic_review_synthetic(
                     )
                     prior.append(_attempt_result(earlier_history, rebuilt, reused=True))
                 prior.append(_attempt_result(history, reconstructed, reused=True))
-                return _result(protocol, prior, len(planned))
+                terminal_result = prior
+                break
 
         orphans = [
             history
             for history in histories
             if history is not None and history.revisions[-1].status == "STARTED"
         ]
-        if orphans:
-            if fixtures:
-                raise PilotManualReconciliation(
-                    "orphaned semantic review rejects alternative fixture mapping"
-                )
-            # Every history and receipt was reconstructed above before this sole write.
-            orphan = orphans[0]
-            _terminal(
-                store,
-                orphan.revisions[-1],
-                "ABANDONED_AFTER_CRASH",
-                reason="ORPHANED_ATTEMPT_NO_REDISPATCH",
-            )
-            raise PilotManualReconciliation(
-                "orphaned semantic review abandoned; no redispatch or later progress"
-            )
-
         # Select a frozen partially progressed receipt before considering new data.
         partial_receipts: set[str] = set()
-        for history in histories:
-            if history is None:
-                continue
-            receipt = _parse_receipt(history.receipt_sha256, records, store.verify_artifact)
-            current_contexts = {item.review_context_sha256 for item in planned}
-            receipt_contexts = {
-                item.review_context_sha256 for item in receipt.planned_contexts
-            }
-            owned_contexts = set(index)
-            if (receipt_contexts & current_contexts) - owned_contexts:
-                partial_receipts.add(history.receipt_sha256)
+        if terminal_result is None and not orphans:
+            for history in histories:
+                if history is None:
+                    continue
+                receipt = _parse_receipt(
+                    history.receipt_sha256, records, store.verify_artifact
+                )
+                current_contexts = {item.review_context_sha256 for item in planned}
+                receipt_contexts = {
+                    item.review_context_sha256 for item in receipt.planned_contexts
+                }
+                owned_contexts = set(index)
+                if (receipt_contexts & current_contexts) - owned_contexts:
+                    partial_receipts.add(history.receipt_sha256)
         if len(partial_receipts) > 1:
             raise LiteratureIntegrityError(
                 "partially progressed semantic batch names multiple frozen receipts"
@@ -1168,11 +1284,12 @@ def run_semantic_review_synthetic(
         selected_receipt: SyntheticSemanticQualificationReceiptV1 | None = None
         runnable_contexts: set[str] = set()
         if partial_receipts:
-            if fixtures:
-                raise ValueError("frozen-receipt reentry requires an empty fixture mapping")
             selected_receipt_sha256 = next(iter(partial_receipts))
             selected_receipt = _parse_receipt(
                 selected_receipt_sha256, records, store.verify_artifact
+            )
+            _validate_receipt_owned_progress(
+                selected_receipt, selected_receipt_sha256, index
             )
             anchor = next(
                 item
@@ -1204,6 +1321,34 @@ def run_semantic_review_synthetic(
                     "frozen semantic receipt contains a stale or missing planned context"
                 )
             runnable_contexts = set(declared)
+
+        fixtures = _snapshot_fixture_mapping(response_by_request_sha256)
+        if terminal_result is not None:
+            if fixtures:
+                raise PilotManualReconciliation(
+                    "terminal semantic review consumed context; alternative fixture rejected"
+                )
+            return _result(protocol, terminal_result, len(planned))
+        if orphans:
+            if fixtures:
+                raise PilotManualReconciliation(
+                    "orphaned semantic review rejects alternative fixture mapping"
+                )
+            # Every history and receipt was reconstructed above before this sole write.
+            orphan = orphans[0]
+            _terminal(
+                store,
+                orphan.revisions[-1],
+                "ABANDONED_AFTER_CRASH",
+                reason="ORPHANED_ATTEMPT_NO_REDISPATCH",
+            )
+            raise PilotManualReconciliation(
+                "orphaned semantic review abandoned; no redispatch or later progress"
+            )
+
+        if partial_receipts:
+            if fixtures:
+                raise ValueError("frozen-receipt reentry requires an empty fixture mapping")
         else:
             fresh = [
                 item for item, history in zip(planned, histories, strict=True)
@@ -1372,6 +1517,22 @@ def load_synthetic_semantic_review_evidence(
     rebuilt = _reconstruct_attempt(terminal, prefix, store.verify_artifact)
     if rebuilt.receipt_artifact_sha256 != required_receipt_sha256:
         raise LiteratureAuthorityError("synthetic semantic receipt identity mismatch")
+    index = _dispatch_index(records, store.verify_artifact)
+    _validate_receipt_owned_progress(
+        rebuilt.receipt,
+        rebuilt.receipt_artifact_sha256,
+        index,
+    )
+    owner = index.get(rebuilt.prepared.review_context_sha256)
+    if (
+        owner is None
+        or owner.attempt_id != terminal.attempt_id
+        or owner.receipt_sha256 != required_receipt_sha256
+        or owner.revisions[-1].record_sha256 != terminal.record_sha256
+    ):
+        raise LiteratureIntegrityError(
+            "successful synthetic semantic evidence is not its receipt's exact owner"
+        )
     if rebuilt.output is None:
         raise LiteratureIntegrityError("successful synthetic semantic evidence has no output")
     current = _claim_currentness_issue(rebuilt.prepared.claim, records) is None

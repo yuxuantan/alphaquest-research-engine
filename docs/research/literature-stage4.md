@@ -87,6 +87,21 @@ There is no default response source. Missing, extra, non-string hash keys,
 non-byte values, and oversized values fail complete-batch preflight. Zero claims
 requires an empty mapping and writes nothing.
 
+Both entry points construct the repository default `StorageLayout` directly in
+memory under the resolved dedicated root. They do not inspect
+`ALPHAQUEST_STORAGE_LAYOUT`, read `config/storage_layout.yaml`, or follow a
+layout-file symlink. This is a Stage 4 input-boundary rule; it does not change
+the shared storage-layout behavior used elsewhere.
+
+The fixture argument remains a trusted Python `Mapping[str, bytes]`. After the
+complete store, plan, owner, receipt, stale-input, and reserved-dispatch scan,
+the controller enumerates its raw keys once, reads its declared length once,
+rejects duplicate or non-exact built-in string keys before looking up values,
+and retrieves each exact built-in byte value once. Publication and result
+construction use only the resulting plain-dictionary snapshot. A custom mapping
+can execute Python while it is being snapshotted, so this boundary provides
+deterministic validation and one-time consumption rather than a sandbox.
+
 Before the first fresh `STARTED`, the controller validates the complete ordered
 plan and every existing owner. A later stale input, duplicate owner, receipt
 mismatch, orphan, terminal failure, or reserved-dispatch mismatch blocks every
@@ -125,6 +140,17 @@ references, stable batch key, planned contexts and requests, reused successful
 owners, and fresh fixture hashes and byte counts. Its initial head is ancestry
 provenance, not a requirement that the current head remain equal.
 
+The ordered `request_response_bindings` projection contains only each request
+SHA-256 and fixture-response SHA-256. The V1 set digest is exactly:
+
+```text
+fixture_set_sha256 = SHA256(canonical_json_bytes(request_response_bindings))
+```
+
+The receipt separately retains the stronger ordered fresh bindings containing
+context and byte count. Reload verifies projection equality, the digest above,
+and every response artifact's exact hash and length.
+
 Fresh attempts append `STARTED`, then exactly one terminal revision:
 
 | Status | Response | Failure reason |
@@ -137,6 +163,17 @@ Fresh attempts append `STARTED`, then exactly one terminal revision:
 One classifier governs runtime and reload. A rehashed status that contradicts
 the retained fixture fails validation. Success, valid exclusion, invalid output,
 failure, abandonment, and orphan `STARTED` all consume the base context.
+
+Fresh receipt contexts advance only in their persisted order. At append,
+reload, and evidence load, the complete state vector must have the form:
+
+```text
+SUCCEEDED* (STARTED | FAILED | INVALID_OUTPUT | ABANDONED_AFTER_CRASH)? ABSENT*
+```
+
+Thus only a contiguous successful prefix advances the frontier. Starting a
+later context before an earlier one, or after an orphan or terminal non-success,
+is an integrity failure even if that later attempt is otherwise self-consistent.
 
 All-success reentry requires an empty mapping and writes nothing. Partial
 successful progress selects the original frozen receipt despite a newer store
