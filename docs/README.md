@@ -18,6 +18,9 @@
 ## Research
 
 - [Canonical research operating model](research/research-operating-model.md)
+- [Autonomous research factory state](research/autonomous-factory-state.md)
+- [Factory phase ledger](research/factory-phase-ledger.json)
+- [Factory owner decisions](research/factory-owner-decisions.md)
 - [Campaign authoring](research/campaign-authoring.md)
 - [Davey methodology alignment](research/davey-methodology-alignment.md)
 - [Validation stages](research/validation-stages.md)
