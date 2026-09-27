@@ -39,6 +39,12 @@ If the request itself fails, Studio reads back the task and keeps submission
 locked. A stored decision opens the receipt flow. An empty readback does not
 prove the original write has finished, so it never enables another submission.
 Use **Check saved review** to read the task again without issuing another write.
+A browser delivery marker is written before submission and preserves this lock
+across reopening/reloading the form. It contains task/version identifiers only,
+never a decision or approval. Submission requires working browser storage.
+Only a successful service write response or a matching stored receipt clears the
+marker. Do not clear browser data to force a retry of an unresolved submission;
+if no receipt appears, reconcile the original request with the service first.
 If readback also fails or evidence cannot be verified, the outcome stays
 uncertain. Reopen the task to inspect its authoritative state before taking
 further action; do not assume the save failed. Existing one-shot storage

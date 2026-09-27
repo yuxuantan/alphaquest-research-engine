@@ -161,6 +161,55 @@ export function FactoryStructuredReview({
   return null;
 }
 
+function deliveryKey(task: CodexTaskRecord): string {
+  return `alphaquest.review-delivery.pending.v1:${task.task_id}`;
+}
+
+function deliveryPending(task: CodexTaskRecord): boolean {
+  try { return localStorage.getItem(deliveryKey(task)) !== null; }
+  catch { return true; }
+}
+
+function usePendingReview(task: CodexTaskRecord) {
+  const [uncertain, setUncertain] = useState(() => deliveryPending(task));
+  useEffect(() => {
+    const observePending = () => { if (deliveryPending(task)) setUncertain(true); };
+    observePending();
+    window.addEventListener("storage", observePending);
+    return () => window.removeEventListener("storage", observePending);
+  }, [task.task_id]);
+  return [uncertain, setUncertain] as const;
+}
+
+function beginReviewSubmission(task: CodexTaskRecord, setUncertain: (value: boolean) => void, setError: (value: string) => void): boolean {
+  if (deliveryPending(task)) {
+    setUncertain(true);
+    setError("An earlier submission has an unresolved outcome. Check the saved review before taking further action.");
+    return false;
+  }
+  try {
+    // Only a delivery marker, never an approval or a copy of the human decision.
+    // Write before sending, so remounting/reloading cannot forget an in-flight POST.
+    localStorage.setItem(deliveryKey(task), JSON.stringify({
+      task_id: task.task_id,
+      proposal_id: task.proposal_validation?.proposal_id,
+      payload_sha256: task.proposal_validation?.payload_sha256,
+      validation_sha256: task.proposal_validation?.validation_sha256,
+    }));
+    return true;
+  } catch {
+    setUncertain(true);
+    setError("Could not retain the submission state in this browser. No decision was sent. Restore browser storage before submitting a review.");
+    return false;
+  }
+}
+
+function markReviewSaved(task: CodexTaskRecord, setSaved: (value: boolean) => void) {
+  setSaved(true);
+  // Failure to remove a marker can only retain a lock; it cannot grant authority.
+  try { localStorage.removeItem(deliveryKey(task)); } catch { /* Remain conservative. */ }
+}
+
 async function recoverReviewSubmission(
   task: CodexTaskRecord,
   reason: unknown,
@@ -178,14 +227,20 @@ async function recoverReviewSubmission(
     const result = await api.factoryTask(task.task_id);
     const current = "task" in result ? result.task : result;
     if (current.task_id !== task.task_id ||
+      current.proposal_validation?.proposal_id !== task.proposal_validation?.proposal_id ||
+      current.proposal_validation?.validation_sha256 !== task.proposal_validation?.validation_sha256 ||
       current.proposal_validation?.payload_sha256 !== task.proposal_validation?.payload_sha256 ||
       current.proposal_validation?.status !== "VALIDATED_NOT_APPLIED") return;
     const receipt = current.structured_review;
     const expectedStatus = task.task_type === "SOURCE_RESEARCH" ? "ACCEPTED_FOR_HYPOTHESIS"
       : task.task_type === "HYPOTHESIS_PROPOSAL" ? "ACCEPTED_FOR_MECHANICS" : "ACCEPTED_FOR_ENGINEERING_HANDOFF";
     if (receipt?.status === expectedStatus &&
+      typeof task.proposal_validation?.proposal_id === "string" &&
+      typeof task.proposal_validation?.validation_sha256 === "string" &&
+      receipt.proposal_id === task.proposal_validation.proposal_id &&
+      receipt.proposal_validation_sha256 === task.proposal_validation.validation_sha256 &&
       receipt.proposal_payload_sha256 === task.proposal_validation?.payload_sha256) {
-      setSaved(true);
+      markReviewSaved(task, setSaved);
       setError("");
       try {
         await onComplete("A stored review was found for this proposal. Read its receipt before continuing.");
@@ -218,9 +273,12 @@ function ReviewRecovery({ task, onComplete, disabled, setSaved, setUncertain, se
         onComplete, setSaved, setUncertain, setError);
     } finally { setChecking(false); }
   }
-  return <Button type="button" variant="secondary" disabled={disabled || checking} onClick={() => void check()}>
-    {checking ? "CHECKING SAVED REVIEW…" : "CHECK SAVED REVIEW"}
-  </Button>;
+  return <>
+    <Notice tone="warning">A prior review submission needs confirmation from the service. Check the stored record; reopening this form does not authorize another submission.</Notice>
+    <Button type="button" variant="secondary" disabled={disabled || checking} onClick={() => void check()}>
+      {checking ? "CHECKING SAVED REVIEW…" : "CHECK SAVED REVIEW"}
+    </Button>
+  </>;
 }
 
 function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewProps) {
@@ -235,7 +293,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
   const [claimNotes, setClaimNotes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [uncertain, setUncertain] = useState(false);
+  const [uncertain, setUncertain] = usePendingReview(task);
   const [error, setError] = useState("");
   useEffect(() => {
     setMetadataFields([]);
@@ -257,6 +315,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
   );
   async function submit() {
     if (!complete || !retractionStatus || busy || saved || uncertain || disabled) return;
+    if (!beginReviewSubmission(task, setUncertain, setError)) return;
     setBusy(true);
     setError("");
     try {
@@ -278,7 +337,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
           notes: claimNotes[claim.claim_id].trim(),
         })),
       });
-      setSaved(true);
+      markReviewSaved(task, setSaved);
       try {
         await onComplete("Source evidence accepted as a separate human-verified artifact. The draft was not changed.");
       } catch {
@@ -363,13 +422,14 @@ function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: Revie
   const [gates, setGates] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [uncertain, setUncertain] = useState(false);
+  const [uncertain, setUncertain] = usePendingReview(task);
   const [error, setError] = useState("");
   const gateNames = ["objective_alignment", "source_claim_alignment", "falsifiability", "information_timeline_no_lookahead", "execution_cost_awareness"];
   useEffect(() => { setFields([]); setGates([]); setError(""); }, [task.task_id]);
   const complete = reviewer.trim() && notes.trim() && fields.length === HYPOTHESIS_FIELDS.length && gates.length === gateNames.length;
   async function submit() {
     if (!complete || busy || saved || uncertain || disabled) return;
+    if (!beginReviewSubmission(task, setUncertain, setError)) return;
     setBusy(true);
     setError("");
     try {
@@ -378,7 +438,7 @@ function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: Revie
         objective_alignment: "PASS", source_claim_alignment: "PASS", falsifiability: "PASS",
         information_timeline_no_lookahead: "PASS", execution_cost_awareness: "PASS",
       });
-      setSaved(true);
+      markReviewSaved(task, setSaved);
       try {
         await onComplete("The complete hypothesis was accepted as a hash-bound reviewed artifact. No mechanics were approved.");
       } catch {
@@ -414,13 +474,14 @@ function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete }
   const [gates, setGates] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [uncertain, setUncertain] = useState(false);
+  const [uncertain, setUncertain] = usePendingReview(task);
   const [error, setError] = useState("");
   const gateNames = ["hypothesis_alignment", "unsupported_scope_confirmed", "causal_timeline_reviewed"];
   useEffect(() => { setFields([]); setGates([]); setError(""); }, [task.task_id]);
   const complete = reviewer.trim() && notes.trim() && fields.length === MECHANICS_FIELDS.length && gates.length === gateNames.length;
   async function submit() {
     if (!complete || busy || saved || uncertain || disabled) return;
+    if (!beginReviewSubmission(task, setUncertain, setError)) return;
     setBusy(true);
     setError("");
     try {
@@ -428,7 +489,7 @@ function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete }
         reviewer: reviewer.trim(), notes: notes.trim(), reviewed_fields: fields,
         hypothesis_alignment: "PASS", unsupported_scope_confirmed: "PASS", causal_timeline_reviewed: "PASS",
       });
-      setSaved(true);
+      markReviewSaved(task, setSaved);
       try {
         await onComplete("Unsupported mechanics intent accepted for a proposal-only engineering handoff. No code was written or certified.");
       } catch {

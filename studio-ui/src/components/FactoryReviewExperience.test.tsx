@@ -14,7 +14,7 @@ vi.mock("../api", () => ({ api: {
 
 const task: CodexTaskRecord = {
   task_id: "hypothesis_task", task_type: "HYPOTHESIS_PROPOSAL", state: "PROPOSAL_READY",
-  proposal_validation: { status: "VALIDATED_NOT_APPLIED", payload_sha256: "a".repeat(64) },
+  proposal_validation: { status: "VALIDATED_NOT_APPLIED", payload_sha256: "a".repeat(64), proposal_id: "proposal-1", validation_sha256: "d".repeat(64) },
   proposal: { causal_mechanism: "A delayed inventory response after public information.",
     unresolved_questions: ["Does the effect survive realistic costs?"], confounders: ["Volatility regime"] },
 };
@@ -22,9 +22,9 @@ function checkAll() {
   for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
 }
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); });
 
-beforeEach(() => { vi.resetAllMocks(); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); });
+beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); });
 
 describe("structured review experience", () => {
   it("puts exact values beside acknowledgements and exposes unresolved evidence", () => {
@@ -67,7 +67,7 @@ describe("structured review experience", () => {
       mutation.mockRejectedValueOnce(new Error("Response lost after commit"));
       const status = taskType === "SOURCE_RESEARCH" ? "ACCEPTED_FOR_HYPOTHESIS" : taskType === "MECHANICS_INTENT" ? "ACCEPTED_FOR_ENGINEERING_HANDOFF" : "ACCEPTED_FOR_MECHANICS";
       mocks.factoryTask.mockResolvedValue({ task: { ...currentTask, structured_review: {
-        status, proposal_payload_sha256: "a".repeat(64), artifact_sha256: "c".repeat(64),
+        status, proposal_id: "proposal-1", proposal_validation_sha256: "d".repeat(64), proposal_payload_sha256: "a".repeat(64), artifact_sha256: "c".repeat(64),
       } } });
       const onComplete = vi.fn().mockResolvedValue(undefined);
       render(<FactoryStructuredReview task={currentTask} reviewer="Researcher" notes="Checked the evidence" onComplete={onComplete} />);
@@ -91,7 +91,7 @@ describe("structured review experience", () => {
   );
 
   it.each(["SOURCE_RESEARCH", "HYPOTHESIS_PROPOSAL", "MECHANICS_INTENT"])(
-    "keeps an empty readback locked while a %s write is still in flight",
+    "keeps an in-flight %s review locked after reopening the form",
     async (taskType) => {
       const currentTask = { ...task, task_type: taskType, proposal: taskType === "SOURCE_RESEARCH"
         ? { claims: [{ claim_id: "claim", support: "DIRECT", statement: "Captured evidence supports the source claim.", source_location: "Page 1" }] }
@@ -103,9 +103,10 @@ describe("structured review experience", () => {
       const pendingCommit = new Promise<void>((resolve) => { finishCommit = resolve; }).then(() => { committed = true; });
       const status = taskType === "SOURCE_RESEARCH" ? "ACCEPTED_FOR_HYPOTHESIS" : taskType === "MECHANICS_INTENT" ? "ACCEPTED_FOR_ENGINEERING_HANDOFF" : "ACCEPTED_FOR_MECHANICS";
       mocks.factoryTask.mockImplementation(async () => ({ task: { ...currentTask, structured_review: committed
-        ? { status, proposal_payload_sha256: "a".repeat(64), artifact_sha256: "c".repeat(64) } : null } }));
+        ? { status, proposal_id: "proposal-1", proposal_validation_sha256: "d".repeat(64), proposal_payload_sha256: "a".repeat(64), artifact_sha256: "c".repeat(64) } : null } }));
       const onComplete = vi.fn().mockResolvedValue(undefined);
-      render(<FactoryStructuredReview task={currentTask} reviewer="Researcher" notes="Checked" onComplete={onComplete} />);
+      const props = { task: currentTask, reviewer: "Researcher", notes: "Checked", onComplete };
+      const view = render(<FactoryStructuredReview {...props} />);
       checkAll();
       if (taskType === "SOURCE_RESEARCH") {
         for (const [label, value] of [
@@ -114,10 +115,26 @@ describe("structured review experience", () => {
           ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
-      const submit = screen.getByRole("button");
+      let submit = screen.getByRole("button");
       fireEvent.click(submit);
       await waitFor(() => expect(mocks.factoryTask).toHaveBeenCalledTimes(1));
       await screen.findByText(/No stored review is visible yet/);
+      expect(submit).toBeDisabled();
+      fireEvent.click(submit);
+      expect(mutation).toHaveBeenCalledTimes(1);
+      view.unmount();
+      render(<FactoryStructuredReview {...props} />);
+      checkAll();
+      if (taskType === "SOURCE_RESEARCH") {
+        for (const [label, value] of [
+          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked metadata"],
+          ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
+          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
+        ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      }
+      const acceptLabel = taskType === "SOURCE_RESEARCH" ? "ACCEPT REVIEWED SOURCE EVIDENCE"
+        : taskType === "HYPOTHESIS_PROPOSAL" ? "ACCEPT REVIEWED HYPOTHESIS" : "ACCEPT FOR ENGINEERING HANDOFF";
+      submit = screen.getByRole("button", { name: acceptLabel });
       expect(submit).toBeDisabled();
       fireEvent.click(submit);
       expect(mutation).toHaveBeenCalledTimes(1);
@@ -140,6 +157,30 @@ describe("structured review experience", () => {
     expect(await screen.findByText(/could not confirm whether the review was saved/i)).toBeVisible();
     expect(screen.getByRole("button", { name: "ACCEPT REVIEWED HYPOTHESIS" })).toBeDisabled();
     expect(screen.queryByText("Review saved. Read the receipt before continuing.")).not.toBeInTheDocument();
+  });
+
+  it.each(["proposal_id", "proposal_validation_sha256"])("keeps recovery locked when receipt %s differs", async (field) => {
+    mocks.hypothesis.mockRejectedValueOnce(new Error("Connection lost"));
+    mocks.factoryTask.mockResolvedValue({ task: { ...task, structured_review: {
+      status: "ACCEPTED_FOR_MECHANICS", proposal_id: "proposal-1", proposal_validation_sha256: "d".repeat(64),
+      proposal_payload_sha256: "a".repeat(64), [field]: "wrong-identity",
+    } } });
+    const onComplete = vi.fn();
+    render(<FactoryStructuredReview task={task} reviewer="Researcher" notes="Checked" onComplete={onComplete} />);
+    checkAll();
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(mocks.factoryTask).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "ACCEPT REVIEWED HYPOTHESIS" })).toBeDisabled();
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("does not send a decision if browser delivery state cannot be retained", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Storage unavailable"); });
+    render(<FactoryStructuredReview task={task} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
+    checkAll();
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByText(/could not retain the submission state/i)).toBeVisible();
+    expect(mocks.hypothesis).not.toHaveBeenCalled();
   });
 
   it("keeps engineering intent restricted to a handoff and requires every contract field", async () => {
