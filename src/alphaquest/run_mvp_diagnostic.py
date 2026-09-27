@@ -7,24 +7,31 @@ creates or approves any research-governance decision.
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
+import pyarrow.parquet as pq
+from pydantic import TypeAdapter
 import yaml
 
+from alphaquest.backtest.contracts import ExecutionAssumptions
 from alphaquest.authoring.models import (
     CERTIFIED_RECIPE_BINDINGS,
     DatasetManifestV1,
     ExecutionSettingsV1,
     ModuleBindingV1,
     SequentialVariantLineageV1,
+    Sha256,
     _binding_structure,
 )
+from alphaquest.dashboard.validation_app import load_manual_reviews, trade_id_key
+from alphaquest.prop.profiles import resolve_prop_profile
 from alphaquest.research.campaign_stages import (
     ACCEPTANCE_STAGE,
     PRE_ACCEPTANCE_STAGE_ORDER,
@@ -33,6 +40,7 @@ from alphaquest.research.campaign_stages import (
     _criteria_for_stage,
     _error_stage,
     _first_failed_stage,
+    _merged_section,
     _research_verdict,
     _scientific_validity_verdict,
     _skipped_stage,
@@ -40,6 +48,7 @@ from alphaquest.research.campaign_stages import (
     canonicalize_campaign_config,
     evaluate_criteria,
 )
+from alphaquest.research.core_grid import _expected_combination_count
 from alphaquest.research.preflight import run_preflight
 from alphaquest.research.schemas import (
     validate_campaign_config_contract,
@@ -51,22 +60,29 @@ from alphaquest.research.storage import (
     resolve_campaign_context,
     resolve_recorded_path,
 )
-from alphaquest.prop.profiles import resolve_prop_profile
-from alphaquest.backtest.contracts import ExecutionAssumptions
-from alphaquest.dashboard.validation_app import load_manual_reviews, trade_id_key
 from alphaquest.studio.approvals import MechanicsApprovalService
 from alphaquest.utils.config import strategy_mechanic, validate_campaign_run_root
 from alphaquest.utils.hashing import file_sha256
 from alphaquest.validation.promotion_gate import (
     APPROVAL_SCHEMA,
     REQUIRED_SAMPLE_CATEGORIES,
-    _validate_approval,
+    inspect_validation_gate,
+)
+from alphaquest.validation.schema import (
+    BAR_WINDOWS_FILENAME,
+    CONDITION_SNAPSHOTS_FILENAME,
+    EVENT_TRANSITIONS_FILENAME,
+    EXIT_AUDITS_FILENAME,
+    TICK_WINDOWS_FILENAME,
+    TRADES_FILENAME,
+    VALIDATION_CHECKS_FILENAME,
 )
 from alphaquest.version import ENGINE_CONTRACT_VERSION
 
 
 SCHEMA = "alphaquest.mvp-diagnostic-index/v1"
 DIAGNOSTIC_REASON = f"mandatory {ACCEPTANCE_STAGE} was omitted"
+_SHA256_ADAPTER = TypeAdapter(Sha256)
 _IDENTITY_FIELDS = (
     "run_uid",
     "campaign_id",
@@ -142,6 +158,15 @@ _DATA_BEARING_STAGES = {
     "simulated_incubation_core",
 }
 _UNVERIFIED_DATA_QUALITY_FIELDS = {"prepare_data_duration_seconds", "prepared_data_cache"}
+_MECHANICS_ARTIFACT_FILES = {
+    "trades": TRADES_FILENAME,
+    "condition_snapshots": CONDITION_SNAPSHOTS_FILENAME,
+    "bar_windows": BAR_WINDOWS_FILENAME,
+    "tick_windows": TICK_WINDOWS_FILENAME,
+    "event_transitions": EVENT_TRANSITIONS_FILENAME,
+    "exit_audits": EXIT_AUDITS_FILENAME,
+    "validation_checks": VALIDATION_CHECKS_FILENAME,
+}
 _CAMPAIGN_DOCUMENT_KEYS = {
     "campaign_id",
     "title",
@@ -248,8 +273,26 @@ def _require_exact_keys(value: Any, expected: set[str], label: str) -> dict[str,
     return value
 
 
+def _require_sha256(value: Any, label: str) -> str:
+    try:
+        return _SHA256_ADAPTER.validate_python(value)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a lowercase SHA-256") from exc
+
+
+def _require_iso_date(value: Any, label: str) -> str:
+    text = _require_nonempty_string(value, label)
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a valid YYYY-MM-DD date") from exc
+    _require_equal(text, parsed.isoformat(), label)
+    return text
+
+
 def _validate_campaign_research_contract(campaign: dict[str, Any]) -> None:
     _require_exact_keys(campaign, _CAMPAIGN_DOCUMENT_KEYS, "campaign document")
+    _require_iso_date(campaign.get("created_at"), "campaign created_at")
     sources = campaign.get("sources")
     if not isinstance(sources, list) or not sources:
         raise ValueError("campaign sources must be a non-empty list")
@@ -611,6 +654,8 @@ def _authoring_binding(
     _require_equal(authoring.get("draft_schema"), "alphaquest.campaign-draft/v1", "authoring draft schema")
     _require_equal(authoring.get("campaign_id"), source_config.get("campaign_id"), "authoring campaign")
     _require_equal(authoring.get("authoring_lane"), "certified_recipe", "authoring lane")
+    _require_iso_date(authoring.get("created_at"), "authoring created_at")
+    _require_sha256(authoring.get("draft_sha256"), "authoring draft_sha256")
     recipe = _require_nonempty_string(authoring.get("certified_recipe"), "authoring certified_recipe")
     if recipe not in CERTIFIED_RECIPE_BINDINGS:
         raise ValueError(f"unsupported certified recipe: {recipe}")
@@ -689,6 +734,7 @@ def _authoring_binding(
         "campaign governance contract",
     )
     _require_equal(campaign.get("event_strategies"), {}, "campaign event strategy map")
+    _require_equal(campaign.get("event_strategy"), None, "certified recipe campaign event strategy")
     _require_equal(
         campaign.get("rescue_policy"),
         {"allowed": False, "max_rescues_per_failed_variant": 1},
@@ -704,6 +750,21 @@ def _authoring_binding(
     _require_equal(strategy_spec.get("campaign_id"), source_config.get("campaign_id"), "strategy spec identity")
     _require_equal(strategy_spec.get("authoring_lane"), "certified_recipe", "strategy spec authoring lane")
     _require_equal(strategy_spec.get("certified_recipe"), recipe, "strategy spec certified recipe")
+    _require_sha256(strategy_spec.get("draft_sha256"), "strategy spec draft_sha256")
+    _require_equal(strategy_spec.get("event_strategy"), None, "certified recipe strategy event strategy")
+    _require_equal(strategy_spec.get("strategy_certification"), None, "certified recipe strategy certification")
+    _require_equal(
+        strategy_spec.get("variant_strategy_certifications"),
+        {},
+        "certified recipe variant strategy certifications",
+    )
+    _require_equal(authoring.get("event_strategy"), None, "certified recipe authoring event strategy")
+    _require_equal(authoring.get("strategy_certification"), None, "certified recipe authoring certification")
+    _require_equal(
+        authoring.get("variant_strategy_certifications"),
+        {},
+        "certified recipe authoring variant certifications",
+    )
     _require_equal(strategy_spec.get("dataset"), dataset_manifest, "strategy spec dataset")
     execution = _validate_authoring_execution(strategy_spec.get("execution"), source_config)
     for field in ("research_objectives", "research_objectives_sha256", "event_strategy"):
@@ -712,7 +773,6 @@ def _authoring_binding(
     for field in ("research_objectives_sha256", "event_strategy"):
         _require_equal(authoring.get(field), source_config.get(field), f"authoring {field}")
     _require_equal(authoring.get("draft_sha256"), strategy_spec.get("draft_sha256"), "authoring draft hash")
-    _require_nonempty_string(authoring.get("draft_sha256"), "authoring draft_sha256")
     _require_equal(authoring.get("created_at"), campaign.get("created_at"), "authoring created_at")
     _require_equal(authoring.get("variant_protocol"), campaign.get("variant_protocol"), "authoring variant protocol")
     _require_equal(
@@ -873,12 +933,119 @@ def _preflight_binding(
     }
 
 
+def _timeframe_minutes(value: Any) -> float:
+    text = _require_nonempty_string(value, "mechanics metadata timeframe")
+    unit = text[-1]
+    try:
+        amount = float(text[:-1])
+    except ValueError as exc:
+        raise ValueError("mechanics metadata timeframe is invalid") from exc
+    multiplier = {"m": 1.0, "h": 60.0, "d": 1440.0}.get(unit)
+    if multiplier is None or amount <= 0:
+        raise ValueError("mechanics metadata timeframe is invalid")
+    return amount * multiplier
+
+
+def _mechanics_evidence_contract(
+    *,
+    source_config: dict[str, Any],
+    evidence_dir: Path,
+    technical_gate: dict[str, Any],
+    project_root: Path,
+) -> dict[str, Any]:
+    metadata = _read_json(evidence_dir / "metadata.json", "mechanics evidence metadata")
+    _require_equal(metadata.get("artifact_files"), _MECHANICS_ARTIFACT_FILES, "mechanics artifact map")
+    counts = metadata.get("record_counts")
+    if not isinstance(counts, dict):
+        raise ValueError("mechanics metadata record_counts must be a mapping")
+    _require_equal(set(counts), set(_MECHANICS_ARTIFACT_FILES), "mechanics record-count identities")
+    observed_counts: dict[str, int] = {}
+    for artifact_id, filename in _MECHANICS_ARTIFACT_FILES.items():
+        path = evidence_dir / filename
+        if not path.is_file():
+            raise ValueError(f"mechanics declared artifact is missing: {filename}")
+        try:
+            observed = int(pq.ParquetFile(path).metadata.num_rows)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"mechanics declared artifact could not be read: {filename}: {exc}") from exc
+        value = counts.get(artifact_id)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"mechanics record count must be a non-negative integer: {artifact_id}")
+        _require_equal(value, observed, f"mechanics record count {artifact_id}")
+        observed_counts[artifact_id] = observed
+
+    data = source_config.get("data") or {}
+    core = source_config.get("core") or {}
+    apex = source_config.get("apex_rules") or {}
+    execution = ExecutionAssumptions.from_core_config(core)
+    expected = {
+        "campaign_id": source_config.get("campaign_id"),
+        "strategy_id": source_config.get("strategy_name"),
+        "variant_id": source_config.get("variant_id"),
+        "symbol": source_config.get("symbol") or data.get("symbol"),
+        "stage": "core",
+        "timezone": data.get("exchange_timezone"),
+        "tick_size": execution.tick_size,
+        "tick_value": execution.tick_value,
+        "timeframe": source_config.get("timeframe") or data.get("source_timeframe"),
+        "timeframe_minutes": _timeframe_minutes(source_config.get("timeframe") or data.get("source_timeframe")),
+        "config_hash": technical_gate.get("config_hash"),
+        "input_data_hash": technical_gate.get("input_data_hash"),
+        "strategy_implementation_version": technical_gate.get("strategy_implementation_version"),
+        "strategy_implementation_sha256": technical_gate.get("strategy_implementation_sha256"),
+        "strategy_certification_manifest_sha256": technical_gate.get("strategy_certification_manifest_sha256"),
+        "validation_lane": technical_gate.get("lane"),
+        "source_data_type": data.get("source"),
+        "source_trade_count": observed_counts["trades"],
+        "commission_per_contract": execution.commission_per_contract,
+        "slippage_ticks": execution.slippage_ticks,
+        "point_value": execution.point_value,
+        "forced_flatten_time": apex.get("force_flatten_time"),
+        "schema_version": technical_gate.get("validation_schema_version"),
+    }
+    for field, value in expected.items():
+        _require_equal(metadata.get(field), value, f"mechanics metadata {field}")
+    _require_nonempty_string(metadata.get("run_id"), "mechanics metadata run_id")
+    _require_nonempty_string(metadata.get("notes"), "mechanics metadata notes")
+    reviewed_at = _require_nonempty_string(metadata.get("created_at_utc"), "mechanics metadata created_at_utc")
+    try:
+        timestamp = datetime.fromisoformat(reviewed_at)
+    except ValueError as exc:
+        raise ValueError("mechanics metadata created_at_utc must be an ISO timestamp") from exc
+    if timestamp.utcoffset() is None:
+        raise ValueError("mechanics metadata created_at_utc must be timezone-aware")
+    gate = (source_config.get("research_metadata") or {}).get("validation_gate") or {}
+    requested_samples = gate.get("manual_review_random_sample_size")
+    declared_minimum_samples = gate.get("minimum_trade_samples")
+    minimum_samples = metadata.get("minimum_trade_samples")
+    if isinstance(minimum_samples, bool) or not isinstance(minimum_samples, int) or minimum_samples < 1:
+        raise ValueError("mechanics metadata minimum_trade_samples must be a positive integer")
+    _require_equal(minimum_samples, declared_minimum_samples, "mechanics metadata minimum trade samples")
+    if (
+        isinstance(requested_samples, bool)
+        or not isinstance(requested_samples, int)
+        or minimum_samples < requested_samples
+    ):
+        raise ValueError("mechanics minimum trade samples cannot be below the manual sample size")
+    source_value = data.get("raw_csv" if data.get("source") == "csv" else "raw_parquet")
+    _require_equal(
+        _resolve_reference(metadata.get("source_data_path"), project_root, "mechanics metadata source_data_path"),
+        _resolve_reference(source_value, project_root, "configured mechanics source data"),
+        "mechanics metadata source data path",
+    )
+    return {
+        "metadata": metadata,
+        "observed_record_counts": observed_counts,
+    }
+
+
 def _mechanics_bindings(
     source_config: dict[str, Any],
     source_path: Path,
     summary: dict[str, Any],
     manifest: dict[str, Any],
     project_root: Path,
+    canonical_input_hash: str,
 ) -> dict[str, Any]:
     summary_gate = summary.get("mechanics_validation_gate")
     manifest_gate = manifest.get("mechanics_validation_gate")
@@ -921,19 +1088,29 @@ def _mechanics_bindings(
     evidence_files = sorted(path for path in evidence_dir.iterdir() if path.is_file())
     if not evidence_files:
         raise ValueError(f"mechanics evidence directory contains no files: {evidence_dir}")
-    approval = _read_json(approval_path, "mechanics approval")
-    approval_errors: list[str] = []
-    _validate_approval(
-        approval,
-        lane,
-        str(summary.get("source_config_hash") or ""),
-        str(summary_gate.get("input_data_hash") or ""),
-        {"schema_version": summary_gate.get("validation_schema_version")},
-        None,
-        approval_errors,
+    technical_gate = inspect_validation_gate(
+        source_config,
+        source_path,
+        precomputed_input_hash=canonical_input_hash,
     )
-    if approval_errors:
-        raise ValueError("mechanics approval contract failed: " + "; ".join(approval_errors))
+    if technical_gate.get("errors"):
+        raise ValueError("current mechanics technical inspection failed: " + "; ".join(technical_gate["errors"]))
+    _require_equal(set(technical_gate), set(summary_gate), "recorded/current mechanics gate fields")
+    for field in ("config_path", "evidence_dir", "approval_path"):
+        _require_equal(
+            _resolve_reference(technical_gate.get(field), project_root, f"current mechanics {field}"),
+            _resolve_reference(summary_gate.get(field), project_root, f"recorded mechanics {field}"),
+            f"recorded/current mechanics {field}",
+        )
+    for field in set(technical_gate) - {"config_path", "evidence_dir", "approval_path"}:
+        _require_equal(technical_gate.get(field), summary_gate.get(field), f"recorded/current mechanics {field}")
+    evidence_contract = _mechanics_evidence_contract(
+        source_config=source_config,
+        evidence_dir=evidence_dir,
+        technical_gate=technical_gate,
+        project_root=project_root,
+    )
+    approval = _read_json(approval_path, "mechanics approval")
     _require_equal(approval.get("schema"), APPROVAL_SCHEMA, "mechanics approval schema")
     _require_equal(
         approval.get("review_scope"),
@@ -971,7 +1148,7 @@ def _mechanics_bindings(
         if gate.get(gate_field) is not None:
             _require_equal(approval.get(approval_field), gate.get(gate_field), f"mechanics approval {approval_field}")
     _validate_approval_sampling(approval, evidence_dir)
-    plan = MechanicsApprovalService().plan(source_path, _gate_report=summary_gate)
+    plan = MechanicsApprovalService().plan(source_path)
     plan_document = plan.model_dump(mode="json")
     _require_equal(plan_document.get("config_path"), str(source_path.resolve()), "mechanics planner config path")
     if plan.blockers:
@@ -1017,6 +1194,9 @@ def _mechanics_bindings(
         "gate_currently_revalidated": False,
         "human_authority_verified": False,
         "evidence_inventory_only": False,
+        "technical_gate_inspector_validated": True,
+        "technical_gate_report": technical_gate,
+        "retained_evidence_contract": evidence_contract,
         "planner_contract_validated": True,
         "planner": plan_document,
         "approval_record": {
@@ -1511,6 +1691,139 @@ def _validate_execution_assumptions(
             raise ValueError(f"{stage} lacks required execution-assumption evidence: {sorted(required - set(found))}")
 
 
+def _validate_selected_params(selected: Any, parameters: Any, label: str) -> dict[str, Any]:
+    if not isinstance(selected, dict):
+        raise ValueError(f"{label} must be a mapping")
+    if not selected:
+        return {}
+    if not isinstance(parameters, dict):
+        raise ValueError(f"{label} frozen parameters must be a mapping")
+    _require_equal(set(selected), set(parameters), f"{label} identities")
+    for name, value in selected.items():
+        values = parameters.get(name)
+        if not isinstance(values, list) or value not in values:
+            raise ValueError(f"{label} value is outside the frozen grid: {name}")
+    return deepcopy(selected)
+
+
+def _selected_params_from_csv(
+    path: Path,
+    column: str,
+    parameters: dict[str, Any],
+    label: str,
+) -> list[dict[str, Any]]:
+    if not path.is_file():
+        raise ValueError(f"missing required {label}: {path}")
+    with path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+        if not rows and not reader.fieldnames:
+            return []
+        if column not in (reader.fieldnames or []):
+            raise ValueError(f"{label} lacks {column}")
+    selected_rows: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        raw = str(row.get(column) or "").strip()
+        if not raw:
+            selected: Any = {}
+        else:
+            try:
+                selected = ast.literal_eval(raw)
+            except (SyntaxError, ValueError) as exc:
+                raise ValueError(f"{label} row {index} has invalid {column}") from exc
+        selected_rows.append(_validate_selected_params(selected, parameters, f"{label} row {index} {column}"))
+    return selected_rows
+
+
+def _validate_stage_execution_config(
+    *,
+    stage: str,
+    stage_cfg: dict[str, Any],
+    canonical_summary: dict[str, Any],
+    artifact_paths: list[Path],
+    effective_config: dict[str, Any],
+) -> dict[str, Any]:
+    if stage == "limited_core_grid_test":
+        grid = _merged_section(effective_config, "core_grid", stage_cfg)
+        parameters = grid.get("parameters") or {}
+        _require_equal(
+            canonical_summary.get("parameter_mode"),
+            "fixed_config" if not parameters else "predeclared_optimization",
+            "limited core canonical parameter mode",
+        )
+        _require_equal(
+            canonical_summary.get("parameter_value_counts"),
+            {name: len(values) for name, values in parameters.items()},
+            "limited core canonical parameter value counts",
+        )
+        combinations = _expected_combination_count(parameters)
+        _require_equal(
+            canonical_summary.get("expected_combinations"),
+            combinations,
+            "limited core canonical expected combinations",
+        )
+        _require_equal(
+            canonical_summary.get("total_combinations_tested"),
+            combinations,
+            "limited core canonical tested combinations",
+        )
+        fixed = canonical_summary.get("fixed_config_core")
+        if not isinstance(fixed, dict):
+            raise ValueError("limited core canonical fixed_config_core must be a mapping")
+        _require_equal(fixed.get("purpose"), "fixed_config_mechanics_cross_check", "limited core fixed purpose")
+        _require_equal(
+            fixed.get("parameter_source"),
+            "strategy section in effective config",
+            "limited core fixed parameter source",
+        )
+        _require_equal(fixed.get("uses_grid_selected_params"), False, "limited core fixed grid-selected flag")
+        _require_equal(fixed.get("core"), effective_config.get("core"), "limited core fixed core snapshot")
+        _require_equal(fixed.get("strategy"), effective_config.get("strategy"), "limited core fixed strategy snapshot")
+        subordinate_paths = [path for path in artifact_paths if path.name == "fixed_config_core_metrics.json"]
+        _require_equal(len(subordinate_paths), 1, "limited core fixed metrics artifact count")
+        subordinate = _read_json(subordinate_paths[0], "limited core fixed metrics")
+        _require_equal(subordinate, fixed, "limited core complete fixed metrics projection")
+        return {
+            "fixed_config_core": {
+                "core": deepcopy(fixed["core"]),
+                "strategy": deepcopy(fixed["strategy"]),
+            },
+            "grid": {
+                "parameter_mode": canonical_summary["parameter_mode"],
+                "parameter_value_counts": deepcopy(canonical_summary["parameter_value_counts"]),
+                "expected_combinations": combinations,
+            },
+        }
+    if stage == "walk_forward_analysis":
+        wfa = _merged_section(effective_config, "wfa", stage_cfg)
+        parameters = wfa.get("parameters") or {}
+        _require_equal(
+            canonical_summary.get("parameter_mode"),
+            "fixed_config" if not parameters else "predeclared_optimization",
+            "WFA canonical parameter mode",
+        )
+        incubation = _validate_selected_params(
+            canonical_summary.get("incubation_selected_params"),
+            parameters,
+            "WFA incubation selected parameters",
+        )
+        results_paths = [path for path in artifact_paths if path.name == "wfa_results.csv"]
+        trade_paths = [path for path in artifact_paths if path.name == "wfa_oos_trade_log.csv"]
+        _require_equal(len(results_paths), 1, "WFA results artifact count")
+        _require_equal(len(trade_paths), 1, "WFA trade-log artifact count")
+        window_selections = _selected_params_from_csv(results_paths[0], "selected_params", parameters, "WFA results")
+        trade_selections = _selected_params_from_csv(
+            trade_paths[0], "wfa_selected_params", parameters, "WFA OOS trade log"
+        )
+        return {
+            "wfa_grid": deepcopy(parameters),
+            "incubation_selected_params": incubation,
+            "window_selected_params": window_selections,
+            "trade_selected_params": trade_selections,
+        }
+    return {}
+
+
 def _completed_stage_projection(
     item: dict[str, Any],
     *,
@@ -1530,18 +1843,12 @@ def _completed_stage_projection(
         projected["data_quality"] = quality
         omitted.extend(f"data_quality.{field}" for field in quality_omitted)
     if stage == "limited_core_grid_test":
-        grid = deepcopy(effective_config.get("core_grid") or {})
-        grid.update(deepcopy(stage_cfg))
+        grid = _merged_section(effective_config, "core_grid", stage_cfg)
         _require_equal(item.get("core_grid_parameters"), grid.get("parameters") or {}, "limited core grid parameters")
     if stage == "limited_monkey_test":
-        parameters = (effective_config.get("core_grid") or {}).get("parameters") or {}
-        selected = item.get("selected_core_params")
-        if not isinstance(selected, dict):
-            raise ValueError("limited monkey selected_core_params must be a mapping")
-        _require_equal(set(selected), set(parameters), "limited monkey selected parameter identities")
-        for name, value in selected.items():
-            if value not in parameters[name]:
-                raise ValueError(f"limited monkey selected value is outside the frozen grid: {name}")
+        limited_core_cfg = (effective_config.get("campaign_tests") or {}).get("limited_core_grid_test") or {}
+        parameters = _merged_section(effective_config, "core_grid", limited_core_cfg).get("parameters") or {}
+        _validate_selected_params(item.get("selected_core_params"), parameters, "limited monkey selected parameters")
     return projected, omitted
 
 
@@ -1573,6 +1880,7 @@ def _stage_bindings(
         criteria_contract = _criteria_for_stage(stage, stage_cfg)
         projected_item = deepcopy(item)
         omitted_unverified_fields: list[str] = []
+        validated_execution_config_snapshots: dict[str, Any] = {}
         if status == "skipped":
             _require_equal(stage_cfg.get("enabled"), False, f"{stage} disabled stage config")
             expected_skipped = _annotate_stage_decisions(_skipped_stage(stage, "disabled"))
@@ -1675,6 +1983,13 @@ def _stage_bindings(
                     artifact_paths,
                     execution_assumptions,
                 )
+                validated_execution_config_snapshots = _validate_stage_execution_config(
+                    stage=stage,
+                    stage_cfg=stage_cfg,
+                    canonical_summary=canonical_summary,
+                    artifact_paths=artifact_paths,
+                    effective_config=effective_config,
+                )
                 if stage == "walk_forward_analysis":
                     for field in ("stitched_oos_metrics", "incubation_selected_params"):
                         _require_equal(item.get(field), canonical_summary.get(field), f"{stage} {field} projection")
@@ -1692,6 +2007,7 @@ def _stage_bindings(
                     "referenced_artifacts": artifact_bindings,
                     "missing_stage_result_reason": None,
                     "omitted_unverified_fields": omitted_unverified_fields,
+                    "validated_execution_config_snapshots": validated_execution_config_snapshots,
                 }
             )
             continue
@@ -1705,6 +2021,7 @@ def _stage_bindings(
                 "referenced_artifacts": [],
                 "missing_stage_result_reason": str(item["skip_reason"]),
                 "omitted_unverified_fields": [],
+                "validated_execution_config_snapshots": {},
             }
         )
     return bindings
@@ -1816,7 +2133,14 @@ def build_diagnostic_index(
 
     dataset = _dataset_binding(source_config, summary, root)
     authoring = _authoring_binding(source_path, source_config, dataset["manifest_document"], root)
-    mechanics = _mechanics_bindings(source_config, source_path, summary, manifest, root)
+    mechanics = _mechanics_bindings(
+        source_config,
+        source_path,
+        summary,
+        manifest,
+        root,
+        dataset["canonical_file"]["sha256"],
+    )
     producer_bindings = _bind_run_manifest(run, source_path, source_config, effective_config, summary, manifest, root)
     engine_execution_assumptions = ExecutionAssumptions.from_core_config(effective_config.get("core") or {}).as_dict()
     stages = _stage_bindings(

@@ -209,7 +209,7 @@ the governed human workflow and remain separately reviewable.
    omitted. Use an absent result-copy path for this attempt:
 
    ```bash
-   test ! -e research_artifacts/mvp_diagnostics/ATTEMPT-stage-summary.json
+   test ! -e research_artifacts/mvp_diagnostics/ATTEMPT-stage-summary.json && \
    PYTHONPATH=/ABSOLUTE/PATH/TO/ALPHAQUEST/src \
    python -m alphaquest.run_campaign_stages \
      --config research/campaigns/active/CAMPAIGN_ID/variants/VARIANT_ID/config.yaml \
@@ -251,8 +251,12 @@ the governed human workflow and remain separately reviewable.
    the selected input hash and frozen parameter grids; retained data-quality
    fields; and the complete engine execution assumptions found in canonical and
    referenced stage artifacts. It also requires the recorded approved mechanics
-   gate and uses the shared read-only mechanics planner against the retained
-   trades, checks and transitions. The approval must exactly match the planner's
+   gate. It runs the existing read-only technical gate inspector against the exact
+   source config and canonical input, compares that report with the gate embedded
+   in the run summary, validates the retained bar-lane metadata and its exact
+   seven-file artifact map and Parquet record counts, and then uses the shared
+   read-only mechanics planner against the retained trades, checks and transitions.
+   The approval must exactly match the planner's
    sampling policy, ordered categories, canonical trade IDs, reasons, config and
    data identity, and every sampled trade must have exactly one retained `Correct`
    annotation with non-empty notes. Reviewer and timestamp are preserved as
@@ -264,10 +268,10 @@ the governed human workflow and remain separately reviewable.
    record a historical dataset-manifest file hash, so the index says that explicitly:
    it validates the current manifest against the frozen config and published
    strategy-spec metadata without claiming those manifest bytes existed at run time.
-   The shared planner check establishes internal evidence coherence. It does not
-   authenticate the reviewer, prove that chart inspection occurred, confer owner
-   authority, or establish that the recorded gate is currently approved; those
-   assurances remain false in the index.
+   The inspector and planner checks establish technical and internal evidence
+   coherence. They do not authenticate the reviewer, prove that chart inspection
+   occurred, confer owner authority, or independently revalidate the human
+   approval decision; those assurances remain false in the index.
    Event and multifile sources require a separate binding design and fail closed.
    The index retains raw
    stage failures and always reports `NEEDS MANUAL REVIEW`. It does not run stages,
