@@ -168,12 +168,23 @@ the governed human workflow and remain separately reviewable.
    Require `passed: true`, no failures, and the exact frozen config path. The
    `--skip-tests` flag is intentional: repository engineering tests are a
    separate integration/CI gate and should not be recursively launched from
-   every disposable research project.
+   every disposable research project. Create the diagnostics directory first,
+   and require a fresh receipt path so shell redirection cannot replace prior
+   evidence. Pin the exact AlphaQuest source checkout and pass the isolated
+   project root explicitly; the campaign CLI wrapper otherwise validates against
+   the source checkout's project root.
 
    ```bash
-   alphaquest campaign validate CAMPAIGN_ID \
-     --campaign-root research/campaigns/active --skip-tests --json \
-     > research_artifacts/mvp_diagnostics/ATTEMPT-preflight.json
+   mkdir -p research_artifacts/mvp_diagnostics
+   (
+     set -C
+     PYTHONPATH=/ABSOLUTE/PATH/TO/ALPHAQUEST/src \
+     python -m alphaquest.research.preflight \
+       --project-root /ABSOLUTE/PATH/TO/PROJECT \
+       --config research/campaigns/active/CAMPAIGN_ID/variants/VARIANT_ID/config.yaml \
+       --skip-tests --json \
+       > research_artifacts/mvp_diagnostics/ATTEMPT-preflight.json
+   )
    ```
 
    The receipt must say `tests_ran: false`. Run and record the repository's
@@ -183,8 +194,9 @@ the governed human workflow and remain separately reviewable.
 3. Generate the deterministic mechanics evidence for the frozen variant:
 
    ```bash
-   alphaquest campaign validate-mechanics CAMPAIGN_ID --variant VARIANT_ID \
-     --campaign-root research/campaigns/active
+   PYTHONPATH=/ABSOLUTE/PATH/TO/ALPHAQUEST/src \
+   python -m alphaquest.cli campaign validate-mechanics CAMPAIGN_ID \
+     --variant VARIANT_ID --campaign-root research/campaigns/active
    ```
 
    A human reviewer must inspect the five deterministic chart samples and all
@@ -197,6 +209,7 @@ the governed human workflow and remain separately reviewable.
    omitted. Use an absent result-copy path for this attempt:
 
    ```bash
+   test ! -e research_artifacts/mvp_diagnostics/ATTEMPT-stage-summary.json
    PYTHONPATH=/ABSOLUTE/PATH/TO/ALPHAQUEST/src \
    python -m alphaquest.run_campaign_stages \
      --config research/campaigns/active/CAMPAIGN_ID/variants/VARIANT_ID/config.yaml \
@@ -205,6 +218,8 @@ the governed human workflow and remain separately reviewable.
    ```
 
    Do not pass `--skip-validation` or `--fast-runtime-defaults`. The diagnostic
+   stage module replaces its `--result-json` target, so the explicit absent-path
+   check is mandatory for each new attempt. The diagnostic
    reason intentionally lets later pre-acceptance stages run after an earlier
    failure when their own dependencies permit it. Preserve every actual `passed`,
    `failed`, `error`, and `skipped` outcome. The module returns process status 0
@@ -232,10 +247,16 @@ the governed human workflow and remain separately reviewable.
    published source; the complete one-variant certified-recipe publication and its
    shared hypothesis, rationale, execution and prop-profile semantics; the
    producer's complete run/manifest fields and canonical results-index entry;
-   criteria recomputed by the producer evaluator and exact projections from each
-   canonical stage summary; the recorded approved mechanics gate and the governed
-   structure, scope, sampling policy, ordered category union, sample count, reasons,
-   config, data, reviewer and timestamp of its approval record; one local CSV or
+   criteria recomputed by the producer evaluator; exact stage-specific payloads;
+   the selected input hash and frozen parameter grids; retained data-quality
+   fields; and the complete engine execution assumptions found in canonical and
+   referenced stage artifacts. It also requires the recorded approved mechanics
+   gate and uses the shared read-only mechanics planner against the retained
+   trades, checks and transitions. The approval must exactly match the planner's
+   sampling policy, ordered categories, canonical trade IDs, reasons, config and
+   data identity, and every sampled trade must have exactly one retained `Correct`
+   annotation with non-empty notes. Reviewer and timestamp are preserved as
+   recorded fields. The selected input must be one local CSV or
    Parquet bar dataset with a `PASS`
    quality manifest whose execution metadata matches the frozen config and strategy
    specification; and the sole diagnostic reason that acceptance was omitted. It
@@ -243,9 +264,10 @@ the governed human workflow and remain separately reviewable.
    record a historical dataset-manifest file hash, so the index says that explicitly:
    it validates the current manifest against the frozen config and published
    strategy-spec metadata without claiming those manifest bytes existed at run time.
-   This version inventories mechanics evidence and validates its recorded contract,
-   but does not independently rerun the complete mechanics-gate inspector; that
-   remains an explicit limitation in the index.
+   The shared planner check establishes internal evidence coherence. It does not
+   authenticate the reviewer, prove that chart inspection occurred, confer owner
+   authority, or establish that the recorded gate is currently approved; those
+   assurances remain false in the index.
    Event and multifile sources require a separate binding design and fail closed.
    The index retains raw
    stage failures and always reports `NEEDS MANUAL REVIEW`. It does not run stages,

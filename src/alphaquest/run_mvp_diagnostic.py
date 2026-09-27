@@ -7,6 +7,7 @@ creates or approves any research-governance decision.
 from __future__ import annotations
 
 import argparse
+import csv
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
@@ -21,6 +22,7 @@ from alphaquest.authoring.models import (
     DatasetManifestV1,
     ExecutionSettingsV1,
     ModuleBindingV1,
+    SequentialVariantLineageV1,
     _binding_structure,
 )
 from alphaquest.research.campaign_stages import (
@@ -50,6 +52,9 @@ from alphaquest.research.storage import (
     resolve_recorded_path,
 )
 from alphaquest.prop.profiles import resolve_prop_profile
+from alphaquest.backtest.contracts import ExecutionAssumptions
+from alphaquest.dashboard.validation_app import load_manual_reviews, trade_id_key
+from alphaquest.studio.approvals import MechanicsApprovalService
 from alphaquest.utils.config import strategy_mechanic, validate_campaign_run_root
 from alphaquest.utils.hashing import file_sha256
 from alphaquest.validation.promotion_gate import (
@@ -83,6 +88,117 @@ _CANONICAL_STAGE_SUMMARIES = {
     "wfa_oos_monte_carlo": "wfa_oos_monte_carlo_summary.json",
     "simulated_incubation_core": "incubation_oos_summary.json",
     "simulated_incubation_monkey": "incubation_monkey_summary.json",
+}
+_COMPLETED_STAGE_PAYLOAD_KEYS = {
+    "limited_core_grid_test": {"summary", "data_quality", "input_hash", "artifacts", "core_grid_parameters"},
+    "limited_monkey_test": {
+        "summary",
+        "data_quality",
+        "input_hash",
+        "selected_core_params",
+        "selected_core_row",
+        "artifacts",
+    },
+    "walk_forward_analysis": {
+        "summary",
+        "stitched_oos_metrics",
+        "incubation_selected_params",
+        "data_quality",
+        "input_hash",
+        "artifacts",
+    },
+    "wfa_oos_monkey_test": {"summary", "artifacts"},
+    "wfa_oos_monte_carlo": {"summary", "artifacts"},
+    "simulated_incubation_core": {
+        "summary",
+        "metrics",
+        "diagnostics",
+        "selected_params",
+        "incubation_train_selection",
+        "data_quality",
+        "input_hash",
+        "artifacts",
+    },
+    "simulated_incubation_monkey": {"summary", "artifacts"},
+}
+_STAGE_COMMON_KEYS = {
+    "stage",
+    "label",
+    "status",
+    "passed",
+    "started_at",
+    "completed_at",
+    "duration_seconds",
+    "criteria",
+    "scientific_validity_verdict",
+    "scientific_validity_passed",
+    "generic_objective_verdict",
+    "generic_objective_passed",
+}
+_DATA_BEARING_STAGES = {
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "simulated_incubation_core",
+}
+_UNVERIFIED_DATA_QUALITY_FIELDS = {"prepare_data_duration_seconds", "prepared_data_cache"}
+_CAMPAIGN_DOCUMENT_KEYS = {
+    "campaign_id",
+    "title",
+    "status",
+    "created_at",
+    "instrument",
+    "timeframe",
+    "governance_contract_version",
+    "variant_protocol",
+    "max_variants",
+    "research_objectives",
+    "research_objectives_sha256",
+    "research_factory",
+    "authoring_lane",
+    "certified_recipe",
+    "event_strategy",
+    "event_strategies",
+    "edge_family",
+    "hypothesis",
+    "economic_edge_fingerprint",
+    "duplicate_edge_review",
+    "sources",
+    "variants",
+    "sequential_variant_history",
+    "variant_distinctions",
+    "rescue_policy",
+}
+_STRATEGY_SPEC_KEYS = {
+    "schema",
+    "campaign_id",
+    "draft_sha256",
+    "research_objectives",
+    "research_objectives_sha256",
+    "research_factory",
+    "frozen",
+    "hypothesis",
+    "expected_mechanism",
+    "holding_horizon",
+    "known_failure_modes",
+    "authoring_lane",
+    "certified_recipe",
+    "event_strategy",
+    "strategy_certification",
+    "variant_strategy_certifications",
+    "dataset",
+    "execution",
+    "variants",
+}
+_STRATEGY_SPEC_VARIANT_KEYS = {
+    "variant_id",
+    "title",
+    "mechanic_signature",
+    "entry",
+    "stop",
+    "target",
+    "event_parameter_grid",
+    "rationales",
 }
 
 
@@ -125,6 +241,115 @@ def _require_equal(actual: Any, expected: Any, label: str) -> None:
         raise ValueError(f"{label} mismatch: expected {expected!r}, found {actual!r}")
 
 
+def _require_exact_keys(value: Any, expected: set[str], label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a mapping")
+    _require_equal(set(value), expected, f"{label} fields")
+    return value
+
+
+def _validate_campaign_research_contract(campaign: dict[str, Any]) -> None:
+    _require_exact_keys(campaign, _CAMPAIGN_DOCUMENT_KEYS, "campaign document")
+    sources = campaign.get("sources")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError("campaign sources must be a non-empty list")
+    source_fields = {"title", "authors", "year", "link", "doi", "relevance"}
+    for index, item in enumerate(sources):
+        source = _require_exact_keys(item, source_fields, f"campaign source {index}")
+        for field in ("title", "authors", "relevance"):
+            _require_nonempty_string(source.get(field), f"campaign source {index} {field}")
+        year = source.get("year")
+        if isinstance(year, bool) or not isinstance(year, int) or not 1900 <= year <= 2200:
+            raise ValueError(f"campaign source {index} year is invalid")
+        if not any(isinstance(source.get(field), str) and source[field].strip() for field in ("link", "doi")):
+            raise ValueError(f"campaign source {index} requires link or DOI")
+
+    fingerprint = _require_exact_keys(
+        campaign.get("economic_edge_fingerprint"),
+        {"market_behavior", "causal_mechanism", "signal_inputs", "market_context", "holding_period"},
+        "campaign economic edge fingerprint",
+    )
+    for field, value in fingerprint.items():
+        _require_nonempty_string(value, f"campaign economic edge fingerprint {field}")
+
+    duplicate = _require_exact_keys(
+        campaign.get("duplicate_edge_review"),
+        {"reviewed_campaign_ids", "ledger_queries", "conclusion", "substantive_distinction"},
+        "campaign duplicate review",
+    )
+    if not isinstance(duplicate.get("reviewed_campaign_ids"), list) or not all(
+        isinstance(value, str) and value.strip() for value in duplicate["reviewed_campaign_ids"]
+    ):
+        raise ValueError("campaign duplicate review IDs must be strings")
+    if (
+        not isinstance(duplicate.get("ledger_queries"), list)
+        or not duplicate["ledger_queries"]
+        or not all(isinstance(value, str) and value.strip() for value in duplicate["ledger_queries"])
+    ):
+        raise ValueError("campaign duplicate review ledger queries must be non-empty strings")
+    _require_equal(duplicate.get("conclusion"), "distinct", "campaign duplicate review conclusion")
+    _require_nonempty_string(duplicate.get("substantive_distinction"), "campaign duplicate substantive distinction")
+
+    history = campaign.get("sequential_variant_history")
+    if not isinstance(history, list):
+        raise ValueError("campaign sequential variant history must be a list")
+    for index, item in enumerate(history):
+        try:
+            model = SequentialVariantLineageV1.model_validate(item)
+        except ValueError as exc:
+            raise ValueError(f"campaign sequential variant history {index} is invalid: {exc}") from exc
+        _require_equal(item, model.model_dump(mode="json", by_alias=True), f"campaign sequential history {index}")
+
+    variants = campaign.get("variants")
+    distinctions = campaign.get("variant_distinctions")
+    if (
+        not isinstance(variants, list)
+        or not variants
+        or not all(isinstance(value, str) and value for value in variants)
+    ):
+        raise ValueError("campaign variants must be non-empty string identities")
+    if campaign.get("variant_protocol") == "sequential_failure_informed":
+        _require_equal(len(history), max(0, len(variants) - 1), "campaign sequential history count")
+    elif campaign.get("variant_protocol") == "legacy_predeclared":
+        _require_equal(history, [], "legacy campaign sequential history")
+    else:
+        raise ValueError("campaign variant protocol is unsupported")
+    for index, lineage in enumerate(history, start=1):
+        _require_equal(lineage.get("variant_id"), variants[index], f"campaign sequential variant {index}")
+        _require_equal(
+            lineage.get("predecessor_variant_id"), variants[index - 1], f"campaign sequential predecessor {index}"
+        )
+    if not isinstance(distinctions, dict):
+        raise ValueError("campaign variant distinctions must be a mapping")
+    _require_equal(set(distinctions), set(variants), "campaign variant distinction identities")
+    for variant_id, item in distinctions.items():
+        distinction = _require_exact_keys(
+            item,
+            {"mechanic", "material_difference", "mechanic_signature"},
+            f"campaign variant distinction {variant_id}",
+        )
+        for field, value in distinction.items():
+            _require_nonempty_string(value, f"campaign variant distinction {variant_id} {field}")
+
+
+def _validate_strategy_spec_contract(strategy_spec: dict[str, Any]) -> None:
+    _require_exact_keys(strategy_spec, _STRATEGY_SPEC_KEYS, "strategy spec")
+    for field in ("hypothesis", "expected_mechanism", "holding_horizon"):
+        _require_nonempty_string(strategy_spec.get(field), f"strategy spec {field}")
+    failures = strategy_spec.get("known_failure_modes")
+    if (
+        not isinstance(failures, list)
+        or not failures
+        or not all(isinstance(value, str) and value.strip() for value in failures)
+    ):
+        raise ValueError("strategy spec known failure modes must be non-empty strings")
+    variants = strategy_spec.get("variants")
+    if not isinstance(variants, list) or not variants:
+        raise ValueError("strategy spec variants must be a non-empty list")
+    for index, item in enumerate(variants):
+        _require_exact_keys(item, _STRATEGY_SPEC_VARIANT_KEYS, f"strategy spec variant {index}")
+
+
 def _compiled_object_sha256(value: Any) -> str:
     """Match CampaignCompiler's canonical object hash for published documents."""
 
@@ -157,12 +382,15 @@ def _require_nonempty_string(value: Any, label: str) -> str:
     return value
 
 
-def _trade_id_key(value: Any, label: str) -> tuple[type, str]:
+def _trade_id_key(value: Any, label: str) -> str:
     if isinstance(value, bool) or not isinstance(value, (str, int)):
         raise ValueError(f"{label} must be a string or integer trade ID")
     if isinstance(value, str) and not value.strip():
         raise ValueError(f"{label} must not be empty")
-    return type(value), str(value)
+    key = trade_id_key(value)
+    if not key:
+        raise ValueError(f"{label} must have a canonical trade identity")
+    return key
 
 
 def _validate_approval_sampling(approval: dict[str, Any], evidence_dir: Path) -> None:
@@ -176,7 +404,7 @@ def _validate_approval_sampling(approval: dict[str, Any], evidence_dir: Path) ->
         raise ValueError("mechanics approval sampled_trade_ids must be unique")
     _require_equal(set(categories), set(REQUIRED_SAMPLE_CATEGORIES), "mechanics approval category set")
     ordered: list[Any] = []
-    seen: set[tuple[type, str]] = set()
+    seen: set[str] = set()
     for category in REQUIRED_SAMPLE_CATEGORIES:
         values = categories.get(category)
         if not isinstance(values, list):
@@ -202,10 +430,17 @@ def _validate_approval_sampling(approval: dict[str, Any], evidence_dir: Path) ->
         min(requested, source_trade_count),
         "mechanics approval random sample count",
     )
-    reason_keys = {str(value) for value in sampled}
-    _require_equal(set(reasons), reason_keys, "mechanics approval sampling reason IDs")
+    reason_keys = {_trade_id_key(value, "sampling_reasons") for value in sampled}
+    canonical_reason_keys = [_trade_id_key(value, "sampling_reasons") for value in reasons]
+    if len(canonical_reason_keys) != len(set(canonical_reason_keys)):
+        raise ValueError("mechanics approval sampling reason IDs must be unique")
+    _require_equal(set(canonical_reason_keys), reason_keys, "mechanics approval sampling reason IDs")
     for trade_id, values in reasons.items():
-        if not isinstance(values, list) or not values or not all(isinstance(value, str) and value.strip() for value in values):
+        if (
+            not isinstance(values, list)
+            or not values
+            or not all(isinstance(value, str) and value.strip() for value in values)
+        ):
             raise ValueError(f"mechanics approval sampling reasons for {trade_id} must be non-empty strings")
         if len(values) != len(set(values)):
             raise ValueError(f"mechanics approval sampling reasons for {trade_id} must be unique")
@@ -272,9 +507,7 @@ def _bind_identities(
         raise ValueError("non-original attempt requires a non-empty parent_attempt_id")
 
 
-def _expected_effective_config(
-    source_config: dict[str, Any], summary: dict[str, Any]
-) -> dict[str, Any]:
+def _expected_effective_config(source_config: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
     expected = canonicalize_campaign_config(source_config, include_acceptance=False)
     workers = summary.get("authoritative_parallel_workers")
     core_workers = summary.get("authoritative_core_grid_workers")
@@ -327,6 +560,20 @@ def _validate_authoring_execution(
     }
     for field, expected in shared.items():
         _require_equal(document.get(field), expected, f"strategy spec execution {field}")
+    safety_controls = {
+        "enabled": True,
+        "timezone": data.get("exchange_timezone"),
+        "force_flatten_enabled": True,
+        "cancel_pending_orders_before_flatten": True,
+        "no_overnight_positions": not document["overnight_allowed"],
+        "reject_if_position_after_flatten_deadline": True,
+        "reject_if_pending_order_after_flatten_deadline": True,
+        "reject_if_entry_after_latest_entry_time": True,
+    }
+    for field, expected in safety_controls.items():
+        _require_equal(apex.get(field), expected, f"compiled execution safety {field}")
+    _require_equal(position.get("mode"), "fixed_contracts", "compiled position sizing mode")
+    _require_equal(core.get("max_trades_per_day"), 1, "compiled maximum trades per day")
     _require_equal(strategy.get("flatten_time"), document["flatten_time"], "strategy execution flatten time")
     _require_equal(core.get("flatten_time"), document["flatten_time"], "core execution flatten time")
     expected_prop_rules = resolve_prop_profile(
@@ -368,7 +615,7 @@ def _authoring_binding(
     if recipe not in CERTIFIED_RECIPE_BINDINGS:
         raise ValueError(f"unsupported certified recipe: {recipe}")
     expected_entry, expected_setup = CERTIFIED_RECIPE_BINDINGS[recipe]
-    entry = ((source_config.get("strategy") or {}).get("entry") or {})
+    entry = (source_config.get("strategy") or {}).get("entry") or {}
     _require_equal(entry.get("module"), expected_entry, "certified recipe entry module")
     if expected_setup is not None:
         _require_equal((entry.get("params") or {}).get("setup_mode"), expected_setup, "certified recipe setup mode")
@@ -423,13 +670,17 @@ def _authoring_binding(
         )
     campaign = parsed_documents["campaign.yaml"]
     strategy_spec = parsed_documents["strategy_spec.yaml"]
+    _validate_campaign_research_contract(campaign)
+    _validate_strategy_spec_contract(strategy_spec)
     _require_equal(campaign.get("campaign_id"), source_config.get("campaign_id"), "campaign document identity")
     _require_equal(campaign.get("status"), "authored_for_testing", "campaign authored status")
     _require_nonempty_string(campaign.get("title"), "campaign title")
     _require_nonempty_string(campaign.get("edge_family"), "campaign edge_family")
     _require_equal(campaign.get("authoring_lane"), "certified_recipe", "campaign authoring lane")
     _require_equal(campaign.get("certified_recipe"), recipe, "campaign certified recipe")
-    _require_equal(campaign.get("instrument") or campaign.get("symbol"), source_config.get("symbol"), "campaign instrument")
+    _require_equal(
+        campaign.get("instrument") or campaign.get("symbol"), source_config.get("symbol"), "campaign instrument"
+    )
     _require_equal(campaign.get("timeframe"), source_config.get("timeframe"), "campaign timeframe")
     _require_equal(campaign.get("variants"), [variant_id], "campaign variant list")
     _require_equal(
@@ -448,11 +699,6 @@ def _authoring_binding(
         (source_config.get("research_objectives") or {}).get("maximum_variants"),
         "campaign maximum variants",
     )
-    if not isinstance(campaign.get("sources"), list) or not campaign["sources"]:
-        raise ValueError("campaign sources must be a non-empty list")
-    for field in ("economic_edge_fingerprint", "duplicate_edge_review"):
-        if not isinstance(campaign.get(field), dict):
-            raise ValueError(f"campaign {field} must be a mapping")
     _require_equal(strategy_spec.get("schema"), "alphaquest.strategy-spec/v1", "strategy spec schema")
     _require_equal(strategy_spec.get("frozen"), True, "strategy spec frozen flag")
     _require_equal(strategy_spec.get("campaign_id"), source_config.get("campaign_id"), "strategy spec identity")
@@ -696,7 +942,9 @@ def _mechanics_bindings(
     )
     _require_equal(approval.get("profitability_approval"), False, "mechanics profitability approval")
     _require_equal(approval.get("config_hash"), summary.get("source_config_hash"), "mechanics approval config hash")
-    _require_equal(approval.get("input_data_hash"), summary_gate.get("input_data_hash"), "mechanics approval input hash")
+    _require_equal(
+        approval.get("input_data_hash"), summary_gate.get("input_data_hash"), "mechanics approval input hash"
+    )
     for approval_field, gate_field in (
         ("status", "approval_status"),
         ("reviewer", "reviewer"),
@@ -721,15 +969,56 @@ def _mechanics_bindings(
         ("parameter_mode", "parameter_mode"),
     ):
         if gate.get(gate_field) is not None:
-            _require_equal(
-                approval.get(approval_field), gate.get(gate_field), f"mechanics approval {approval_field}"
-            )
+            _require_equal(approval.get(approval_field), gate.get(gate_field), f"mechanics approval {approval_field}")
     _validate_approval_sampling(approval, evidence_dir)
+    plan = MechanicsApprovalService().plan(source_path, _gate_report=summary_gate)
+    plan_document = plan.model_dump(mode="json")
+    _require_equal(plan_document.get("config_path"), str(source_path.resolve()), "mechanics planner config path")
+    if plan.blockers:
+        raise ValueError("mechanics planner records blockers: " + "; ".join(plan.blockers))
+    if plan.unreviewed_trade_ids:
+        raise ValueError("mechanics planner records unreviewed sampled trades")
+    if plan.non_correct_trade_ids:
+        raise ValueError("mechanics planner records non-Correct sampled trades")
+    for field in (
+        "lane",
+        "config_hash",
+        "input_data_hash",
+        "validation_schema_version",
+        "strategy_implementation_version",
+        "strategy_implementation_sha256",
+        "strategy_certification_manifest_sha256",
+        "fixed_random_sample_size",
+        "fixed_random_seed",
+        "sampling_policy_version",
+        "sampling_policy_sha256",
+        "sampled_trade_ids",
+        "sampling_categories",
+        "sampling_reasons",
+    ):
+        _require_equal(approval.get(field), plan_document.get(field), f"mechanics approval/planner {field}")
+
+    reviews = load_manual_reviews(evidence_dir)
+    sampled_keys = [_trade_id_key(value, "sampled_trade_ids") for value in plan.sampled_trade_ids]
+    review_rows: dict[str, list[dict[str, Any]]] = {key: [] for key in sampled_keys}
+    for row in reviews.to_dict("records"):
+        key = trade_id_key(row.get("trade_id"))
+        if key in review_rows:
+            review_rows[key].append(row)
+    for key in sampled_keys:
+        rows = review_rows[key]
+        _require_equal(len(rows), 1, f"mechanics sampled trade {key} review count")
+        _require_equal(
+            str(rows[0].get("reviewer_status") or "").casefold(), "correct", f"mechanics sampled trade {key} status"
+        )
+        _require_nonempty_string(rows[0].get("reviewer_notes"), f"mechanics sampled trade {key} notes")
     return {
         "recorded_gate": deepcopy(summary_gate),
         "gate_currently_revalidated": False,
         "human_authority_verified": False,
-        "evidence_inventory_only": True,
+        "evidence_inventory_only": False,
+        "planner_contract_validated": True,
+        "planner": plan_document,
         "approval_record": {
             key: approval.get(key)
             for key in (
@@ -759,9 +1048,7 @@ def _mechanics_bindings(
     }
 
 
-def _dataset_binding(
-    source_config: dict[str, Any], summary: dict[str, Any], project_root: Path
-) -> dict[str, Any]:
+def _dataset_binding(source_config: dict[str, Any], summary: dict[str, Any], project_root: Path) -> dict[str, Any]:
     data = source_config.get("data")
     if not isinstance(data, dict):
         raise ValueError("source config data section is missing")
@@ -786,7 +1073,7 @@ def _dataset_binding(
     execution_fields = {
         "symbol": source_config.get("symbol") or data.get("symbol"),
         "timeframe": source_config.get("timeframe") or data.get("source_timeframe"),
-        "timezone": data.get("timezone"),
+        "timezone": data.get("source_timezone"),
         "exchange_timezone": data.get("exchange_timezone"),
         "timestamp_semantics": data.get("timestamp_semantics"),
         "source_timestamp_semantics": data.get("source_timestamp_semantics"),
@@ -824,6 +1111,7 @@ def _dataset_binding(
     for field, expected in execution_fields.items():
         if expected is not None or field in required_execution_fields:
             _require_equal(dataset_manifest.get(field), expected, f"dataset manifest {field}")
+    _require_equal(data.get("timezone"), data.get("exchange_timezone"), "engine/exchange timezone")
     _require_equal(dataset_manifest.get("symbol"), summary.get("symbol"), "dataset/run symbol")
     _require_equal(dataset_manifest.get("timeframe"), summary.get("timeframe"), "dataset/run timeframe")
     canonical_path = _resolve_reference(dataset_manifest.get("path"), project_root, "canonical dataset")
@@ -926,10 +1214,8 @@ def _derive_diagnostic_classification(
                         value,
                         "authored_synthetic_context",
                     )
-    dataset_id = ((source_config.get("data") or {}).get("dataset_id") or source_config.get("dataset_id"))
-    source_synthetic |= record(
-        source_artifact, "source_config.dataset_id", dataset_id, "authored_synthetic_context"
-    )
+    dataset_id = (source_config.get("data") or {}).get("dataset_id") or source_config.get("dataset_id")
+    source_synthetic |= record(source_artifact, "source_config.dataset_id", dataset_id, "authored_synthetic_context")
     if (source_config.get("campaign_id"), dataset_id) == (
         "tutorial_calendar_bias",
         "synthetic_tutorial_es_1m",
@@ -1093,7 +1379,9 @@ def _bind_run_manifest(
         campaign_artifact = _artifact(campaign_path, project_root=project_root)
         _require_equal(campaign_artifact["sha256"], campaign_metadata.get("hash"), "campaign metadata hash")
         campaign_document = _read_yaml(campaign_path, "campaign metadata")
-        _require_equal(campaign_document.get("campaign_id"), source_config.get("campaign_id"), "campaign metadata identity")
+        _require_equal(
+            campaign_document.get("campaign_id"), source_config.get("campaign_id"), "campaign metadata identity"
+        )
     results_value = summary.get("source_results_index_path")
     manifest_results = manifest.get("source_results_index")
     if results_value is None or manifest_results is None:
@@ -1128,7 +1416,7 @@ def _bind_run_manifest(
         "attempt_kind": summary.get("attempt_kind"),
         "attempt_provenance": summary.get("attempt_provenance"),
         "parent_attempt_id": summary.get("parent_attempt_id"),
-        "source_config_path": str(source_path),
+        "source_config_path": summary.get("source_config_path"),
         "source_config_snapshot_path": summary.get("source_config_snapshot_path"),
         "source_config_hash": summary.get("source_config_hash"),
         "effective_config_path": summary.get("effective_config_path"),
@@ -1148,6 +1436,11 @@ def _bind_run_manifest(
     }
     matches = [entry for entry in entries if entry == expected_entry]
     _require_equal(len(matches), 1, "source results index exact run entry count")
+    _require_equal(
+        _resolve_reference(matches[0].get("source_config_path"), project_root, "results index source config"),
+        source_path,
+        "source results index source config identity",
+    )
     return {
         "campaign_metadata": campaign_artifact,
         "variant_metadata": variant_artifact,
@@ -1156,12 +1449,110 @@ def _bind_run_manifest(
     }
 
 
+def _data_quality_projection(stage_dir: Path, observed: Any) -> tuple[dict[str, Any], list[str]]:
+    if not isinstance(observed, dict):
+        raise ValueError(f"{stage_dir.name} data_quality must be a mapping")
+    report_path = stage_dir / "validation" / "data_quality_report.csv"
+    if not report_path.is_file():
+        raise ValueError(f"missing retained data-quality report: {report_path}")
+    with report_path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    _require_equal(len(rows), 1, f"{stage_dir.name} data-quality row count")
+    retained = rows[0]
+    expected_keys = set(retained) | _UNVERIFIED_DATA_QUALITY_FIELDS
+    _require_equal(set(observed), expected_keys, f"{stage_dir.name} data-quality fields")
+    for field, expected in retained.items():
+        _require_equal(str(observed.get(field)), expected, f"{stage_dir.name} retained data quality {field}")
+    duration = observed.get("prepare_data_duration_seconds")
+    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
+        raise ValueError(f"{stage_dir.name} prepare_data_duration_seconds must be non-negative")
+    if not isinstance(observed.get("prepared_data_cache"), dict):
+        raise ValueError(f"{stage_dir.name} prepared_data_cache must be a mapping")
+    return ({field: observed[field] for field in retained}, sorted(_UNVERIFIED_DATA_QUALITY_FIELDS))
+
+
+def _execution_assumption_records(value: Any, location: str = "$") -> list[tuple[str, Any]]:
+    records: list[tuple[str, Any]] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_location = f"{location}.{key}"
+            if key == "execution_assumptions":
+                records.append((child_location, child))
+            records.extend(_execution_assumption_records(child, child_location))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            records.extend(_execution_assumption_records(child, f"{location}[{index}]"))
+    return records
+
+
+def _validate_execution_assumptions(
+    stage: str,
+    canonical_summary: dict[str, Any],
+    artifact_paths: list[Path],
+    expected: dict[str, Any],
+) -> None:
+    found: list[str] = []
+    for location, value in _execution_assumption_records(canonical_summary, "canonical_summary"):
+        _require_equal(value, expected, f"{stage} {location}")
+        found.append(location)
+    for path in artifact_paths:
+        if path.suffix.lower() != ".json":
+            continue
+        document = _read_json(path, f"{stage} JSON artifact")
+        for location, value in _execution_assumption_records(document, path.name):
+            _require_equal(value, expected, f"{stage} {location}")
+            found.append(location)
+    if stage == "limited_core_grid_test":
+        required = {
+            "canonical_summary.fixed_config_core.reproducibility.execution_assumptions",
+            "fixed_config_core_metrics.json.reproducibility.execution_assumptions",
+        }
+        if not required.issubset(found):
+            raise ValueError(f"{stage} lacks required execution-assumption evidence: {sorted(required - set(found))}")
+
+
+def _completed_stage_projection(
+    item: dict[str, Any],
+    *,
+    stage: str,
+    stage_dir: Path,
+    stage_cfg: dict[str, Any],
+    effective_config: dict[str, Any],
+    canonical_input_hash: str,
+) -> tuple[dict[str, Any], list[str]]:
+    expected_keys = _STAGE_COMMON_KEYS | _COMPLETED_STAGE_PAYLOAD_KEYS[stage]
+    _require_equal(set(item), expected_keys, f"{stage} completed payload fields")
+    projected = deepcopy(item)
+    omitted: list[str] = []
+    if stage in _DATA_BEARING_STAGES:
+        _require_equal(item.get("input_hash"), canonical_input_hash, f"{stage} input hash")
+        quality, quality_omitted = _data_quality_projection(stage_dir, item.get("data_quality"))
+        projected["data_quality"] = quality
+        omitted.extend(f"data_quality.{field}" for field in quality_omitted)
+    if stage == "limited_core_grid_test":
+        grid = deepcopy(effective_config.get("core_grid") or {})
+        grid.update(deepcopy(stage_cfg))
+        _require_equal(item.get("core_grid_parameters"), grid.get("parameters") or {}, "limited core grid parameters")
+    if stage == "limited_monkey_test":
+        parameters = (effective_config.get("core_grid") or {}).get("parameters") or {}
+        selected = item.get("selected_core_params")
+        if not isinstance(selected, dict):
+            raise ValueError("limited monkey selected_core_params must be a mapping")
+        _require_equal(set(selected), set(parameters), "limited monkey selected parameter identities")
+        for name, value in selected.items():
+            if value not in parameters[name]:
+                raise ValueError(f"limited monkey selected value is outside the frozen grid: {name}")
+    return projected, omitted
+
+
 def _stage_bindings(
     run_dir: Path,
     effective_config: dict[str, Any],
     summary: dict[str, Any],
     manifest: dict[str, Any],
     project_root: Path,
+    canonical_input_hash: str,
+    execution_assumptions: dict[str, Any],
 ) -> list[dict[str, Any]]:
     stages = summary.get("stages")
     if not isinstance(stages, list) or not all(isinstance(item, dict) for item in stages):
@@ -1178,8 +1569,10 @@ def _stage_bindings(
         if (status == "passed") != (item.get("passed") is True):
             raise ValueError(f"{stage} status and passed flag are inconsistent")
         criteria = item.get("criteria") or []
-        stage_cfg = ((effective_config.get("campaign_tests") or {}).get(stage) or {})
+        stage_cfg = (effective_config.get("campaign_tests") or {}).get(stage) or {}
         criteria_contract = _criteria_for_stage(stage, stage_cfg)
+        projected_item = deepcopy(item)
+        omitted_unverified_fields: list[str] = []
         if status == "skipped":
             _require_equal(stage_cfg.get("enabled"), False, f"{stage} disabled stage config")
             expected_skipped = _annotate_stage_decisions(_skipped_stage(stage, "disabled"))
@@ -1212,6 +1605,22 @@ def _stage_bindings(
         if status == "error" and not str(item.get("error") or "").strip():
             raise ValueError(f"{stage} error status requires a non-empty error")
         if status == "error":
+            _require_equal(
+                set(item),
+                {
+                    "stage",
+                    "label",
+                    "status",
+                    "passed",
+                    "error",
+                    "criteria",
+                    "scientific_validity_verdict",
+                    "scientific_validity_passed",
+                    "generic_objective_verdict",
+                    "generic_objective_passed",
+                },
+                f"{stage} error payload fields",
+            )
             if not criteria or any(criterion.get("passed") is not False for criterion in criteria):
                 raise ValueError(f"{stage} error result must retain failed producer criteria")
             expected_error = _error_stage(stage, RuntimeError(str(item["error"])))
@@ -1228,21 +1637,19 @@ def _stage_bindings(
             validate_stage_result_contract(result, context=f"{stage}/stage_result.json")
             _require_equal(result, item, f"{stage} stage result")
             artifacts_value = result.get("artifacts")
-            if status in {"passed", "failed"} and (
-                not isinstance(artifacts_value, list) or not artifacts_value
-            ):
+            if status in {"passed", "failed"} and (not isinstance(artifacts_value, list) or not artifacts_value):
                 raise ValueError(f"{stage} completed result requires a non-empty artifacts list")
             artifact_bindings: list[dict[str, Any]] = []
+            artifact_paths: list[Path] = []
             if artifacts_value is not None:
                 if not isinstance(artifacts_value, list):
                     raise ValueError(f"{stage}.artifacts must be a list when present")
                 for index, value in enumerate(artifacts_value):
-                    artifact_path = _resolve_reference(
-                        value, project_root, f"{stage}.artifacts[{index}]"
-                    )
+                    artifact_path = _resolve_reference(value, project_root, f"{stage}.artifacts[{index}]")
                     if not _is_relative_to(artifact_path, (run_dir / stage).resolve()):
                         raise ValueError(f"{stage} artifact is outside its stage directory: {value}")
                     artifact_bindings.append(_artifact(artifact_path, project_root=project_root))
+                    artifact_paths.append(artifact_path)
             if status in {"passed", "failed"}:
                 recorded = {item["path"] for item in artifact_bindings}
                 actual = {
@@ -1254,6 +1661,20 @@ def _stage_bindings(
                 canonical_path = run_dir / stage / _CANONICAL_STAGE_SUMMARIES[stage]
                 canonical_summary = _read_json(canonical_path, f"{stage} canonical summary")
                 _require_equal(item.get("summary"), canonical_summary, f"{stage} canonical summary projection")
+                projected_item, omitted_unverified_fields = _completed_stage_projection(
+                    item,
+                    stage=stage,
+                    stage_dir=run_dir / stage,
+                    stage_cfg=stage_cfg,
+                    effective_config=effective_config,
+                    canonical_input_hash=canonical_input_hash,
+                )
+                _validate_execution_assumptions(
+                    stage,
+                    canonical_summary,
+                    artifact_paths,
+                    execution_assumptions,
+                )
                 if stage == "walk_forward_analysis":
                     for field in ("stitched_oos_metrics", "incubation_selected_params"):
                         _require_equal(item.get(field), canonical_summary.get(field), f"{stage} {field} projection")
@@ -1265,11 +1686,12 @@ def _stage_bindings(
                         _require_equal(item.get(field), canonical_summary.get(field), f"{stage} {field} projection")
             bindings.append(
                 {
-                    "summary": deepcopy(item),
-                    "stage_result": deepcopy(result),
+                    "summary": projected_item,
+                    "stage_result": deepcopy(projected_item),
                     "artifact": _artifact(result_path, project_root=project_root),
                     "referenced_artifacts": artifact_bindings,
                     "missing_stage_result_reason": None,
+                    "omitted_unverified_fields": omitted_unverified_fields,
                 }
             )
             continue
@@ -1282,6 +1704,7 @@ def _stage_bindings(
                 "artifact": None,
                 "referenced_artifacts": [],
                 "missing_stage_result_reason": str(item["skip_reason"]),
+                "omitted_unverified_fields": [],
             }
         )
     return bindings
@@ -1394,10 +1817,17 @@ def build_diagnostic_index(
     dataset = _dataset_binding(source_config, summary, root)
     authoring = _authoring_binding(source_path, source_config, dataset["manifest_document"], root)
     mechanics = _mechanics_bindings(source_config, source_path, summary, manifest, root)
-    producer_bindings = _bind_run_manifest(
-        run, source_path, source_config, effective_config, summary, manifest, root
+    producer_bindings = _bind_run_manifest(run, source_path, source_config, effective_config, summary, manifest, root)
+    engine_execution_assumptions = ExecutionAssumptions.from_core_config(effective_config.get("core") or {}).as_dict()
+    stages = _stage_bindings(
+        run,
+        effective_config,
+        summary,
+        manifest,
+        root,
+        dataset["canonical_file"]["sha256"],
+        engine_execution_assumptions,
     )
-    stages = _stage_bindings(run, effective_config, summary, manifest, root)
     _require_equal(
         summary.get("research_verdict"),
         _research_verdict(summary["stages"], summary["diagnostic_reasons"]),
@@ -1464,6 +1894,7 @@ def build_diagnostic_index(
         "execution_contract": {
             "mechanic": strategy_mechanic(effective_config),
             "strategy": deepcopy(effective_config["strategy"]),
+            "engine_execution_assumptions": engine_execution_assumptions,
             "core_grid_parameters": deepcopy((effective_config.get("core_grid") or {}).get("parameters") or {}),
             "wfa_parameters": deepcopy((effective_config.get("wfa") or {}).get("parameters") or {}),
         },

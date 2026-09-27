@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 import sys
 
+import pandas as pd
 import pytest
 import yaml
 
@@ -20,8 +22,15 @@ from alphaquest.research.campaign_stages import (
 )
 from alphaquest.research.factory_policy import research_factory_binding, research_objectives_sha256
 from alphaquest.prop.profiles import resolve_prop_profile
+from alphaquest.dashboard.validation_app import save_manual_review_annotation
+from alphaquest.studio.approvals import MechanicsApprovalService
 from alphaquest.utils.hashing import file_sha256
-from alphaquest.validation.promotion_gate import SAMPLING_POLICY_SHA256, SAMPLING_POLICY_VERSION
+from alphaquest.validation.promotion_gate import (
+    REQUIRED_AUTOMATED_CATEGORIES,
+    REQUIRED_AUTOMATED_CHECK_NAMES,
+    SAMPLING_POLICY_SHA256,
+    SAMPLING_POLICY_VERSION,
+)
 from alphaquest.version import ENGINE_CONTRACT_VERSION
 
 
@@ -35,9 +44,7 @@ def _write_yaml(path: Path, value: object) -> None:
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
-def _project(
-    tmp_path: Path, *, disabled_stage: str | None = None
-) -> tuple[Path, Path, dict[str, object]]:
+def _project(tmp_path: Path, *, disabled_stage: str | None = None) -> tuple[Path, Path, dict[str, object]]:
     root = tmp_path / "project"
     _write_yaml(
         root / "config/storage_layout.yaml",
@@ -52,8 +59,7 @@ def _project(
     canonical = root / f"research/datasets/{dataset_id}/bars.csv"
     canonical.parent.mkdir(parents=True)
     canonical.write_text(
-        "timestamp,open,high,low,close,volume\n"
-        "2026-01-05T14:30:00Z,100,101,99,100.5,10\n",
+        "timestamp,open,high,low,close,volume\n" "2026-01-05T14:30:00Z,100,101,99,100.5,10\n",
         encoding="utf-8",
     )
     canonical_hash = file_sha256(canonical)
@@ -98,7 +104,6 @@ def _project(
     source_path = campaign_root / "variants/v01/config.yaml"
     evidence_dir = root / "research/evidence/mechanics/validation_runs/core"
     evidence_dir.mkdir(parents=True)
-    _write_json(evidence_dir / "metadata.json", {"schema_version": "1.6", "source_trade_count": 5})
     approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
     objectives = {
         "schema": "alphaquest.research-objectives/v1",
@@ -221,16 +226,22 @@ def _project(
             "tick_value": 12.5,
             "commission_per_contract": 2.5,
             "slippage_ticks": 1.0,
-            "position_sizing": {"contracts": 1},
+            "position_sizing": {"mode": "fixed_contracts", "contracts": 1},
             "flatten_time": "10:25:00",
+            "max_trades_per_day": 1,
         },
         "apex_rules": {
             "enabled": True,
+            "timezone": "America/New_York",
             "force_flatten_enabled": True,
             "force_flatten_time": "10:25:00",
             "latest_flat_time": "10:26:00",
             "latest_entry_time": "10:15:00",
+            "cancel_pending_orders_before_flatten": True,
             "no_overnight_positions": True,
+            "reject_if_position_after_flatten_deadline": True,
+            "reject_if_pending_order_after_flatten_deadline": True,
+            "reject_if_entry_after_latest_entry_time": True,
         },
         "account_profile_bindings": [],
         "prop_rules": resolve_prop_profile(
@@ -246,36 +257,101 @@ def _project(
         source["campaign_tests"] = {disabled_stage: {"enabled": False}}
     _write_yaml(source_path, source)
     source_hash = file_sha256(source_path)
+    artifact_files = {
+        "trades": "trades.parquet",
+        "condition_snapshots": "condition_snapshots.parquet",
+        "bar_windows": "bar_windows.parquet",
+        "tick_windows": "tick_windows.parquet",
+        "event_transitions": "event_transitions.parquet",
+        "exit_audits": "exit_audits.parquet",
+        "validation_checks": "validation_checks.parquet",
+    }
     _write_json(
-        approval_path,
+        evidence_dir / "metadata.json",
         {
-            "schema": "alphaquest.validation-approval/v1",
-            "status": "approved_for_testing",
-            "reviewer": "SIMULATED_MVP_FIXTURE_ONLY",
-            "reviewed_at": "2026-09-27T00:00:00+00:00",
-            "notes": "SIMULATED mechanics decision on a synthetic fixture. No owner authority.",
+            "run_id": "mechanics-validation-test",
+            "campaign_id": "recipe_demo",
+            "strategy_id": "v01",
+            "variant_id": "v01",
+            "symbol": "ES",
+            "stage": "core",
+            "timezone": "America/New_York",
+            "tick_size": 0.25,
+            "tick_value": 12.5,
+            "timeframe": "1m",
+            "timeframe_minutes": 1,
             "config_hash": source_hash,
             "input_data_hash": canonical_hash,
-            "lane": "bar",
-            "validation_schema_version": "1.6",
-            "fixed_random_sample_size": 5,
-            "fixed_random_seed": 7,
-            "parameter_mode": "declared_defaults",
-            "review_scope": "implementation_matches_frozen_specification",
-            "profitability_approval": False,
-            "sampled_trade_ids": [1, 2, 3, 4, 5],
-            "sampling_categories": {
-                "random_trades": [1, 2, 3, 4, 5],
-                "warning_representatives": [],
-                "resolved_ambiguities": [],
-                "universal_coverage": [],
-            },
-            "sampling_reasons": {
-                str(trade_id): ["deterministic random baseline"] for trade_id in range(1, 6)
-            },
-            "sampling_policy_version": SAMPLING_POLICY_VERSION,
-            "sampling_policy_sha256": SAMPLING_POLICY_SHA256,
+            "validation_lane": "bar",
+            "source_trade_count": 5,
+            "minimum_trade_samples": 5,
+            "schema_version": "1.6",
+            "artifact_files": artifact_files,
         },
+    )
+    trades = pd.DataFrame(
+        [
+            {
+                "trade_id": trade_id,
+                "entry_time": f"2026-01-{trade_id:02d}T14:30:00Z",
+                "exit_time": f"2026-01-{trade_id:02d}T14:35:00Z",
+                "direction": "long" if trade_id % 2 else "short",
+                "entry_order_type": "market",
+                "exit_reason": "target" if trade_id % 2 else "stop",
+                "r_multiple": 1.0 if trade_id % 2 else -1.0,
+                "pnl_ticks": 4 if trade_id % 2 else -4,
+                "was_forced_flatten": False,
+            }
+            for trade_id in range(1, 6)
+        ]
+    )
+    trades.to_parquet(evidence_dir / "trades.parquet", index=False)
+    pd.DataFrame(
+        [{"trade_id": trade_id, "timestamp": f"2026-01-{trade_id:02d}T14:30:00Z"} for trade_id in range(1, 6)]
+    ).to_parquet(evidence_dir / "bar_windows.parquet", index=False)
+    for filename in (
+        "condition_snapshots.parquet",
+        "tick_windows.parquet",
+        "event_transitions.parquet",
+        "exit_audits.parquet",
+    ):
+        pd.DataFrame().to_parquet(evidence_dir / filename, index=False)
+    checks = [
+        {
+            "check_id": f"required.{name}",
+            "check_name": name,
+            "category": "reconciliation",
+            "status": "PASS",
+            "severity": "error",
+        }
+        for name in sorted(REQUIRED_AUTOMATED_CHECK_NAMES)
+    ]
+    checks.extend(
+        {
+            "check_id": f"category.{category}",
+            "check_name": f"{category}_coverage",
+            "category": category,
+            "status": "PASS",
+            "severity": "error",
+        }
+        for category in sorted(REQUIRED_AUTOMATED_CATEGORIES - {"reconciliation"})
+    )
+    pd.DataFrame(checks).to_parquet(evidence_dir / "validation_checks.parquet", index=False)
+    service = MechanicsApprovalService()
+    initial_plan = service.plan(source_path)
+    for trade_id in initial_plan.sampled_trade_ids:
+        save_manual_review_annotation(
+            evidence_dir,
+            trade_id,
+            "Correct",
+            "SIMULATED complete annotation for a synthetic fixture; no owner authority.",
+            reviewed_at="2026-09-27T00:00:00+00:00",
+        )
+    approval = service.approve(
+        source_path,
+        reviewer="SIMULATED_MVP_FIXTURE_ONLY",
+        notes="SIMULATED mechanics decision on a synthetic fixture. No owner authority.",
+        reviewed_at="2026-09-27T00:00:00+00:00",
     )
     draft_sha256 = "2" * 64
     campaign = {
@@ -321,6 +397,7 @@ def _project(
             }
         ],
         "variants": ["v01"],
+        "sequential_variant_history": [],
         "variant_distinctions": {
             "v01": {
                 "mechanic_signature": signature,
@@ -457,12 +534,39 @@ def _project(
         if stage == disabled_stage:
             result = _annotate_stage_decisions(_skipped_stage(stage, "disabled"))
         elif index == 0:
+            execution_assumptions = mvp.ExecutionAssumptions.from_core_config(effective["core"]).as_dict()
+            fixed_core = {"reproducibility": {"execution_assumptions": execution_assumptions}}
             stage_summary = {
                 "total_combinations_tested": 1,
                 "percentage_profitable_iterations": 0.0,
+                "fixed_config_core": fixed_core,
             }
             output = stage_dir / mvp._CANONICAL_STAGE_SUMMARIES[stage]
             _write_json(output, stage_summary)
+            _write_json(stage_dir / "fixed_config_core_metrics.json", fixed_core)
+            retained_quality = {
+                "rows": 1,
+                "duplicate_count": 0,
+                "invalid_ohlc_count": 0,
+                "missing_session_segments": 0,
+                "first_timestamp": "2026-01-05 09:30:00-05:00",
+                "last_timestamp": "2026-01-05 09:30:00-05:00",
+                "roll_boundary_sessions_skipped": 0,
+                "loaded_rows": 1,
+                "strategy_rows": 1,
+                "timeframe": "1m",
+                "timeframe_minutes": 1,
+                "source_timeframe": "1m",
+            }
+            quality_path = stage_dir / "validation/data_quality_report.csv"
+            quality_path.parent.mkdir(parents=True)
+            pd.DataFrame([retained_quality]).to_csv(quality_path, index=False)
+            data_quality = {
+                **retained_quality,
+                "prepare_data_duration_seconds": 0.01,
+                "prepared_data_cache": {"enabled": True, "hit": False, "key": "test"},
+            }
+            artifacts = [str(path.relative_to(root)) for path in sorted(stage_dir.rglob("*")) if path.is_file()]
             result: dict[str, object] = {
                 "stage": stage,
                 "label": STAGE_LABELS[stage],
@@ -472,7 +576,10 @@ def _project(
                 "completed_at": "2026-09-27T00:00:01",
                 "duration_seconds": 1.0,
                 "summary": stage_summary,
-                "artifacts": [str(output.relative_to(root))],
+                "data_quality": data_quality,
+                "input_hash": canonical_hash,
+                "core_grid_parameters": {},
+                "artifacts": artifacts,
             }
             result["criteria"] = evaluate_criteria(
                 result,
@@ -672,6 +779,16 @@ def _update_summary_and_manifest(run: Path, update) -> None:
     _write_json(manifest_path, manifest)
 
 
+def _replace_stage_in_run(run: Path, index: int, stage: dict[str, object]) -> None:
+    _write_json(run / str(stage["stage"]) / "stage_result.json", stage)
+
+    def update(document):
+        if "stages" in document:
+            document["stages"][index] = stage
+
+    _update_summary_and_manifest(run, update)
+
+
 def test_builds_bound_synthetic_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
     report = _build(root, run, preflight, monkeypatch)
@@ -697,6 +814,90 @@ def test_builds_bound_synthetic_report(tmp_path: Path, monkeypatch: pytest.Monke
     assert report["stages"][0]["referenced_artifacts"][0]["sha256"]
     assert report["dataset"]["manifest_historical_run_hash_recorded"] is False
     assert report["producer_bindings"]["source_results_index"]["sha256"]
+    assert report["mechanics"]["planner_contract_validated"] is True
+    assert report["mechanics"]["evidence_inventory_only"] is False
+    assert report["execution_contract"]["engine_execution_assumptions"]["market_exit_slippage_ticks"] == 1.0
+    assert report["stages"][0]["omitted_unverified_fields"] == [
+        "data_quality.prepare_data_duration_seconds",
+        "data_quality.prepared_data_cache",
+    ]
+    assert "prepared_data_cache" not in report["stages"][0]["summary"]["data_quality"]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("extra", "completed payload fields"),
+        ("input", "input hash"),
+        ("grid", "limited core grid parameters"),
+        ("quality", "retained data quality rows"),
+    ],
+)
+def test_rejects_coordinated_forged_completed_stage_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    message: str,
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    stage_path = run / PRE_ACCEPTANCE_STAGE_ORDER[0] / "stage_result.json"
+    stage = json.loads(stage_path.read_text(encoding="utf-8"))
+    if mutation == "extra":
+        stage["producer_impossible"] = True
+    elif mutation == "input":
+        stage["input_hash"] = "0" * 64
+    elif mutation == "grid":
+        stage["core_grid_parameters"] = {"entry.params.forged": [1, 2]}
+    else:
+        stage["data_quality"]["rows"] = 99
+    _replace_stage_in_run(run, 0, stage)
+
+    with pytest.raises(ValueError, match=message):
+        _build(root, run, preflight, monkeypatch)
+
+
+def test_rejects_coordinated_execution_assumption_forgery(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, run, preflight = _project(tmp_path)
+    stage_name = PRE_ACCEPTANCE_STAGE_ORDER[0]
+    canonical_path = run / stage_name / mvp._CANONICAL_STAGE_SUMMARIES[stage_name]
+    canonical = json.loads(canonical_path.read_text(encoding="utf-8"))
+    forged = deepcopy(canonical["fixed_config_core"]["reproducibility"]["execution_assumptions"])
+    forged["commission_per_contract"] = 0.0
+    forged["commission_source"] = "forged"
+    canonical["fixed_config_core"]["reproducibility"]["execution_assumptions"] = forged
+    _write_json(canonical_path, canonical)
+    stage_path = run / stage_name / "stage_result.json"
+    stage = json.loads(stage_path.read_text(encoding="utf-8"))
+    stage["summary"] = canonical
+    _replace_stage_in_run(run, 0, stage)
+
+    with pytest.raises(ValueError, match="canonical_summary.*execution_assumptions"):
+        _build(root, run, preflight, monkeypatch)
+
+
+def test_binds_explicit_per_exit_execution_assumptions(tmp_path: Path) -> None:
+    core = {
+        "tick_size": 0.25,
+        "tick_value": 12.5,
+        "point_value": 50.0,
+        "commission_per_contract": 2.5,
+        "slippage_ticks": 1.0,
+        "entry_slippage_ticks": 2.0,
+        "protective_stop_slippage_ticks": 3.0,
+        "target_limit_slippage_ticks": 0.0,
+        "market_exit_slippage_ticks": 4.0,
+    }
+    expected = mvp.ExecutionAssumptions.from_core_config(core).as_dict()
+    canonical = {"fixed_config_core": {"reproducibility": {"execution_assumptions": expected}}}
+    metrics_path = tmp_path / "fixed_config_core_metrics.json"
+    _write_json(metrics_path, {"reproducibility": {"execution_assumptions": expected}})
+
+    mvp._validate_execution_assumptions("limited_core_grid_test", canonical, [metrics_path], expected)
+
+    assert expected["entry_slippage_ticks"] == 2.0
+    assert expected["protective_stop_slippage_ticks"] == 3.0
+    assert expected["target_limit_slippage_ticks"] == 0.0
+    assert expected["market_exit_slippage_ticks"] == 4.0
 
 
 def test_unverified_mode_never_claims_real_origin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -733,9 +934,7 @@ def test_unverified_mode_never_claims_real_origin(tmp_path: Path, monkeypatch: p
         _build(root, run, preflight, monkeypatch, mode="real")
 
 
-def test_synthetic_source_does_not_imply_simulated_mechanics(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_synthetic_source_does_not_imply_simulated_mechanics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
     campaign_root = root / "research/campaigns/active/recipe_demo"
     campaign_path = campaign_root / "campaign.yaml"
@@ -767,9 +966,7 @@ def test_synthetic_source_does_not_imply_simulated_mechanics(
 
 
 @pytest.mark.parametrize("field", ["run_uid", "test_run_id", "attempt_id", "attempt_kind", "attempt_provenance"])
-def test_rejects_empty_required_identity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str
-) -> None:
+def test_rejects_empty_required_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str) -> None:
     root, run, preflight = _project(tmp_path)
     _update_summary_and_manifest(run, lambda document: document.__setitem__(field, ""))
     with pytest.raises(ValueError, match=field):
@@ -829,9 +1026,7 @@ def test_rejects_integer_for_boolean_control(tmp_path: Path, monkeypatch: pytest
     root, run, preflight = _project(tmp_path)
     _update_summary_and_manifest(
         run,
-        lambda document: document.__setitem__("skip_validation", 0)
-        if "stages" in document
-        else None,
+        lambda document: document.__setitem__("skip_validation", 0) if "stages" in document else None,
     )
     with pytest.raises(ValueError, match="skip_validation must be boolean"):
         _build(root, run, preflight, monkeypatch)
@@ -888,16 +1083,12 @@ def test_formatting_preserves_compiled_object_hash_but_breaks_raw_run_binding(
     source_path.write_text(yaml.safe_dump(source, sort_keys=True), encoding="utf-8")
 
     assert file_sha256(source_path) != prior_file_hash
-    assert mvp._compiled_object_sha256(source) == manifest["compiled_document_sha256"][
-        "variants/v01/config.yaml"
-    ]
+    assert mvp._compiled_object_sha256(source) == manifest["compiled_document_sha256"]["variants/v01/config.yaml"]
     with pytest.raises(ValueError, match="authored source config hash"):
         _build(root, run, preflight, monkeypatch)
 
 
-def test_rejects_preflight_receipt_that_claims_tests_ran(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rejects_preflight_receipt_that_claims_tests_ran(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
     preflight["tests_ran"] = True
     _write_json(root / "pre-run-preflight.json", preflight)
@@ -1023,16 +1214,23 @@ def test_rejects_coordinated_stage_relabel_when_canonical_summary_still_fails(
         _build(root, run, preflight, monkeypatch)
 
 
-def test_accepts_exact_disabled_stage_without_stage_result(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_accepts_exact_disabled_stage_without_stage_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     disabled = PRE_ACCEPTANCE_STAGE_ORDER[1]
     root, run, preflight = _project(tmp_path, disabled_stage=disabled)
     effective = yaml.safe_load((run / "effective_config.yaml").read_text(encoding="utf-8"))
     effective["campaign_tests"][disabled]["enabled"] = False
     summary = json.loads((run / "campaign_test_summary.json").read_text(encoding="utf-8"))
     manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8"))
-    stages = mvp._stage_bindings(run, effective, summary, manifest, root)
+    canonical = root / "research/datasets/demo_es/bars.csv"
+    stages = mvp._stage_bindings(
+        run,
+        effective,
+        summary,
+        manifest,
+        root,
+        file_sha256(canonical),
+        mvp.ExecutionAssumptions.from_core_config(effective["core"]).as_dict(),
+    )
 
     bound = stages[1]
     assert bound["summary"]["status"] == "skipped"
@@ -1041,9 +1239,7 @@ def test_accepts_exact_disabled_stage_without_stage_result(
     assert bound["missing_stage_result_reason"] == "disabled"
 
 
-def test_rejects_hash_valid_strategy_spec_execution_drift(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rejects_hash_valid_strategy_spec_execution_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
     campaign_root = root / "research/campaigns/active/recipe_demo"
     spec_path = campaign_root / "strategy_spec.yaml"
@@ -1060,9 +1256,106 @@ def test_rejects_hash_valid_strategy_spec_execution_drift(
         _build(root, run, preflight, monkeypatch)
 
 
-def test_rejects_undersized_mechanics_random_sample(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "field",
+    [
+        "cancel_pending_orders_before_flatten",
+        "reject_if_position_after_flatten_deadline",
+        "reject_if_pending_order_after_flatten_deadline",
+        "reject_if_entry_after_latest_entry_time",
+    ],
+)
+def test_rejects_compiler_fixed_execution_safety_drift(tmp_path: Path, field: str) -> None:
+    root, _run, _preflight = _project(tmp_path)
+    campaign_root = root / "research/campaigns/active/recipe_demo"
+    source = yaml.safe_load((campaign_root / "variants/v01/config.yaml").read_text(encoding="utf-8"))
+    execution = yaml.safe_load((campaign_root / "strategy_spec.yaml").read_text(encoding="utf-8"))["execution"]
+    source["apex_rules"][field] = False
+
+    with pytest.raises(ValueError, match=f"compiled execution safety {field}"):
+        mvp._validate_authoring_execution(execution, source)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("source", "campaign source 0 fields"),
+        ("fingerprint", "campaign economic edge fingerprint fields"),
+        ("duplicate", "campaign duplicate review ledger queries"),
+        ("distinction", "campaign variant distinction v01 fields"),
+    ],
+)
+def test_rejects_hash_valid_malformed_research_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    message: str,
 ) -> None:
+    root, run, preflight = _project(tmp_path)
+    campaign_root = root / "research/campaigns/active/recipe_demo"
+    campaign_path = campaign_root / "campaign.yaml"
+    campaign = yaml.safe_load(campaign_path.read_text(encoding="utf-8"))
+    if mutation == "source":
+        campaign["sources"][0].pop("authors")
+    elif mutation == "fingerprint":
+        campaign["economic_edge_fingerprint"].pop("causal_mechanism")
+    elif mutation == "duplicate":
+        campaign["duplicate_edge_review"]["ledger_queries"] = []
+    else:
+        campaign["variant_distinctions"]["v01"]["unexpected"] = "forged"
+    _write_yaml(campaign_path, campaign)
+    manifest_path = campaign_root / "authoring_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["compiled_document_sha256"]["campaign.yaml"] = mvp._compiled_object_sha256(campaign)
+    _write_json(manifest_path, manifest)
+
+    with pytest.raises(ValueError, match=message):
+        _build(root, run, preflight, monkeypatch)
+
+
+def test_accepts_producer_relative_source_path_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, run, preflight = _project(tmp_path)
+    relative = "research/campaigns/active/recipe_demo/variants/v01/config.yaml"
+    _update_summary_and_manifest(
+        run,
+        lambda document: document.__setitem__(
+            "source_config_path" if "stages" in document else "config_source", relative
+        ),
+    )
+    results_path = root / "research/campaigns/active/recipe_demo/results_index.yaml"
+    results = yaml.safe_load(results_path.read_text(encoding="utf-8"))
+    results["runs"][0]["source_config_path"] = relative
+    _write_yaml(results_path, results)
+
+    report = _build(root, run, preflight, monkeypatch)
+
+    assert report["producer_bindings"]["source_results_index_entry"]["source_config_path"] == relative
+
+
+def test_accepts_distinct_source_and_exchange_timezones_and_rejects_swap(tmp_path: Path) -> None:
+    root, run, _preflight = _project(tmp_path)
+    source_path = root / "research/campaigns/active/recipe_demo/variants/v01/config.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source["data"]["source_timezone"] = "UTC"
+    manifest_path = root / "research/datasets/demo_es/dataset_manifest.json"
+    dataset_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    dataset_manifest["timezone"] = "UTC"
+    _write_json(manifest_path, dataset_manifest)
+    summary = json.loads((run / "campaign_test_summary.json").read_text(encoding="utf-8"))
+
+    binding = mvp._dataset_binding(source, summary, root)
+
+    assert binding["manifest_document"]["timezone"] == "UTC"
+    assert binding["manifest_document"]["exchange_timezone"] == "America/New_York"
+    swapped = deepcopy(source)
+    swapped["data"]["source_timezone"] = "America/New_York"
+    swapped["data"]["exchange_timezone"] = "UTC"
+    swapped["data"]["timezone"] = "UTC"
+    with pytest.raises(ValueError, match="dataset manifest timezone"):
+        mvp._dataset_binding(swapped, summary, root)
+
+
+def test_rejects_undersized_mechanics_random_sample(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
     approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
     approval = json.loads(approval_path.read_text(encoding="utf-8"))
@@ -1111,31 +1404,100 @@ def test_rejects_malformed_mechanics_sampling_structure(
         _build(root, run, preflight, monkeypatch)
 
 
+def test_rejects_same_size_noncanonical_mechanics_sample(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, run, preflight = _project(tmp_path)
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    replacement = list(reversed(approval["sampled_trade_ids"]))
+    approval["sampled_trade_ids"] = replacement
+    approval["sampling_categories"]["random_trades"] = replacement
+    approval["sampling_reasons"] = {str(trade_id): ["deterministic random baseline"] for trade_id in replacement}
+    _write_json(approval_path, approval)
+
+    with pytest.raises(ValueError, match="approval/planner sampled_trade_ids"):
+        _build(root, run, preflight, monkeypatch)
+
+
+def test_rejects_mixed_alias_and_nonexistent_mechanics_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, run, preflight = _project(tmp_path)
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval["sampled_trade_ids"] = [1, "1", 2, 3, 4]
+    approval["sampling_categories"]["random_trades"] = [1, "1", 2, 3, 4]
+    approval["sampling_reasons"] = {
+        "1": ["deterministic random baseline"],
+        "2": ["deterministic random baseline"],
+        "3": ["deterministic random baseline"],
+        "4": ["deterministic random baseline"],
+    }
+    _write_json(approval_path, approval)
+    with pytest.raises(ValueError, match="sampled_trade_ids must be unique"):
+        _build(root, run, preflight, monkeypatch)
+
+    root, run, preflight = _project(tmp_path / "nonexistent")
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    replacement = [101, 102, 103, 104, 105]
+    approval["sampled_trade_ids"] = replacement
+    approval["sampling_categories"]["random_trades"] = replacement
+    approval["sampling_reasons"] = {str(trade_id): ["deterministic random baseline"] for trade_id in replacement}
+    _write_json(approval_path, approval)
+    with pytest.raises(ValueError, match="approval/planner sampled_trade_ids"):
+        _build(root, run, preflight, monkeypatch)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("missing", "unreviewed sampled trades"),
+        ("incorrect", "non-Correct sampled trades"),
+        ("empty_notes", "notes must be a non-empty string"),
+    ],
+)
+def test_rejects_incomplete_retained_mechanics_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    message: str,
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    review_path = root / "research/evidence/mechanics/validation_runs/core/manual_review.parquet"
+    reviews = pd.read_parquet(review_path)
+    if mutation == "missing":
+        reviews = reviews.iloc[1:].copy()
+    elif mutation == "incorrect":
+        reviews.loc[0, "reviewer_status"] = "Incorrect"
+    else:
+        reviews.loc[0, "reviewer_notes"] = ""
+    reviews.to_parquet(review_path, index=False)
+
+    with pytest.raises(ValueError, match=message):
+        _build(root, run, preflight, monkeypatch)
+
+
 def test_accepts_fewer_random_samples_when_evidence_has_fewer_trades(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, run, preflight = _project(tmp_path)
-    evidence_metadata = root / "research/evidence/mechanics/validation_runs/core/metadata.json"
+    evidence_dir = root / "research/evidence/mechanics/validation_runs/core"
+    evidence_metadata = evidence_dir / "metadata.json"
     metadata = json.loads(evidence_metadata.read_text(encoding="utf-8"))
     metadata["source_trade_count"] = 2
     _write_json(evidence_metadata, metadata)
-    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
-    approval = json.loads(approval_path.read_text(encoding="utf-8"))
-    approval["sampled_trade_ids"] = [1, 2]
-    approval["sampling_categories"] = {
-        "random_trades": [1, 2],
-        "warning_representatives": [],
-        "resolved_ambiguities": [],
-        "universal_coverage": [],
-    }
-    approval["sampling_reasons"] = {
-        "1": ["deterministic random baseline"],
-        "2": ["deterministic random baseline"],
-    }
-    _write_json(approval_path, approval)
+    for filename in ("trades.parquet", "bar_windows.parquet"):
+        path = evidence_dir / filename
+        pd.read_parquet(path).iloc[:2].to_parquet(path, index=False)
+    source_path = root / "research/campaigns/active/recipe_demo/variants/v01/config.yaml"
+    approval = MechanicsApprovalService().approve(
+        source_path,
+        reviewer="SIMULATED_MVP_FIXTURE_ONLY",
+        notes="SIMULATED mechanics decision on a synthetic fixture. No owner authority.",
+        reviewed_at="2026-09-27T00:00:00+00:00",
+    )
 
     report = _build(root, run, preflight, monkeypatch)
-    assert report["mechanics"]["approval_record"]["sampled_trade_ids"] == [1, 2]
+    assert report["mechanics"]["approval_record"]["sampled_trade_ids"] == approval["sampled_trade_ids"]
+    assert len(approval["sampled_trade_ids"]) == 2
 
 
 def test_results_index_allows_other_entries_but_requires_exact_current_entry(
@@ -1155,17 +1517,13 @@ def test_results_index_allows_other_entries_but_requires_exact_current_entry(
             "source_results_index_path", "research/campaigns/active/recipe_demo/campaign.yaml"
         )
         if "source_results_index_path" in document
-        else document.__setitem__(
-            "source_results_index", "research/campaigns/active/recipe_demo/campaign.yaml"
-        ),
+        else document.__setitem__("source_results_index", "research/campaigns/active/recipe_demo/campaign.yaml"),
     )
     with pytest.raises(ValueError, match="canonical source results index path"):
         _build(root, run, preflight, monkeypatch)
 
 
-def test_rejects_incomplete_authoring_document_topology(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rejects_incomplete_authoring_document_topology(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
     manifest_path = root / "research/campaigns/active/recipe_demo/authoring_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -1193,9 +1551,7 @@ def test_rejects_hash_valid_semantically_contradictory_authoring_documents(
         _build(root, run, preflight, monkeypatch)
 
 
-def test_rejects_hash_valid_forged_mechanic_signature(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rejects_hash_valid_forged_mechanic_signature(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
     campaign_root = root / "research/campaigns/active/recipe_demo"
     manifest_path = campaign_root / "authoring_manifest.json"
@@ -1329,9 +1685,7 @@ def test_rejects_preflight_input_identity_drift(
         _build(root, run, preflight, monkeypatch)
 
 
-def test_preflight_accepts_equivalent_absolute_config_identity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_preflight_accepts_equivalent_absolute_config_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
     source_path = root / "research/campaigns/active/recipe_demo/variants/v01/config.yaml"
     preflight["configs_checked"] = [str(source_path)]
@@ -1344,9 +1698,7 @@ def test_preflight_accepts_equivalent_absolute_config_identity(
     assert report["preflight"]["recorded"]["configs_checked"] == [str(source_path)]
 
 
-def test_cli_uses_exclusive_create_and_refuses_inside_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cli_uses_exclusive_create_and_refuses_inside_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, _preflight = _project(tmp_path)
     document = {"overall_verdict": "NEEDS MANUAL REVIEW"}
     monkeypatch.setattr(mvp, "build_diagnostic_index", lambda **_kwargs: document)
