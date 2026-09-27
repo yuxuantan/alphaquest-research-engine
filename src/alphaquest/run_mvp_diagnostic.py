@@ -16,6 +16,7 @@ import json
 import math
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pyarrow.parquet as pq
 import pandas as pd
@@ -41,6 +42,7 @@ from alphaquest.research.campaign_stages import (
     STAGE_LABELS,
     _annotate_stage_decisions,
     _first_failed_stage,
+    _merged_section,
     _research_verdict,
     _scientific_validity_verdict,
     _select_incubation_params,
@@ -49,7 +51,7 @@ from alphaquest.research.campaign_stages import (
     canonicalize_campaign_config,
     evaluate_criteria,
 )
-from alphaquest.research.core_grid import _expected_combination_count
+from alphaquest.research.core_grid import _expected_combination_count, parameter_combinations
 from alphaquest.research.preflight import run_preflight
 from alphaquest.research.schemas import (
     validate_campaign_config_contract,
@@ -60,6 +62,16 @@ from alphaquest.research.storage import (
     load_storage_layout,
     resolve_campaign_context,
     resolve_recorded_path,
+)
+from alphaquest.research.wfa import (
+    _objective_label,
+    _select_best_in_sample,
+    _selection_sort_spec,
+    _train_grid_metadata,
+    _validate_oos_intervals,
+    _validate_stitched_oos_trade_identity,
+    _wfa_grid_config,
+    _wfa_mode,
 )
 from alphaquest.studio.approvals import MechanicsApprovalService
 from alphaquest.utils.config import strategy_mechanic, validate_campaign_run_root
@@ -1915,22 +1927,277 @@ def _nonnegative_int(value: Any, label: str) -> int:
     return parsed
 
 
+_WFA_EARLY_EXIT_REASONS = {
+    "no_in_sample_rows_after_selection_filter",
+    "selected_train_net_profit_not_positive",
+    "selected_train_profit_factor_below_minimum",
+}
+_WFA_GRID_METADATA_COLUMNS = {
+    "wfa_window_id",
+    "wfa_train_start",
+    "wfa_train_end",
+    "wfa_test_start",
+    "wfa_test_end",
+    "wfa_objective",
+    "wfa_base_config_hash",
+    "wfa_parameter_hash",
+    "wfa_selection_filter_hash",
+    "wfa_input_hash",
+    "wfa_selection_rank",
+    "wfa_selected",
+}
+
+
+def _runtime_wfa_grid_contract(
+    effective_config: dict[str, Any],
+    stage_cfg: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    runtime = _merged_section(effective_config, "wfa", stage_cfg)
+    runtime.setdefault("mode", "unanchored")
+    runtime.setdefault("train_months", 48)
+    runtime.setdefault("test_months", 12)
+    runtime.setdefault("step_months", 12)
+    runtime["objective"] = "MAR"
+    runtime.pop("selection_min_trades_per_year", None)
+    runtime["selection_exclusive_min_trades_per_year"] = 50
+    runtime.setdefault("early_exit_min_train_profit_factor", 1.0)
+    return runtime, _wfa_grid_config(runtime)
+
+
+def _window_number(value: Any, label: str) -> int:
+    key = _window_id_key(value, label)
+    try:
+        number = int(key)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a positive producer window number") from exc
+    if number <= 0 or key != str(number):
+        raise ValueError(f"{label} must be a positive producer window number")
+    return number
+
+
+def _market_timestamp(value: Any, label: str, timezone_name: str) -> pd.Timestamp:
+    try:
+        parsed = pd.Timestamp(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a valid timestamp") from exc
+    if pd.isna(parsed):
+        raise ValueError(f"{label} must be a valid timestamp")
+    if parsed.tzinfo is None:
+        raise ValueError(f"{label} must include the producer market offset")
+    try:
+        market = parsed.tz_convert(ZoneInfo(timezone_name))
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"configured exchange timezone is invalid: {timezone_name}") from exc
+    if parsed.tz_localize(None) != market.tz_localize(None):
+        raise ValueError(f"{label} is not serialized in configured exchange timezone {timezone_name}")
+    return market
+
+
+def _plain_scalar(value: Any) -> Any:
+    return value.item() if hasattr(value, "item") else value
+
+
+def _require_scalar_equal(actual: Any, expected: Any, label: str) -> None:
+    actual = _plain_scalar(actual)
+    expected = _plain_scalar(expected)
+    if isinstance(actual, (int, float)) and not isinstance(actual, bool):
+        if isinstance(expected, (int, float)) and not isinstance(expected, bool):
+            if math.isnan(float(actual)) and math.isnan(float(expected)):
+                return
+            if float(actual) == float(expected):
+                return
+    _require_equal(actual, expected, label)
+
+
+def _validate_wfa_train_grid(
+    path: Path,
+    *,
+    window: dict[str, Any],
+    parameters: dict[str, Any],
+    grid_config: dict[str, Any],
+    effective_config: dict[str, Any],
+    canonical_input_hash: str,
+) -> dict[str, Any]:
+    frame = _read_stage_csv(path, f"WFA window {window['window_id']} train grid")
+    if frame.empty:
+        raise ValueError(f"WFA train grid is empty: {path.name}")
+    missing = sorted(_WFA_GRID_METADATA_COLUMNS - set(frame.columns))
+    if missing:
+        raise ValueError(f"WFA train grid {path.name} lacks producer columns: {', '.join(missing)}")
+
+    metadata = _train_grid_metadata(effective_config, grid_config, canonical_input_hash)
+    expected_metadata = {
+        "wfa_window_id": window["window_number"],
+        "wfa_train_start": window["train_start"],
+        "wfa_train_end": window["train_end"],
+        "wfa_test_start": window["test_start"],
+        "wfa_test_end": window["test_end"],
+        "wfa_objective": _objective_label(grid_config["objective"]),
+        "wfa_base_config_hash": metadata["base_config_hash"],
+        "wfa_parameter_hash": metadata["parameter_hash"],
+        "wfa_selection_filter_hash": metadata["selection_filter_hash"],
+        "wfa_input_hash": metadata["input_hash"],
+    }
+    for column, expected in expected_metadata.items():
+        if frame[column].isna().any():
+            raise ValueError(f"WFA train grid {path.name} has missing {column}")
+        for row_index, actual in frame[column].items():
+            if column.endswith("_start") or column.endswith("_end"):
+                actual = _date_key(actual, f"WFA train grid {path.name} row {row_index} {column}")
+            _require_scalar_equal(
+                actual,
+                expected,
+                f"WFA train grid {path.name} row {row_index} {column}",
+            )
+
+    combinations = parameter_combinations(parameters, "wfa.parameters")
+    _require_equal(len(frame), len(combinations), f"WFA train grid {path.name} combination count")
+    if "run_id" not in frame.columns:
+        raise ValueError(f"WFA train grid {path.name} lacks producer run_id")
+    missing_parameters = sorted(set(parameters) - set(frame.columns))
+    if missing_parameters:
+        raise ValueError(f"WFA train grid {path.name} lacks parameter columns: {missing_parameters}")
+    actual_combinations = [{name: _plain_scalar(row[name]) for name in parameters} for _, row in frame.iterrows()]
+    observed_run_ids: set[int] = set()
+    for row_index, (actual, run_id_value) in enumerate(zip(actual_combinations, frame["run_id"], strict=True)):
+        run_id = _nonnegative_int(run_id_value, f"WFA train grid {path.name} row {row_index} run_id")
+        if run_id <= 0 or run_id > len(combinations) or run_id in observed_run_ids:
+            raise ValueError(f"WFA train grid {path.name} contains an invalid or duplicate producer run_id")
+        observed_run_ids.add(run_id)
+        _require_equal(
+            actual,
+            combinations[run_id - 1],
+            f"WFA train grid {path.name} run_id {run_id} parameter identity",
+        )
+    _require_equal(
+        observed_run_ids,
+        set(range(1, len(combinations) + 1)),
+        f"WFA train grid {path.name} producer run IDs",
+    )
+    unmatched = list(combinations)
+    for actual in actual_combinations:
+        for index, expected in enumerate(unmatched):
+            if actual == expected:
+                unmatched.pop(index)
+                break
+        else:
+            raise ValueError(f"WFA train grid {path.name} contains a row outside the published parameter grid")
+    if unmatched:
+        raise ValueError(f"WFA train grid {path.name} omits published parameter combinations")
+
+    objective = grid_config["objective"]
+    if objective not in frame.columns:
+        raise ValueError(f"WFA train grid {path.name} lacks objective column {objective}")
+    sort_columns, ascending = _selection_sort_spec(frame, objective)
+    expected_order = frame.sort_values(sort_columns, ascending=ascending, na_position="last").index.tolist()
+    if expected_order != frame.index.tolist():
+        raise ValueError(f"WFA train grid {path.name} rows are not in canonical selection order")
+    ranks = [
+        _nonnegative_int(value, f"WFA train grid {path.name} selection rank") for value in frame["wfa_selection_rank"]
+    ]
+    _require_equal(ranks, list(range(1, len(frame) + 1)), f"WFA train grid {path.name} selection ranks")
+    selected_markers = [
+        _strict_csv_bool(value, f"WFA train grid {path.name} selected marker") for value in frame["wfa_selected"]
+    ]
+    _require_equal(
+        selected_markers,
+        [index == 0 for index in range(len(frame))],
+        f"WFA train grid {path.name} canonical rank-one marker",
+    )
+
+    best = _select_best_in_sample(frame, objective, grid_config["selection_filter"])
+    derived = {name: _plain_scalar(best[name]) for name in parameters}
+    _require_equal(derived, window["selected_params"], f"WFA train grid {path.name} selected parameters")
+    _require_scalar_equal(
+        window["result_row"].get("train_objective"),
+        best[objective],
+        f"WFA train grid {path.name} selected objective",
+    )
+    for result_field, grid_field in (
+        ("train_mar", "mar"),
+        ("train_cagr", "cagr"),
+        ("train_max_drawdown_pct", "max_drawdown_pct"),
+        ("train_net_profit", "net_profit"),
+        ("train_profit_factor", "profit_factor"),
+        ("train_max_drawdown", "max_drawdown"),
+    ):
+        if grid_field not in frame.columns:
+            raise ValueError(f"WFA train grid {path.name} lacks selected metric {grid_field}")
+        _require_scalar_equal(
+            window["result_row"].get(result_field),
+            best[grid_field],
+            f"WFA train grid {path.name} selected {grid_field}",
+        )
+    rank_one = {name: _plain_scalar(frame.iloc[0][name]) for name in parameters}
+    return {
+        "path": path.name,
+        "window_id": window["window_id"],
+        "combination_count": len(frame),
+        "base_config_hash": metadata["base_config_hash"],
+        "parameter_hash": metadata["parameter_hash"],
+        "selection_filter_hash": metadata["selection_filter_hash"],
+        "input_hash": metadata["input_hash"],
+        "canonical_rank_one_params": rank_one,
+        "derived_selected_params": derived,
+    }
+
+
 def _validate_wfa_execution_evidence(
     results_path: Path,
     trades_path: Path,
     parameters: dict[str, Any],
     canonical_summary: dict[str, Any],
+    *,
+    artifact_paths: list[Path],
+    effective_config: dict[str, Any],
+    stage_cfg: dict[str, Any],
+    project_root: Path,
+    canonical_input_hash: str,
 ) -> dict[str, Any]:
     results = _read_stage_csv(results_path, "WFA results")
     trades = _read_stage_csv(trades_path, "WFA OOS trade log")
+    runtime_wfa, grid_config = _runtime_wfa_grid_contract(effective_config, stage_cfg)
+    _require_equal(parameters, grid_config["parameters"], "WFA runtime published parameters")
+    _require_equal(canonical_summary.get("objective"), _objective_label(grid_config["objective"]), "WFA objective")
+    _require_equal(canonical_summary.get("selection_filter"), grid_config["selection_filter"], "WFA selection filter")
+    for field in ("window_mode", "train_months", "test_months", "step_months"):
+        expected = _wfa_mode(runtime_wfa) if field == "window_mode" else runtime_wfa[field]
+        _require_equal(canonical_summary.get(field), expected, f"WFA {field}")
+    _require_equal(canonical_summary.get("parallel"), grid_config["parallel"], "WFA parallel contract")
+    _require_equal(
+        canonical_summary.get("complete_oos_windows_only"),
+        True,
+        "WFA complete-window policy",
+    )
+    early_exit_profit_factor = runtime_wfa["early_exit_min_train_profit_factor"]
+    _require_equal(
+        canonical_summary.get("early_exit_min_train_profit_factor"),
+        float(early_exit_profit_factor) if early_exit_profit_factor is not None else None,
+        "WFA early-exit profit-factor threshold",
+    )
+    _require_equal(
+        canonical_summary.get("early_exit_require_train_profitable"),
+        bool(runtime_wfa.get("early_exit_require_train_profitable", False)),
+        "WFA early-exit profitability control",
+    )
+    timezone_name = _require_nonempty_string(
+        (effective_config.get("data") or {}).get("exchange_timezone")
+        or (effective_config.get("data") or {}).get("timezone"),
+        "WFA exchange timezone",
+    )
     required_result_columns = {
         "window_id",
+        "train_start",
+        "train_end",
         "test_start",
         "test_end",
+        "objective",
         "selected_params",
         "oos_window_complete",
         "oos_evaluated",
         "test_observations",
+        "test_first_timestamp",
+        "test_last_timestamp",
         "test_trades",
     }
     if not results.empty:
@@ -1945,6 +2212,7 @@ def _validate_wfa_execution_evidence(
     normalized_early_exit: list[bool] = []
     for index, row in results.iterrows():
         window_id = _window_id_key(row.get("window_id"), f"WFA results row {index} window_id")
+        window_number = _window_number(row.get("window_id"), f"WFA results row {index} window_id")
         if window_id in windows:
             raise ValueError(f"WFA results contain duplicate window_id {window_id}")
         complete = _strict_csv_bool(
@@ -1969,22 +2237,101 @@ def _validate_wfa_execution_evidence(
             raise ValueError(f"WFA unevaluated window {window_id} cannot record selected parameters")
         if evaluated and early_exit:
             raise ValueError(f"WFA evaluated window {window_id} cannot be marked early_exit")
+        if not evaluated:
+            reason = str(row.get("early_exit_reason") or "").strip()
+            if not early_exit or reason not in _WFA_EARLY_EXIT_REASONS:
+                raise ValueError(f"WFA unevaluated window {window_id} must be a producer early-exit row")
+            if _nonnegative_int(row.get("test_trades"), f"WFA results row {index} test_trades") != 0:
+                raise ValueError(f"WFA early-exit window {window_id} cannot record OOS trades")
+            if index != len(results) - 1:
+                raise ValueError(f"WFA early-exit window {window_id} must terminate retained results")
+            for field in (
+                "test_mar",
+                "test_cagr",
+                "test_max_drawdown_pct",
+                "test_net_profit",
+                "test_profit_factor",
+                "test_max_drawdown",
+            ):
+                _require_scalar_equal(row.get(field), 0.0, f"WFA early-exit window {window_id} {field}")
+            _require_equal(
+                _strict_csv_bool(row.get("test_passed"), f"WFA early-exit window {window_id} test_passed"),
+                False,
+                f"WFA early-exit window {window_id} test_passed",
+            )
+        _require_equal(
+            str(row.get("objective")),
+            _objective_label(grid_config["objective"]),
+            f"WFA results row {index} objective",
+        )
+        first_timestamp = _market_timestamp(
+            row.get("test_first_timestamp"),
+            f"WFA results row {index} test_first_timestamp",
+            timezone_name,
+        )
+        last_timestamp = _market_timestamp(
+            row.get("test_last_timestamp"),
+            f"WFA results row {index} test_last_timestamp",
+            timezone_name,
+        )
+        if last_timestamp < first_timestamp:
+            raise ValueError(f"WFA results row {index} test timestamps are reversed")
         record = {
             "window_id": window_id,
+            "window_number": window_number,
+            "train_start": _date_key(row.get("train_start"), f"WFA results row {index} train_start"),
+            "train_end": _date_key(row.get("train_end"), f"WFA results row {index} train_end"),
             "test_start": _date_key(row.get("test_start"), f"WFA results row {index} test_start"),
             "test_end": _date_key(row.get("test_end"), f"WFA results row {index} test_end"),
             "selected_params": selected,
             "oos_evaluated": evaluated,
+            "early_exit": early_exit,
             "test_observations": _nonnegative_int(
                 row.get("test_observations"), f"WFA results row {index} test_observations"
             ),
             "test_trades": _nonnegative_int(row.get("test_trades"), f"WFA results row {index} test_trades"),
+            "test_first_timestamp": first_timestamp,
+            "test_last_timestamp": last_timestamp,
+            "result_row": row,
         }
+        if record["test_observations"] <= 0:
+            raise ValueError(f"WFA retained window {window_id} must have positive test observations")
+        if record["train_start"] >= record["train_end"] or record["test_start"] >= record["test_end"]:
+            raise ValueError(f"WFA window {window_id} must contain valid half-open train/test intervals")
+        if record["train_end"] != record["test_start"]:
+            raise ValueError(f"WFA window {window_id} train and test intervals must be contiguous")
+        if pd.Timestamp(record["test_start"]) + pd.DateOffset(months=int(runtime_wfa["test_months"])) != pd.Timestamp(
+            record["test_end"]
+        ):
+            raise ValueError(f"WFA window {window_id} test interval disagrees with the frozen calendar length")
+        if _wfa_mode(runtime_wfa) == "unanchored" and pd.Timestamp(record["train_start"]) + pd.DateOffset(
+            months=int(runtime_wfa["train_months"])
+        ) != pd.Timestamp(record["train_end"]):
+            raise ValueError(f"WFA window {window_id} train interval disagrees with the frozen calendar length")
+        test_start = pd.Timestamp(record["test_start"])
+        test_end = pd.Timestamp(record["test_end"])
+        if not (test_start <= first_timestamp.tz_localize(None) <= last_timestamp.tz_localize(None) < test_end):
+            raise ValueError(f"WFA window {window_id} retained test timestamps fall outside its test interval")
         windows[window_id] = record
         if evaluated:
             ordered_realized.append(record)
         normalized_params.append(selected)
         normalized_early_exit.append(early_exit)
+
+    producer_intervals = [
+        {
+            "window_id": window["window_number"],
+            "test_start": window["test_start"],
+            "test_end": window["test_end"],
+        }
+        for window in windows.values()
+    ]
+    _require_equal(
+        [window["window_number"] for window in windows.values()],
+        sorted(window["window_number"] for window in windows.values()),
+        "WFA retained window order",
+    )
+    _validate_oos_intervals(producer_intervals)
 
     if not normalized_results.empty:
         normalized_results["selected_params"] = normalized_params
@@ -2005,7 +2352,17 @@ def _validate_wfa_execution_evidence(
     trade_records: list[dict[str, Any]] = []
     counts = {window_id: 0 for window_id in windows}
     if not trades.empty:
-        required_trade_columns = {"wfa_window_id", "wfa_test_start", "wfa_test_end", "wfa_selected_params"}
+        required_trade_columns = {
+            "wfa_window_id",
+            "wfa_train_start",
+            "wfa_train_end",
+            "wfa_test_start",
+            "wfa_test_end",
+            "wfa_objective",
+            "wfa_train_objective",
+            "wfa_selected_params",
+            "entry_timestamp",
+        }
         missing = sorted(required_trade_columns - set(trades.columns))
         if missing:
             raise ValueError(f"WFA OOS trade log lacks producer columns: {', '.join(missing)}")
@@ -2039,8 +2396,42 @@ def _validate_wfa_execution_evidence(
                 window["test_end"],
                 f"WFA OOS trade row {index} test end",
             )
+            for field in ("train_start", "train_end"):
+                _require_equal(
+                    _date_key(row.get(f"wfa_{field}"), f"WFA OOS trade row {index} wfa_{field}"),
+                    window[field],
+                    f"WFA OOS trade row {index} {field.replace('_', ' ')}",
+                )
+            _require_equal(
+                str(row.get("wfa_objective")),
+                _objective_label(grid_config["objective"]),
+                f"WFA OOS trade row {index} objective",
+            )
+            _require_scalar_equal(
+                row.get("wfa_train_objective"),
+                window["result_row"].get("train_objective"),
+                f"WFA OOS trade row {index} train objective",
+            )
+            entry = _market_timestamp(
+                row.get("entry_timestamp"),
+                f"WFA OOS trade row {index} entry_timestamp",
+                timezone_name,
+            )
+            if not (pd.Timestamp(window["test_start"]) <= entry.tz_localize(None) < pd.Timestamp(window["test_end"])):
+                raise ValueError(f"WFA OOS trade row {index} entry falls outside its half-open test interval")
             counts[window_id] += 1
-            trade_records.append({"window_id": window_id, "selected_params": selected})
+            trade_records.append(
+                {
+                    "window_id": window_id,
+                    "entry_timestamp": entry.isoformat(),
+                    "selected_params": selected,
+                }
+            )
+
+        _validate_stitched_oos_trade_identity(
+            trades,
+            [item for item in producer_intervals if windows[str(item["window_id"])]["oos_evaluated"]],
+        )
 
     for window_id, window in windows.items():
         _require_equal(counts[window_id], window["test_trades"], f"WFA window {window_id} trade count")
@@ -2057,6 +2448,37 @@ def _validate_wfa_execution_evidence(
         "WFA summary realized trade count",
     )
     _require_equal(canonical_summary.get("stitched_oos_trades"), len(trades), "WFA stitched trade count")
+    planned_windows = _nonnegative_int(
+        canonical_summary.get("planned_complete_oos_windows"),
+        "WFA planned complete OOS windows",
+    )
+    if planned_windows < len(results):
+        raise ValueError("WFA planned window count is smaller than retained results")
+    _require_equal(
+        canonical_summary.get("skipped_complete_oos_windows"),
+        planned_windows - len(ordered_realized),
+        "WFA skipped complete OOS windows",
+    )
+    _require_equal(
+        canonical_summary.get("realized_oos_observations"),
+        sum(item["test_observations"] for item in ordered_realized),
+        "WFA realized OOS observations",
+    )
+    _require_equal(
+        canonical_summary.get("realized_oos_start"),
+        min((item["test_start"] for item in ordered_realized), default=None),
+        "WFA realized OOS start",
+    )
+    _require_equal(
+        canonical_summary.get("realized_oos_end"),
+        max((item["test_end"] for item in ordered_realized), default=None),
+        "WFA realized OOS end",
+    )
+    _require_equal(
+        canonical_summary.get("early_exit"),
+        any(item["early_exit"] for item in windows.values()),
+        "WFA early-exit summary",
+    )
     intervals = canonical_summary.get("realized_oos_intervals")
     if not isinstance(intervals, list):
         raise ValueError("WFA realized_oos_intervals must be a list")
@@ -2085,12 +2507,68 @@ def _validate_wfa_execution_evidence(
             realized["test_trades"],
             f"WFA realized interval {index} trades",
         )
+        for field in ("first_timestamp", "last_timestamp"):
+            _require_equal(
+                _market_timestamp(
+                    interval.get(field),
+                    f"WFA realized interval {index} {field}",
+                    timezone_name,
+                ),
+                realized[f"test_{field}"],
+                f"WFA realized interval {index} {field}",
+            )
+
+    canonical_grid_files = canonical_summary.get("train_grid_report_files")
+    if not isinstance(canonical_grid_files, list):
+        raise ValueError("WFA train_grid_report_files must be a list")
+    stage_dir = results_path.parent.resolve()
+    resolved_grid_files = [
+        _resolve_reference(value, project_root, f"WFA train_grid_report_files[{index}]")
+        for index, value in enumerate(canonical_grid_files)
+    ]
+    if len(resolved_grid_files) != len(set(resolved_grid_files)):
+        raise ValueError("WFA train_grid_report_files contains duplicate paths")
+    expected_grid_files = [
+        stage_dir / f"window_{window['window_number']:03d}_train_grid.csv" for window in ordered_realized
+    ]
+    _require_equal(resolved_grid_files, expected_grid_files, "WFA canonical train-grid report files")
+    actual_grid_files = sorted(path.resolve() for path in stage_dir.glob("window_*_train_grid.csv") if path.is_file())
+    _require_equal(actual_grid_files, sorted(expected_grid_files), "WFA retained train-grid file set")
+    artifact_set = {path.resolve() for path in artifact_paths}
+    if any(path not in artifact_set for path in expected_grid_files):
+        raise ValueError("WFA train-grid report is absent from the stage artifact inventory")
+    _require_equal(
+        canonical_summary.get("train_grid_reports_retained"),
+        True,
+        "WFA train-grid retention flag",
+    )
+    train_grid_bindings = [
+        _validate_wfa_train_grid(
+            path,
+            window=window,
+            parameters=parameters,
+            grid_config=grid_config,
+            effective_config=effective_config,
+            canonical_input_hash=canonical_input_hash,
+        )
+        for path, window in zip(expected_grid_files, ordered_realized, strict=True)
+    ]
     return {
+        "runtime_wfa": {
+            "objective": _objective_label(grid_config["objective"]),
+            "selection_filter": deepcopy(grid_config["selection_filter"]),
+            "exchange_timezone": timezone_name,
+            "window_mode": _wfa_mode(runtime_wfa),
+            "train_months": runtime_wfa["train_months"],
+            "test_months": runtime_wfa["test_months"],
+            "step_months": runtime_wfa["step_months"],
+        },
         "incubation_selected_params": derived_incubation,
         "window_selections": [
             {"window_id": value["window_id"], "selected_params": value["selected_params"]} for value in windows.values()
         ],
         "trade_selections": trade_records,
+        "train_grid_bindings": train_grid_bindings,
     }
 
 
@@ -2101,6 +2579,8 @@ def _validate_stage_execution_config(
     canonical_summary: dict[str, Any],
     artifact_paths: list[Path],
     effective_config: dict[str, Any],
+    project_root: Path,
+    canonical_input_hash: str,
 ) -> dict[str, Any]:
     if stage == "limited_core_grid_test":
         parameters = _published_parameter_grid(effective_config, "core_grid", stage_cfg)
@@ -2178,6 +2658,11 @@ def _validate_stage_execution_config(
             trade_paths[0],
             parameters,
             canonical_summary,
+            artifact_paths=artifact_paths,
+            effective_config=effective_config,
+            stage_cfg=stage_cfg,
+            project_root=project_root,
+            canonical_input_hash=canonical_input_hash,
         )
         return {
             "wfa_grid": deepcopy(parameters),
@@ -2375,6 +2860,8 @@ def _stage_bindings(
                     canonical_summary=canonical_summary,
                     artifact_paths=artifact_paths,
                     effective_config=effective_config,
+                    project_root=project_root,
+                    canonical_input_hash=canonical_input_hash,
                 )
                 validated_engine_config_hashes = _validate_engine_config_hashes(
                     stage,

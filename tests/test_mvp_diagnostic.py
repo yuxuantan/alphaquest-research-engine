@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 import alphaquest.run_mvp_diagnostic as mvp
+import alphaquest.research.wfa as wfa_module
 from alphaquest.research.campaign_stages import (
     PRE_ACCEPTANCE_STAGE_ORDER,
     STAGE_LABELS,
@@ -26,6 +27,7 @@ from alphaquest.prop.profiles import resolve_prop_profile
 from alphaquest.dashboard.validation_app import save_manual_review_annotation
 from alphaquest.studio.approvals import MechanicsApprovalService
 from alphaquest.utils.hashing import file_sha256, object_sha256
+from alphaquest.utils.reports import write_report_csv
 from alphaquest.validation.promotion_gate import (
     REQUIRED_AUTOMATED_CATEGORIES,
     REQUIRED_AUTOMATED_CHECK_NAMES,
@@ -1102,178 +1104,427 @@ def test_rejects_coordinated_forged_fixed_replay_engine_config_hash(
         _build(root, run, preflight, monkeypatch)
 
 
-def test_validates_wfa_selections_against_frozen_grid(tmp_path: Path) -> None:
+def _write_wfa_contract(tmp_path: Path, *, optimized: bool = True) -> dict[str, object]:
     stage_dir = tmp_path / "walk_forward_analysis"
     stage_dir.mkdir()
-    results = stage_dir / "wfa_results.csv"
-    trades = stage_dir / "wfa_oos_trade_log.csv"
-    result_rows = pd.DataFrame(
-        [
+    parameters = {"entry.params.lookback": [10, 20]} if optimized else {}
+    effective = {
+        "data": {"exchange_timezone": "America/New_York"},
+        "wfa": {
+            "mode": "unanchored",
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "parameters": parameters,
+        },
+    }
+    _, grid_config = mvp._runtime_wfa_grid_contract(effective, {})
+    input_hash = "a" * 64
+    window_specs = [
+        (1, "2023-12-01", "2024-01-01", "2024-01-01", "2024-02-01", 10),
+        (2, "2024-01-01", "2024-02-01", "2024-02-01", "2024-03-01", 20),
+    ]
+    if not optimized:
+        window_specs = [window_specs[0][:-1] + (None,)]
+    results_rows: list[dict[str, object]] = []
+    trade_frames: list[pd.DataFrame] = []
+    intervals: list[dict[str, object]] = []
+    grid_paths: list[Path] = []
+    for window_id, train_start, train_end, test_start, test_end, selected_value in window_specs:
+        combinations = [10, 20] if optimized else [None]
+        grid_rows = []
+        for run_id, value in enumerate(combinations, start=1):
+            selected = value == selected_value if optimized else True
+            grid_rows.append(
+                {
+                    "run_id": run_id,
+                    **({"entry.params.lookback": value} if optimized else {}),
+                    "net_profit": 200.0 if selected else 100.0,
+                    "profit_factor": 2.0 if selected else 1.5,
+                    "max_drawdown": 10.0 if selected else 20.0,
+                    "max_drawdown_pct": 0.02 if selected else 0.04,
+                    "cagr": 0.20 if selected else 0.10,
+                    "mar": 4.0 if selected else 2.0,
+                    "total_trades": 80,
+                    "trades_per_year": 80.0,
+                }
+            )
+        grid = pd.DataFrame(grid_rows)
+        annotated = wfa_module._annotate_train_grid(
+            grid,
+            window_id,
+            pd.Timestamp(train_start),
+            pd.Timestamp(train_end),
+            pd.Timestamp(test_start),
+            pd.Timestamp(test_end),
+            grid_config["objective"],
+            wfa_module._train_grid_metadata(effective, grid_config, input_hash),
+        )
+        grid_path = stage_dir / f"window_{window_id:03d}_train_grid.csv"
+        write_report_csv(annotated, grid_path, "America/New_York", index=False)
+        grid_paths.append(grid_path)
+        selected_params = {"entry.params.lookback": selected_value} if optimized else {}
+        first_timestamp = f"2024-0{window_id}-05T09:30:00-05:00"
+        last_timestamp = f"2024-0{window_id}-25T15:59:00-05:00"
+        results_rows.append(
             {
-                "window_id": 1,
-                "test_start": "2024-01-01",
-                "test_end": "2024-02-01",
-                "selected_params": {"entry.params.lookback": 10},
+                "window_id": window_id,
+                "train_start": train_start,
+                "train_end": train_end,
+                "test_start": test_start,
+                "test_end": test_end,
+                "objective": "MAR",
+                "train_objective": 4.0,
+                "selected_params": selected_params,
+                "train_mar": 4.0,
+                "train_cagr": 0.20,
+                "train_max_drawdown_pct": 0.02,
+                "train_net_profit": 200.0,
+                "train_profit_factor": 2.0,
+                "train_max_drawdown": 10.0,
+                "test_mar": 1.0 if window_id == 1 else 2.0,
+                "test_cagr": 0.05,
+                "test_max_drawdown_pct": 0.03,
+                "test_net_profit": 50.0,
+                "test_profit_factor": 1.5 if window_id == 1 else 2.0,
+                "test_max_drawdown": 15.0,
+                "test_trades": 1,
+                "test_passed": True,
                 "oos_window_complete": True,
                 "oos_evaluated": True,
                 "test_observations": 20,
-                "test_trades": 1,
-                "test_profit_factor": 1.5,
-                "test_mar": 2.0,
-                "test_net_profit": 100.0,
-            },
+                "test_first_timestamp": first_timestamp,
+                "test_last_timestamp": last_timestamp,
+            }
+        )
+        base_trade = pd.DataFrame(
+            [
+                {
+                    "trade_id": 1,
+                    "session_date": f"2024-0{window_id}-15",
+                    "entry_timestamp": f"2024-0{window_id}-15T10:00:00-05:00",
+                    "exit_timestamp": f"2024-0{window_id}-15T10:05:00-05:00",
+                    "net_pnl": 25.0,
+                    "contracts": 1,
+                }
+            ]
+        )
+        trade_frames.append(
+            wfa_module._annotate_oos_trades(
+                base_trade,
+                window_id,
+                pd.Timestamp(train_start),
+                pd.Timestamp(train_end),
+                pd.Timestamp(test_start),
+                pd.Timestamp(test_end),
+                grid_config["objective"],
+                4.0,
+                selected_params,
+            )
+        )
+        intervals.append(
             {
-                "window_id": 2,
-                "test_start": "2024-02-01",
-                "test_end": "2024-03-01",
-                "selected_params": {"entry.params.lookback": 20},
-                "oos_window_complete": True,
-                "oos_evaluated": True,
-                "test_observations": 19,
-                "test_trades": 1,
-                "test_profit_factor": 2.0,
-                "test_mar": 1.0,
-                "test_net_profit": 80.0,
-            },
-        ]
-    )
-    trade_rows = pd.DataFrame(
-        [
-            {
-                "wfa_window_id": 1,
-                "wfa_test_start": "2024-01-01",
-                "wfa_test_end": "2024-02-01",
-                "wfa_selected_params": {"entry.params.lookback": 10},
-            },
-            {
-                "wfa_window_id": 2,
-                "wfa_test_start": "2024-02-01",
-                "wfa_test_end": "2024-03-01",
-                "wfa_selected_params": {"entry.params.lookback": 20},
-            },
-        ]
-    )
-    result_rows.to_csv(results, index=False)
-    trade_rows.to_csv(trades, index=False)
-    canonical = {
-        "parameter_mode": "predeclared_optimization",
-        "windows": 2,
-        "realized_oos_windows": 2,
-        "realized_oos_trades": 2,
-        "stitched_oos_trades": 2,
-        "realized_oos_intervals": [
-            {
-                "window_id": 1,
-                "test_start": "2024-01-01",
-                "test_end": "2024-02-01",
+                "window_id": window_id,
+                "test_start": test_start,
+                "test_end": test_end,
                 "observations": 20,
                 "trades": 1,
-            },
-            {
-                "window_id": 2,
-                "test_start": "2024-02-01",
-                "test_end": "2024-03-01",
-                "observations": 19,
-                "trades": 1,
-            },
-        ],
-        "incubation_selected_params": {"entry.params.lookback": 20},
+                "first_timestamp": first_timestamp,
+                "last_timestamp": last_timestamp,
+            }
+        )
+    results_frame = pd.DataFrame(results_rows)
+    trades_frame = wfa_module._stitch_oos_trades(trade_frames, expected_intervals=intervals)
+    results_path = stage_dir / "wfa_results.csv"
+    trades_path = stage_dir / "wfa_oos_trade_log.csv"
+    write_report_csv(results_frame, results_path, "America/New_York", index=False)
+    write_report_csv(trades_frame, trades_path, "America/New_York", index=False)
+    incubation = mvp._select_incubation_params(results_frame)
+    canonical = {
+        "parameter_mode": "predeclared_optimization" if optimized else "fixed_config",
+        "objective": "MAR",
+        "window_mode": "unanchored",
+        "train_months": 1,
+        "test_months": 1,
+        "step_months": 1,
+        "parallel": {"enabled": False, "scope": "grid"},
+        "complete_oos_windows_only": True,
+        "selection_filter": {"exclusive_min_trades_per_year": 50},
+        "early_exit_min_train_profit_factor": 1.0,
+        "early_exit_require_train_profitable": False,
+        "windows": len(results_frame),
+        "planned_complete_oos_windows": len(results_frame),
+        "realized_oos_windows": len(results_frame),
+        "skipped_complete_oos_windows": 0,
+        "realized_oos_observations": 20 * len(results_frame),
+        "realized_oos_trades": len(trades_frame),
+        "realized_oos_start": intervals[0]["test_start"],
+        "realized_oos_end": intervals[-1]["test_end"],
+        "realized_oos_intervals": intervals,
+        "stitched_oos_trades": len(trades_frame),
+        "early_exit": False,
+        "train_grid_reports_retained": True,
+        "train_grid_report_files": [str(path) for path in grid_paths],
+        "incubation_selected_params": incubation,
     }
-    effective = {"wfa": {"parameters": {"entry.params.lookback": [10, 20]}}}
+    return {
+        "root": tmp_path,
+        "stage_dir": stage_dir,
+        "results": results_path,
+        "trades": trades_path,
+        "grids": grid_paths,
+        "artifacts": [results_path, trades_path, *grid_paths],
+        "effective": effective,
+        "canonical": canonical,
+        "input_hash": input_hash,
+    }
 
-    validated = mvp._validate_stage_execution_config(
+
+def _validate_wfa_contract(contract: dict[str, object]) -> dict[str, object]:
+    return mvp._validate_stage_execution_config(
         stage="walk_forward_analysis",
         stage_cfg={},
-        canonical_summary=canonical,
-        artifact_paths=[results, trades],
-        effective_config=effective,
+        canonical_summary=contract["canonical"],
+        artifact_paths=contract["artifacts"],
+        effective_config=contract["effective"],
+        project_root=contract["root"],
+        canonical_input_hash=contract["input_hash"],
     )
 
-    assert validated["window_selections"] == [
-        {"window_id": "1", "selected_params": {"entry.params.lookback": 10}},
-        {"window_id": "2", "selected_params": {"entry.params.lookback": 20}},
-    ]
-    assert validated["incubation_selected_params"] == {"entry.params.lookback": 20}
+
+@pytest.mark.parametrize("optimized", [False, True])
+def test_validates_actual_fixed_and_optimized_wfa_contract(tmp_path: Path, optimized: bool) -> None:
+    contract = _write_wfa_contract(tmp_path, optimized=optimized)
+
+    validated = _validate_wfa_contract(contract)
+
+    expected_windows = 2 if optimized else 1
+    assert len(validated["window_selections"]) == expected_windows
+    assert len(validated["train_grid_bindings"]) == expected_windows
+    assert validated["runtime_wfa"]["selection_filter"] == {"exclusive_min_trades_per_year": 50}
+    assert validated["runtime_wfa"]["exchange_timezone"] == "America/New_York"
+    if optimized:
+        assert validated["incubation_selected_params"] == {"entry.params.lookback": 20}
+    else:
+        assert validated["incubation_selected_params"] == {}
 
 
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
-        ("trade", "window selection"),
-        ("empty", "complete frozen parameter selection"),
-        ("incubation", "deterministic incubation selection"),
+        ("outside", "outside its half-open test interval"),
+        ("wrong_timezone", "not serialized in configured exchange timezone"),
+        ("reverse", "valid half-open train/test intervals"),
+        ("overlap", "overlapping OOS intervals"),
+        ("duplicate", "duplicate source trade IDs"),
+        ("zero_observations", "positive test observations"),
     ],
 )
-def test_rejects_incoherent_wfa_window_trade_or_incubation_selection(
+def test_rejects_impossible_wfa_temporal_or_trade_identity(
     tmp_path: Path,
     mutation: str,
     message: str,
 ) -> None:
-    stage_dir = tmp_path / mutation
-    stage_dir.mkdir()
-    results = stage_dir / "wfa_results.csv"
-    trades = stage_dir / "wfa_oos_trade_log.csv"
-    selected = {} if mutation == "empty" else {"entry.params.lookback": 10}
-    pd.DataFrame(
-        [
-            {
-                "window_id": 1,
-                "test_start": "2024-01-01",
-                "test_end": "2024-02-01",
-                "selected_params": selected,
-                "oos_window_complete": True,
-                "oos_evaluated": True,
-                "test_observations": 20,
-                "test_trades": 1,
-                "test_profit_factor": 1.5,
-                "test_mar": 1.0,
-                "test_net_profit": 100.0,
-            }
-        ]
-    ).to_csv(results, index=False)
-    trade_selected = {"entry.params.lookback": 20} if mutation == "trade" else selected
-    pd.DataFrame(
-        [
-            {
-                "wfa_window_id": 1,
-                "wfa_test_start": "2024-01-01",
-                "wfa_test_end": "2024-02-01",
-                "wfa_selected_params": trade_selected,
-            }
-        ]
-    ).to_csv(trades, index=False)
-    canonical = {
-        "parameter_mode": "predeclared_optimization",
-        "windows": 1,
-        "realized_oos_windows": 1,
-        "realized_oos_trades": 1,
-        "stitched_oos_trades": 1,
-        "realized_oos_intervals": [
-            {
-                "window_id": 1,
-                "test_start": "2024-01-01",
-                "test_end": "2024-02-01",
-                "observations": 20,
-                "trades": 1,
-            }
-        ],
-        "incubation_selected_params": (
-            {"entry.params.lookback": 20} if mutation == "incubation" else {"entry.params.lookback": 10}
-        ),
-    }
-    effective = {"wfa": {"parameters": {"entry.params.lookback": [10, 20]}}}
+    contract = _write_wfa_contract(tmp_path)
+    results = pd.read_csv(contract["results"])
+    trades = pd.read_csv(contract["trades"])
+    canonical = contract["canonical"]
+    if mutation == "outside":
+        trades.loc[0, "entry_timestamp"] = "2023-12-15T10:00:00-05:00"
+    elif mutation == "wrong_timezone":
+        trades.loc[0, "entry_timestamp"] = "2024-01-15T15:00:00+00:00"
+    elif mutation == "reverse":
+        results.loc[0, "test_start"] = "2024-02-01"
+        results.loc[0, "test_end"] = "2024-01-01"
+    elif mutation == "overlap":
+        results.loc[1, "train_start"] = "2023-12-15"
+        results.loc[1, "train_end"] = "2024-01-15"
+        results.loc[1, "test_start"] = "2024-01-15"
+        results.loc[1, "test_end"] = "2024-02-15"
+        results.loc[1, "test_first_timestamp"] = "2024-01-20 09:30:00-05:00"
+        results.loc[1, "test_last_timestamp"] = "2024-01-25 15:59:00-05:00"
+    elif mutation == "duplicate":
+        duplicate = trades.iloc[[0]].copy()
+        trades = pd.concat([trades, duplicate], ignore_index=True)
+        results.loc[0, "test_trades"] = 2
+        canonical["realized_oos_trades"] = 3
+        canonical["stitched_oos_trades"] = 3
+        canonical["realized_oos_intervals"][0]["trades"] = 2
+    else:
+        results.loc[0, "test_observations"] = 0
+        canonical["realized_oos_observations"] = 20
+        canonical["realized_oos_intervals"][0]["observations"] = 0
+    write_report_csv(results, contract["results"], "America/New_York", index=False)
+    if mutation == "wrong_timezone":
+        trades.to_csv(contract["trades"], index=False)
+    else:
+        write_report_csv(trades, contract["trades"], "America/New_York", index=False)
 
-    canonical["incubation_selected_params"] = {"entry.params.lookback": 99}
-    if mutation != "incubation":
-        canonical["incubation_selected_params"] = {"entry.params.lookback": 10}
     with pytest.raises(ValueError, match=message):
-        mvp._validate_stage_execution_config(
-            stage="walk_forward_analysis",
-            stage_cfg={},
-            canonical_summary=canonical,
-            artifact_paths=[results, trades],
-            effective_config=effective,
-        )
+        _validate_wfa_contract(contract)
+
+
+def _write_early_exit_wfa_contract(tmp_path: Path) -> dict[str, object]:
+    contract = _write_wfa_contract(tmp_path)
+    row = wfa_module._early_exit_row(
+        1,
+        pd.Timestamp("2023-12-01"),
+        pd.Timestamp("2024-01-01"),
+        pd.Timestamp("2024-01-01"),
+        pd.Timestamp("2024-02-01"),
+        "mar",
+        {},
+        "no_in_sample_rows_after_selection_filter",
+        test_observations=20,
+        test_first_timestamp="2024-01-05T09:30:00-05:00",
+        test_last_timestamp="2024-01-25T15:59:00-05:00",
+    )
+    write_report_csv(pd.DataFrame([row]), contract["results"], "America/New_York", index=False)
+    empty_trades = pd.DataFrame(columns=wfa_module._stitched_oos_trade_columns())
+    write_report_csv(empty_trades, contract["trades"], "America/New_York", index=False)
+    for path in contract["grids"]:
+        path.unlink()
+    contract["grids"] = []
+    contract["artifacts"] = [contract["results"], contract["trades"]]
+    contract["canonical"] = {
+        "parameter_mode": "predeclared_optimization",
+        "objective": "MAR",
+        "window_mode": "unanchored",
+        "train_months": 1,
+        "test_months": 1,
+        "step_months": 1,
+        "parallel": {"enabled": False, "scope": "grid"},
+        "complete_oos_windows_only": True,
+        "selection_filter": {"exclusive_min_trades_per_year": 50},
+        "early_exit_min_train_profit_factor": 1.0,
+        "early_exit_require_train_profitable": False,
+        "windows": 1,
+        "planned_complete_oos_windows": 1,
+        "realized_oos_windows": 0,
+        "skipped_complete_oos_windows": 1,
+        "realized_oos_observations": 0,
+        "realized_oos_trades": 0,
+        "realized_oos_start": None,
+        "realized_oos_end": None,
+        "realized_oos_intervals": [],
+        "stitched_oos_trades": 0,
+        "early_exit": True,
+        "train_grid_reports_retained": True,
+        "train_grid_report_files": [],
+        "incubation_selected_params": {},
+    }
+    return contract
+
+
+def test_accepts_exact_producer_early_exit_and_rejects_invented_unevaluated_state(tmp_path: Path) -> None:
+    contract = _write_early_exit_wfa_contract(tmp_path)
+    validated = _validate_wfa_contract(contract)
+    assert validated["train_grid_bindings"] == []
+    assert validated["trade_selections"] == []
+
+    results = pd.read_csv(contract["results"])
+    results.loc[0, "early_exit"] = False
+    write_report_csv(results, contract["results"], "America/New_York", index=False)
+    with pytest.raises(ValueError, match="must be a producer early-exit row"):
+        _validate_wfa_contract(contract)
+
+
+def test_accepts_filtered_selection_distinct_from_canonical_rank_one(tmp_path: Path) -> None:
+    contract = _write_wfa_contract(tmp_path)
+    grid_path = contract["grids"][0]
+    grid = pd.read_csv(grid_path)
+    assert list(grid["entry.params.lookback"]) == [10, 20]
+    grid.loc[0, "trades_per_year"] = 40.0
+    grid.to_csv(grid_path, index=False)
+    results = pd.read_csv(contract["results"])
+    results.loc[0, "selected_params"] = str({"entry.params.lookback": 20})
+    for field, value in {
+        "train_objective": 2.0,
+        "train_mar": 2.0,
+        "train_cagr": 0.10,
+        "train_max_drawdown_pct": 0.04,
+        "train_net_profit": 100.0,
+        "train_profit_factor": 1.5,
+        "train_max_drawdown": 20.0,
+    }.items():
+        results.loc[0, field] = value
+    results.to_csv(contract["results"], index=False)
+    trades = pd.read_csv(contract["trades"])
+    trades.loc[0, "wfa_selected_params"] = str({"entry.params.lookback": 20})
+    trades.loc[0, "wfa_train_objective"] = 2.0
+    trades.to_csv(contract["trades"], index=False)
+
+    validated = _validate_wfa_contract(contract)
+
+    binding = validated["train_grid_bindings"][0]
+    assert binding["canonical_rank_one_params"] == {"entry.params.lookback": 10}
+    assert binding["derived_selected_params"] == {"entry.params.lookback": 20}
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("base_hash", "wfa_base_config_hash"),
+        ("parameter_hash", "wfa_parameter_hash"),
+        ("filter_hash", "wfa_selection_filter_hash"),
+        ("input_hash", "wfa_input_hash"),
+        ("objective", "wfa_objective"),
+        ("interval", "wfa_test_start"),
+        ("parameter", "parameter identity"),
+        ("rank", "selection ranks"),
+        ("marker", "canonical rank-one marker"),
+        ("selection", "selected parameters"),
+        ("run_id", "parameter identity"),
+        ("canonical_list", "canonical train-grid report files"),
+        ("missing", "retained train-grid file set"),
+        ("orphan", "retained train-grid file set"),
+    ],
+)
+def test_rejects_forged_missing_or_orphaned_wfa_train_grid_evidence(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    contract = _write_wfa_contract(tmp_path)
+    grid_path = contract["grids"][0]
+    grid = pd.read_csv(grid_path)
+    if mutation == "base_hash":
+        grid["wfa_base_config_hash"] = "0" * 64
+    elif mutation == "parameter_hash":
+        grid["wfa_parameter_hash"] = "1" * 64
+    elif mutation == "filter_hash":
+        grid["wfa_selection_filter_hash"] = "2" * 64
+    elif mutation == "input_hash":
+        grid["wfa_input_hash"] = "3" * 64
+    elif mutation == "objective":
+        grid["wfa_objective"] = "net_profit"
+    elif mutation == "interval":
+        grid["wfa_test_start"] = "2024-01-02"
+    elif mutation == "parameter":
+        grid.loc[0, "entry.params.lookback"] = 99
+    elif mutation == "rank":
+        grid["wfa_selection_rank"] = [2, 1]
+    elif mutation == "marker":
+        grid["wfa_selected"] = [False, True]
+    elif mutation == "selection":
+        values = list(grid["entry.params.lookback"])
+        grid["entry.params.lookback"] = list(reversed(values))
+        grid["run_id"] = list(reversed(list(grid["run_id"])))
+    elif mutation == "run_id":
+        grid["run_id"] = list(reversed(list(grid["run_id"])))
+    elif mutation == "canonical_list":
+        contract["canonical"]["train_grid_report_files"] = contract["canonical"]["train_grid_report_files"][1:]
+    elif mutation == "missing":
+        grid_path.unlink()
+    elif mutation == "orphan":
+        orphan = contract["stage_dir"] / "window_999_train_grid.csv"
+        grid.to_csv(orphan, index=False)
+        contract["artifacts"].append(orphan)
+    if mutation not in {"canonical_list", "missing", "orphan"}:
+        grid.to_csv(grid_path, index=False)
+
+    with pytest.raises(ValueError, match=message):
+        _validate_wfa_contract(contract)
 
 
 def test_binds_explicit_per_exit_execution_assumptions(tmp_path: Path) -> None:

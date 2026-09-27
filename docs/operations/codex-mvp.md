@@ -298,14 +298,30 @@ the governed human workflow and remain separately reviewable.
    Realized optimized WFA windows require complete selected parameters, and each
    OOS trade must match its window's selection. The retained incubation selection
    must agree with the producer's deterministic selection from the WFA results.
+
+   Realized OOS windows must have unique, non-overlapping intervals that include
+   the start and exclude the end. Each trade's actual entry timestamp must lie
+   within its declared window under the producer's market-time convention;
+   duplicate stitched trade identities are rejected. An unevaluated window must
+   record a valid early-exit reason and have no selected parameters or OOS trades.
+   Every retained result window has positive test observations.
+   When training grids are retained, the declared file list and evaluated windows
+   must match the retained grids. Each grid must identify the correct window,
+   train/test intervals, objective, base config, parameter space, selection filter,
+   and input. Its rows, raw objective ranks, and rank-one marker must match the
+   producer's unfiltered ordering, including each run ID's original parameter
+   combination. The reader separately applies the frozen
+   selection filter and requires the best eligible row to match the parameters
+   and training metrics recorded in the WFA results and corresponding trades.
+   The raw rank-one row may differ from the executed row when that first row is
+   ineligible under the frozen filter.
    These are consistency checks on retained evidence, not an independent PnL
    recalculation or proof that a selection method has scientific approval.
 
    New producer run and stage timestamps use timezone-aware UTC. The index rejects
    timestamps without an offset, completion before start, or elapsed durations
    inconsistent with the serialized timestamps by more than `0.000001` seconds.
-   Market and
-   session timestamps continue to use the configured exchange timezone.
+   Market and session timestamps continue to use the configured exchange timezone.
 
 If a run reserves its attempt or writes partial/failure evidence, keep it. Do not
 delete, repair, or silently replay the same attempt. Create a fresh governed
