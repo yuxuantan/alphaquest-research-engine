@@ -19,6 +19,7 @@ import yaml
 from alphaquest.authoring.models import (
     CERTIFIED_RECIPE_BINDINGS,
     DatasetManifestV1,
+    ExecutionSettingsV1,
     ModuleBindingV1,
     _binding_structure,
 )
@@ -29,10 +30,13 @@ from alphaquest.research.campaign_stages import (
     _annotate_stage_decisions,
     _criteria_for_stage,
     _error_stage,
+    _first_failed_stage,
     _research_verdict,
     _scientific_validity_verdict,
+    _skipped_stage,
     apply_authoritative_parallel_defaults,
     canonicalize_campaign_config,
+    evaluate_criteria,
 )
 from alphaquest.research.preflight import run_preflight
 from alphaquest.research.schemas import (
@@ -45,10 +49,12 @@ from alphaquest.research.storage import (
     resolve_campaign_context,
     resolve_recorded_path,
 )
+from alphaquest.prop.profiles import resolve_prop_profile
 from alphaquest.utils.config import strategy_mechanic, validate_campaign_run_root
 from alphaquest.utils.hashing import file_sha256
 from alphaquest.validation.promotion_gate import (
     APPROVAL_SCHEMA,
+    REQUIRED_SAMPLE_CATEGORIES,
     _validate_approval,
 )
 from alphaquest.version import ENGINE_CONTRACT_VERSION
@@ -69,6 +75,15 @@ _IDENTITY_FIELDS = (
     "dataset_id",
 )
 _REQUIRED_IDENTITY_FIELDS = tuple(field for field in _IDENTITY_FIELDS if field != "parent_attempt_id")
+_CANONICAL_STAGE_SUMMARIES = {
+    "limited_core_grid_test": "core_grid_summary.json",
+    "limited_monkey_test": "monkey_summary.json",
+    "walk_forward_analysis": "wfa_summary.json",
+    "wfa_oos_monkey_test": "wfa_oos_monkey_summary.json",
+    "wfa_oos_monte_carlo": "wfa_oos_monte_carlo_summary.json",
+    "simulated_incubation_core": "incubation_oos_summary.json",
+    "simulated_incubation_monkey": "incubation_monkey_summary.json",
+}
 
 
 def _read_json(path: Path, label: str) -> dict[str, Any]:
@@ -140,6 +155,60 @@ def _require_nonempty_string(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} must be a non-empty string")
     return value
+
+
+def _trade_id_key(value: Any, label: str) -> tuple[type, str]:
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise ValueError(f"{label} must be a string or integer trade ID")
+    if isinstance(value, str) and not value.strip():
+        raise ValueError(f"{label} must not be empty")
+    return type(value), str(value)
+
+
+def _validate_approval_sampling(approval: dict[str, Any], evidence_dir: Path) -> None:
+    sampled = approval.get("sampled_trade_ids")
+    categories = approval.get("sampling_categories")
+    reasons = approval.get("sampling_reasons")
+    if not isinstance(sampled, list) or not isinstance(categories, dict) or not isinstance(reasons, dict):
+        raise ValueError("mechanics approval sampling structure is incomplete")
+    sampled_keys = [_trade_id_key(value, "sampled_trade_ids") for value in sampled]
+    if len(sampled_keys) != len(set(sampled_keys)):
+        raise ValueError("mechanics approval sampled_trade_ids must be unique")
+    _require_equal(set(categories), set(REQUIRED_SAMPLE_CATEGORIES), "mechanics approval category set")
+    ordered: list[Any] = []
+    seen: set[tuple[type, str]] = set()
+    for category in REQUIRED_SAMPLE_CATEGORIES:
+        values = categories.get(category)
+        if not isinstance(values, list):
+            raise ValueError(f"mechanics approval category {category} must be a list")
+        category_keys = [_trade_id_key(value, f"sampling_categories.{category}") for value in values]
+        if len(category_keys) != len(set(category_keys)):
+            raise ValueError(f"mechanics approval category {category} contains duplicate IDs")
+        for value, key in zip(values, category_keys, strict=True):
+            if key not in seen:
+                ordered.append(value)
+                seen.add(key)
+    _require_equal(sampled, ordered, "mechanics approval sampled/category ordered union")
+
+    metadata = _read_json(evidence_dir / "metadata.json", "mechanics evidence metadata")
+    source_trade_count = metadata.get("source_trade_count")
+    requested = approval.get("fixed_random_sample_size")
+    if isinstance(source_trade_count, bool) or not isinstance(source_trade_count, int) or source_trade_count < 0:
+        raise ValueError("mechanics evidence source_trade_count must be a non-negative integer")
+    if isinstance(requested, bool) or not isinstance(requested, int) or requested < 1:
+        raise ValueError("mechanics approval fixed_random_sample_size must be a positive integer")
+    _require_equal(
+        len(categories["random_trades"]),
+        min(requested, source_trade_count),
+        "mechanics approval random sample count",
+    )
+    reason_keys = {str(value) for value in sampled}
+    _require_equal(set(reasons), reason_keys, "mechanics approval sampling reason IDs")
+    for trade_id, values in reasons.items():
+        if not isinstance(values, list) or not values or not all(isinstance(value, str) and value.strip() for value in values):
+            raise ValueError(f"mechanics approval sampling reasons for {trade_id} must be non-empty strings")
+        if len(values) != len(set(values)):
+            raise ValueError(f"mechanics approval sampling reasons for {trade_id} must be unique")
 
 
 def _require_run_location(
@@ -226,6 +295,58 @@ def _expected_effective_config(
     return expected
 
 
+def _validate_authoring_execution(
+    execution_value: Any,
+    source_config: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        execution = ExecutionSettingsV1.model_validate(execution_value)
+    except ValueError as exc:
+        raise ValueError(f"strategy spec execution contract failed: {exc}") from exc
+    document = execution.model_dump(mode="json")
+    _require_equal(execution_value, document, "strategy spec execution document")
+    data = source_config.get("data") or {}
+    core = source_config.get("core") or {}
+    apex = source_config.get("apex_rules") or {}
+    strategy = source_config.get("strategy") or {}
+    position = core.get("position_sizing") or {}
+    shared = {
+        "session_start": data.get("rth_start"),
+        "session_end": data.get("rth_end"),
+        "latest_entry_time": apex.get("latest_entry_time"),
+        "flatten_time": apex.get("force_flatten_time"),
+        "latest_flat_time": apex.get("latest_flat_time"),
+        "overnight_allowed": not bool(apex.get("no_overnight_positions")),
+        "initial_balance": core.get("initial_balance"),
+        "tick_size": core.get("tick_size"),
+        "point_value": core.get("point_value"),
+        "tick_value": core.get("tick_value"),
+        "commission_per_contract": core.get("commission_per_contract"),
+        "slippage_ticks": core.get("slippage_ticks"),
+        "contracts": position.get("contracts"),
+    }
+    for field, expected in shared.items():
+        _require_equal(document.get(field), expected, f"strategy spec execution {field}")
+    _require_equal(strategy.get("flatten_time"), document["flatten_time"], "strategy execution flatten time")
+    _require_equal(core.get("flatten_time"), document["flatten_time"], "core execution flatten time")
+    expected_prop_rules = resolve_prop_profile(
+        document["prop_profile"],
+        starting_balance=document["initial_balance"],
+        max_contracts=document["contracts"],
+        force_flatten_time=document["flatten_time"],
+    )
+    _require_equal(source_config.get("prop_rules"), expected_prop_rules, "compiled prop profile")
+    bindings = source_config.get("account_profile_bindings") or []
+    if not isinstance(bindings, list) or not all(isinstance(item, dict) for item in bindings):
+        raise ValueError("compiled account profile bindings must be a list of mappings")
+    selections = [
+        {"profile_id": item.get("profile_id"), "version": item.get("version"), "role": item.get("role")}
+        for item in bindings
+    ]
+    _require_equal(document.get("target_account_profiles"), selections, "compiled target account profiles")
+    return document
+
+
 def _authoring_binding(
     source_path: Path,
     source_config: dict[str, Any],
@@ -303,17 +424,42 @@ def _authoring_binding(
     campaign = parsed_documents["campaign.yaml"]
     strategy_spec = parsed_documents["strategy_spec.yaml"]
     _require_equal(campaign.get("campaign_id"), source_config.get("campaign_id"), "campaign document identity")
+    _require_equal(campaign.get("status"), "authored_for_testing", "campaign authored status")
+    _require_nonempty_string(campaign.get("title"), "campaign title")
+    _require_nonempty_string(campaign.get("edge_family"), "campaign edge_family")
     _require_equal(campaign.get("authoring_lane"), "certified_recipe", "campaign authoring lane")
     _require_equal(campaign.get("certified_recipe"), recipe, "campaign certified recipe")
     _require_equal(campaign.get("instrument") or campaign.get("symbol"), source_config.get("symbol"), "campaign instrument")
     _require_equal(campaign.get("timeframe"), source_config.get("timeframe"), "campaign timeframe")
     _require_equal(campaign.get("variants"), [variant_id], "campaign variant list")
+    _require_equal(
+        campaign.get("governance_contract_version"),
+        3 if campaign.get("variant_protocol") == "sequential_failure_informed" else 2,
+        "campaign governance contract",
+    )
+    _require_equal(campaign.get("event_strategies"), {}, "campaign event strategy map")
+    _require_equal(
+        campaign.get("rescue_policy"),
+        {"allowed": False, "max_rescues_per_failed_variant": 1},
+        "campaign rescue policy",
+    )
+    _require_equal(
+        campaign.get("max_variants"),
+        (source_config.get("research_objectives") or {}).get("maximum_variants"),
+        "campaign maximum variants",
+    )
+    if not isinstance(campaign.get("sources"), list) or not campaign["sources"]:
+        raise ValueError("campaign sources must be a non-empty list")
+    for field in ("economic_edge_fingerprint", "duplicate_edge_review"):
+        if not isinstance(campaign.get(field), dict):
+            raise ValueError(f"campaign {field} must be a mapping")
     _require_equal(strategy_spec.get("schema"), "alphaquest.strategy-spec/v1", "strategy spec schema")
     _require_equal(strategy_spec.get("frozen"), True, "strategy spec frozen flag")
     _require_equal(strategy_spec.get("campaign_id"), source_config.get("campaign_id"), "strategy spec identity")
     _require_equal(strategy_spec.get("authoring_lane"), "certified_recipe", "strategy spec authoring lane")
     _require_equal(strategy_spec.get("certified_recipe"), recipe, "strategy spec certified recipe")
     _require_equal(strategy_spec.get("dataset"), dataset_manifest, "strategy spec dataset")
+    execution = _validate_authoring_execution(strategy_spec.get("execution"), source_config)
     for field in ("research_objectives", "research_objectives_sha256", "event_strategy"):
         _require_equal(campaign.get(field), source_config.get(field), f"campaign {field}")
         _require_equal(strategy_spec.get(field), source_config.get(field), f"strategy spec {field}")
@@ -345,6 +491,8 @@ def _authoring_binding(
         raise ValueError("strategy spec must contain exactly one variant mapping")
     spec_variant = spec_variants[0]
     _require_equal(spec_variant.get("variant_id"), variant_id, "strategy spec variant identity")
+    _require_nonempty_string(spec_variant.get("title"), "strategy spec variant title")
+    _require_equal(spec_variant.get("event_parameter_grid"), {}, "certified recipe event parameter grid")
     signature = _require_nonempty_string(spec_variant.get("mechanic_signature"), "strategy spec mechanic signature")
     structural = {
         spec_key: _binding_structure(ModuleBindingV1.model_validate(spec_variant[spec_key]), spec_key)
@@ -366,6 +514,39 @@ def _authoring_binding(
         distinctions[variant_id].get("mechanic_signature"),
         signature,
         "campaign variant mechanic signature",
+    )
+    _require_equal(
+        (source_config.get("research_metadata") or {}).get("mechanic_signature"),
+        signature,
+        "source mechanic signature",
+    )
+    _require_equal(campaign.get("hypothesis"), strategy_spec.get("hypothesis"), "published hypothesis")
+    rationales = spec_variant.get("rationales")
+    if not isinstance(rationales, dict):
+        raise ValueError("strategy spec variant rationales must be a mapping")
+    source_research = source_config.get("research_metadata") or {}
+    source_review = source_research.get("mechanics_review") or {}
+    _require_equal(source_research.get("authoring_contract"), "alphaquest.campaign-draft/v1", "authoring contract")
+    _require_equal(source_research.get("mechanics_review_version"), 1, "mechanics review version")
+    _require_equal(source_review.get("pre_test_decision"), "approve_for_testing", "pre-test decision")
+    rationale_bindings = {
+        "mechanic": source_review.get("mechanic_expresses_edge"),
+        "entry": source_review.get("entry_logic_rationale"),
+        "stop": source_review.get("stop_loss_rationale"),
+        "target": source_review.get("target_exit_rationale"),
+        "timeframe_session": source_research.get("timeframe_rationale"),
+    }
+    _require_equal(rationales, rationale_bindings, "published variant rationales")
+    _require_equal(distinctions[variant_id].get("mechanic"), rationales.get("mechanic"), "campaign mechanic rationale")
+    _require_equal(
+        source_review.get("profitability_rationale"),
+        f"{strategy_spec.get('expected_mechanism')} {rationales.get('mechanic')}".strip(),
+        "compiled profitability rationale",
+    )
+    _require_equal(
+        source_review.get("known_failure_modes"),
+        " ".join(strategy_spec.get("known_failure_modes") or []),
+        "compiled known failure modes",
     )
     strategy = source_config.get("strategy") or {}
     for spec_key, config_key in (("entry", "entry"), ("stop", "sl"), ("target", "tp")):
@@ -391,7 +572,10 @@ def _authoring_binding(
         "certified_recipe": recipe,
         "variant_id": variant_id,
         "mechanic_signature": signature,
+        "execution": execution,
         "documents": documents,
+        "_campaign_document": campaign,
+        "_campaign_artifact": next(item for item in documents if item["path"].endswith("campaign.yaml")),
     }
 
 
@@ -540,6 +724,7 @@ def _mechanics_bindings(
             _require_equal(
                 approval.get(approval_field), gate.get(gate_field), f"mechanics approval {approval_field}"
             )
+    _validate_approval_sampling(approval, evidence_dir)
     return {
         "recorded_gate": deepcopy(summary_gate),
         "gate_currently_revalidated": False,
@@ -564,6 +749,7 @@ def _mechanics_bindings(
                 "profitability_approval",
                 "sampled_trade_ids",
                 "sampling_categories",
+                "sampling_reasons",
                 "sampling_policy_version",
                 "sampling_policy_sha256",
             )
@@ -665,8 +851,166 @@ def _dataset_binding(
     }
 
 
+def _derive_diagnostic_classification(
+    *,
+    source_config: dict[str, Any],
+    source_artifact: dict[str, Any],
+    campaign: dict[str, Any],
+    campaign_artifact: dict[str, Any],
+    mechanics: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    disclosures: list[dict[str, Any]] = []
+    source_synthetic = False
+    mechanics_simulated = False
+    scripted_admission = False
+    terms = ("synthetic", "simulated", "fixture", "no owner authority")
+
+    def record(artifact: dict[str, Any], field: str, value: Any, disclosure: str) -> bool:
+        if not isinstance(value, str) or not any(term in value.casefold() for term in terms):
+            return False
+        disclosures.append(
+            {
+                "artifact_path": artifact["path"],
+                "artifact_sha256": artifact.get("sha256") or artifact.get("file_sha256"),
+                "field": field,
+                "disclosure": disclosure,
+                "observed_value": value,
+            }
+        )
+        return True
+
+    for field in ("title", "edge_family"):
+        source_synthetic |= record(
+            campaign_artifact, f"campaign.{field}", campaign.get(field), "authored_synthetic_context"
+        )
+    sources = campaign.get("sources")
+    if isinstance(sources, list):
+        for index, item in enumerate(sources):
+            if isinstance(item, dict):
+                for field in ("title", "link", "relevance"):
+                    source_synthetic |= record(
+                        campaign_artifact,
+                        f"campaign.sources[{index}].{field}",
+                        item.get(field),
+                        "authored_synthetic_context",
+                    )
+    duplicate = campaign.get("duplicate_edge_review")
+    if isinstance(duplicate, dict):
+        value = duplicate.get("substantive_distinction")
+        source_synthetic |= record(
+            campaign_artifact,
+            "campaign.duplicate_edge_review.substantive_distinction",
+            value,
+            "authored_synthetic_context",
+        )
+        scripted_admission |= isinstance(value, str) and any(
+            term in value.casefold() for term in ("scripted", "admission")
+        )
+    for owner, artifact, objectives in (
+        ("campaign", campaign_artifact, campaign.get("research_objectives")),
+        ("source_config", source_artifact, source_config.get("research_objectives")),
+    ):
+        if isinstance(objectives, dict):
+            source_synthetic |= record(
+                artifact,
+                f"{owner}.research_objectives.development_goal",
+                objectives.get("development_goal"),
+                "authored_synthetic_context",
+            )
+            retirement = objectives.get("retirement_rules")
+            if isinstance(retirement, list):
+                for index, value in enumerate(retirement):
+                    source_synthetic |= record(
+                        artifact,
+                        f"{owner}.research_objectives.retirement_rules[{index}]",
+                        value,
+                        "authored_synthetic_context",
+                    )
+    dataset_id = ((source_config.get("data") or {}).get("dataset_id") or source_config.get("dataset_id"))
+    source_synthetic |= record(
+        source_artifact, "source_config.dataset_id", dataset_id, "authored_synthetic_context"
+    )
+    if (source_config.get("campaign_id"), dataset_id) == (
+        "tutorial_calendar_bias",
+        "synthetic_tutorial_es_1m",
+    ):
+        disclosures.append(
+            {
+                "artifact_path": source_artifact["path"],
+                "artifact_sha256": source_artifact["sha256"],
+                "field": "source_config.campaign_id+dataset_id",
+                "disclosure": "established_tutorial_fixture_identity",
+                "observed_value": [source_config.get("campaign_id"), dataset_id],
+            }
+        )
+        source_synthetic = True
+
+    approval = mechanics["approval_record"]
+    approval_artifact = mechanics["approval"]
+    reviewer = approval.get("reviewer")
+    notes = approval.get("notes")
+    if reviewer == "SIMULATED_MVP_FIXTURE_ONLY":
+        record(approval_artifact, "approval.reviewer", reviewer, "simulated_mechanics_context")
+        mechanics_simulated = True
+    if record(approval_artifact, "approval.notes", notes, "mechanics_context_disclosure"):
+        source_synthetic |= isinstance(notes, str) and any(
+            term in notes.casefold() for term in ("synthetic", "fixture")
+        )
+        mechanics_simulated |= isinstance(notes, str) and any(
+            term in notes.casefold() for term in ("simulated", "no owner authority")
+        )
+
+    explicit = bool(disclosures)
+    classification = "SYNTHETIC_OR_SIMULATED_CONTEXT" if explicit else "UNVERIFIED_ORIGIN"
+    limitations = [
+        "This classification preserves explicit structured disclosures; it does not independently verify origin.",
+        "No universal historical origin field or verified-origin assurance is available to this report.",
+    ]
+    if not explicit:
+        limitations.append("No positive real-origin classification is supported.")
+    result = {
+        "classification": classification,
+        "classification_kind": "CONSERVATIVE_DIAGNOSTIC_WARNING",
+        "verified_origin_assertion": False,
+        "data_origin_verified": False,
+        "source_review_verified": False,
+        "implementation_admission_verified": False,
+        "human_mechanics_authority_verified": False,
+        "source_synthetic_disclosed": source_synthetic,
+        "mechanics_simulated_disclosed": mechanics_simulated,
+        "synthetic_or_simulated_disclosures": disclosures,
+        "conflicts": [],
+        "limitations": limitations,
+    }
+    if explicit:
+        labels = [
+            "Bound inputs explicitly disclose synthetic or simulated context; this is a diagnostic warning, not independently verified origin."
+        ]
+        if source_synthetic:
+            labels.append("Synthetic fixture source; not independently verified.")
+        if scripted_admission:
+            labels.append("Duplicate and implementation-admission decisions are scripted fixture context.")
+        if mechanics_simulated:
+            labels.append("Mechanics approval is simulated and has no owner authority.")
+        labels.extend(
+            [
+                "Operational PASS means only that the harness produced bound diagnostic evidence.",
+                "MVP overall NEEDS MANUAL REVIEW.",
+            ]
+        )
+    else:
+        labels = [
+            "User-supplied diagnostic evidence of unverified data origin.",
+            "No real-data provenance classification is made by this index.",
+            "Recorded mechanics approval is reported, not independently re-audited by this index.",
+            "MVP overall NEEDS MANUAL REVIEW.",
+        ]
+    return result, labels
+
+
 def _bind_run_manifest(
     run_dir: Path,
+    source_path: Path,
     source_config: dict[str, Any],
     effective_config: dict[str, Any],
     summary: dict[str, Any],
@@ -760,10 +1104,55 @@ def _bind_run_manifest(
         results_path,
         "source results index path",
     )
+    context = resolve_campaign_context(source_path, project_root=project_root)
+    if context is None:
+        raise ValueError("authored source config has no campaign context")
+    _require_equal(results_path, context.results_index.resolve(), "canonical source results index path")
+    results = _read_yaml(results_path, "source results index")
+    _require_equal(results.get("campaign_id"), source_config.get("campaign_id"), "source results index campaign")
+    _require_equal(results.get("generated_by"), "alphaquest.run_campaign_stages", "source results index producer")
+    _require_equal(
+        results.get("description"),
+        "Navigation pointers from authored source configs to generated backtest evidence.",
+        "source results index description",
+    )
+    entries = results.get("runs")
+    if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
+        raise ValueError("source results index runs must be a list of mappings")
+    expected_entry = {
+        "campaign_id": summary.get("campaign_id"),
+        "variant_id": summary.get("variant_id"),
+        "symbol": summary.get("symbol"),
+        "test_run_id": summary.get("test_run_id"),
+        "attempt_id": summary.get("attempt_id"),
+        "attempt_kind": summary.get("attempt_kind"),
+        "attempt_provenance": summary.get("attempt_provenance"),
+        "parent_attempt_id": summary.get("parent_attempt_id"),
+        "source_config_path": str(source_path),
+        "source_config_snapshot_path": summary.get("source_config_snapshot_path"),
+        "source_config_hash": summary.get("source_config_hash"),
+        "effective_config_path": summary.get("effective_config_path"),
+        "effective_config_hash": summary.get("config_hash"),
+        "run_dir": str(Path(str(summary.get("output_dir")))),
+        "campaign_test_summary": str(Path(str(summary.get("output_dir"))) / "campaign_test_summary.json"),
+        "variant_test_summary": str(Path(str(summary.get("output_dir"))) / "variant_test_summary.json"),
+        "passed": summary.get("passed"),
+        "research_verdict": summary.get("research_verdict"),
+        "finalization_state": summary.get("finalization_state"),
+        "result_bundle_path": summary.get("result_bundle_path"),
+        "incomplete_attempt_marker_path": summary.get("incomplete_attempt_marker_path"),
+        "diagnostic_only": summary.get("diagnostic_only"),
+        "halted": summary.get("halted"),
+        "failed_stage": _first_failed_stage(summary.get("stages") or []),
+        "updated_at": summary.get("updated_at"),
+    }
+    matches = [entry for entry in entries if entry == expected_entry]
+    _require_equal(len(matches), 1, "source results index exact run entry count")
     return {
         "campaign_metadata": campaign_artifact,
         "variant_metadata": variant_artifact,
         "source_results_index": _artifact(results_path, project_root=project_root),
+        "source_results_index_entry": deepcopy(expected_entry),
     }
 
 
@@ -791,14 +1180,12 @@ def _stage_bindings(
         criteria = item.get("criteria") or []
         stage_cfg = ((effective_config.get("campaign_tests") or {}).get(stage) or {})
         criteria_contract = _criteria_for_stage(stage, stage_cfg)
-        _require_equal(len(criteria), len(criteria_contract), f"{stage} criteria count")
-        for index, (observed, declared) in enumerate(zip(criteria, criteria_contract, strict=True)):
-            _require_equal(observed.get("metric"), declared.get("metric"), f"{stage} criterion {index} metric")
-            _require_equal(
-                observed.get("decision_role"),
-                declared.get("decision_role"),
-                f"{stage} criterion {index} decision role",
-            )
+        if status == "skipped":
+            _require_equal(stage_cfg.get("enabled"), False, f"{stage} disabled stage config")
+            expected_skipped = _annotate_stage_decisions(_skipped_stage(stage, "disabled"))
+            _require_equal(item, expected_skipped, f"{stage} disabled producer result")
+        else:
+            _require_equal(len(criteria), len(criteria_contract), f"{stage} criteria count")
         annotated = _annotate_stage_decisions(deepcopy(item))
         for field in (
             "scientific_validity_verdict",
@@ -820,6 +1207,8 @@ def _stage_bindings(
                 raise ValueError(f"{stage} duration_seconds must be non-negative")
             if item.get("error") is not None or item.get("skip_reason") is not None:
                 raise ValueError(f"{stage} completed result cannot record error or skip_reason")
+            expected_criteria = evaluate_criteria(item, criteria_contract)
+            _require_equal(criteria, expected_criteria, f"{stage} authoritative criteria")
         if status == "error" and not str(item.get("error") or "").strip():
             raise ValueError(f"{stage} error status requires a non-empty error")
         if status == "error":
@@ -862,6 +1251,18 @@ def _stage_bindings(
                     if path.is_file() and path.name != "stage_result.json"
                 }
                 _require_equal(recorded, actual, f"{stage} referenced artifact inventory")
+                canonical_path = run_dir / stage / _CANONICAL_STAGE_SUMMARIES[stage]
+                canonical_summary = _read_json(canonical_path, f"{stage} canonical summary")
+                _require_equal(item.get("summary"), canonical_summary, f"{stage} canonical summary projection")
+                if stage == "walk_forward_analysis":
+                    for field in ("stitched_oos_metrics", "incubation_selected_params"):
+                        _require_equal(item.get(field), canonical_summary.get(field), f"{stage} {field} projection")
+                if stage == "simulated_incubation_core":
+                    for field in ("metrics", "diagnostics", "selected_params"):
+                        _require_equal(item.get(field), canonical_summary.get(field), f"{stage} {field} projection")
+                if stage == "limited_monkey_test":
+                    for field in ("selected_core_params", "selected_core_row"):
+                        _require_equal(item.get(field), canonical_summary.get(field), f"{stage} {field} projection")
             bindings.append(
                 {
                     "summary": deepcopy(item),
@@ -993,7 +1394,9 @@ def build_diagnostic_index(
     dataset = _dataset_binding(source_config, summary, root)
     authoring = _authoring_binding(source_path, source_config, dataset["manifest_document"], root)
     mechanics = _mechanics_bindings(source_config, source_path, summary, manifest, root)
-    producer_bindings = _bind_run_manifest(run, source_config, effective_config, summary, manifest, root)
+    producer_bindings = _bind_run_manifest(
+        run, source_path, source_config, effective_config, summary, manifest, root
+    )
     stages = _stage_bindings(run, effective_config, summary, manifest, root)
     _require_equal(
         summary.get("research_verdict"),
@@ -1009,43 +1412,25 @@ def build_diagnostic_index(
     receipt = receipt.resolve() if receipt.is_absolute() else (root / receipt).resolve()
     preflight_binding = _preflight_binding(receipt, source_path, preflight, root)
 
-    synthetic_basis = None
-    if mechanics["approval_record"].get("reviewer") == "SIMULATED_MVP_FIXTURE_ONLY":
-        synthetic_basis = "exact simulated mechanics-reviewer sentinel"
-    elif (summary.get("campaign_id"), summary.get("dataset_id")) == (
-        "tutorial_calendar_bias",
-        "synthetic_tutorial_es_1m",
-    ):
-        synthetic_basis = "exact governed tutorial campaign/dataset identity"
-    explicit_synthetic = synthetic_basis is not None
+    campaign_document = authoring.pop("_campaign_document")
+    campaign_artifact = authoring.pop("_campaign_artifact")
+    classification, labels = _derive_diagnostic_classification(
+        source_config=source_config,
+        source_artifact=_artifact(source_path, project_root=root),
+        campaign=campaign_document,
+        campaign_artifact=campaign_artifact,
+        mechanics=mechanics,
+    )
+    explicit_synthetic = classification["classification"] == "SYNTHETIC_OR_SIMULATED_CONTEXT"
     if explicit_synthetic and mode != "synthetic":
         raise ValueError("explicit simulated fixture classification requires mode='synthetic'")
     if not explicit_synthetic and mode == "synthetic":
         raise ValueError("synthetic mode requires an explicit governed synthetic/simulated classification")
-
-    labels = (
-        [
-            "Synthetic fixture source; not independently verified.",
-            "Duplicate and implementation-admission decisions are scripted fixture context.",
-            "Mechanics approval is simulated and has no owner authority.",
-            "Operational PASS means only that the harness produced bound diagnostic evidence.",
-        ]
-        if mode == "synthetic"
-        else [
-            "User-supplied diagnostic evidence of unverified data origin.",
-            "No real-data provenance classification is made by this index.",
-            "Recorded mechanics approval is reported, not independently re-audited by this index.",
-        ]
-    )
     return {
         "schema": SCHEMA,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "mode": mode,
-        "input_classification": {
-            "classification": "synthetic" if explicit_synthetic else "unverified",
-            "basis": synthetic_basis or "no positive origin classification is available",
-            "data_origin_verified": False,
-        },
+        "input_classification": classification,
         "overall_verdict": "NEEDS MANUAL REVIEW",
         "passed": False,
         "labels": labels,

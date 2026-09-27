@@ -12,10 +12,14 @@ from alphaquest.research.campaign_stages import (
     PRE_ACCEPTANCE_STAGE_ORDER,
     STAGE_LABELS,
     _annotate_stage_decisions,
+    _criteria_for_stage,
     _error_stage,
+    _skipped_stage,
     canonicalize_campaign_config,
+    evaluate_criteria,
 )
 from alphaquest.research.factory_policy import research_factory_binding, research_objectives_sha256
+from alphaquest.prop.profiles import resolve_prop_profile
 from alphaquest.utils.hashing import file_sha256
 from alphaquest.validation.promotion_gate import SAMPLING_POLICY_SHA256, SAMPLING_POLICY_VERSION
 from alphaquest.version import ENGINE_CONTRACT_VERSION
@@ -31,7 +35,9 @@ def _write_yaml(path: Path, value: object) -> None:
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
-def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
+def _project(
+    tmp_path: Path, *, disabled_stage: str | None = None
+) -> tuple[Path, Path, dict[str, object]]:
     root = tmp_path / "project"
     _write_yaml(
         root / "config/storage_layout.yaml",
@@ -42,7 +48,7 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
             "dataset_root": "research/datasets",
         },
     )
-    dataset_id = "synthetic_fixture_es"
+    dataset_id = "demo_es"
     canonical = root / f"research/datasets/{dataset_id}/bars.csv"
     canonical.parent.mkdir(parents=True)
     canonical.write_text(
@@ -88,15 +94,15 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
     }
     _write_json(canonical.parent / "dataset_manifest.json", dataset_manifest)
 
-    campaign_root = root / "research/campaigns/active/synthetic_recipe_demo"
+    campaign_root = root / "research/campaigns/active/recipe_demo"
     source_path = campaign_root / "variants/v01/config.yaml"
     evidence_dir = root / "research/evidence/mechanics/validation_runs/core"
     evidence_dir.mkdir(parents=True)
-    _write_json(evidence_dir / "metadata.json", {"schema_version": "1.6"})
-    approval_path = root / "research_artifacts/validation_approvals/synthetic_recipe_demo/v01/approval.json"
+    _write_json(evidence_dir / "metadata.json", {"schema_version": "1.6", "source_trade_count": 5})
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
     objectives = {
         "schema": "alphaquest.research-objectives/v1",
-        "development_goal": "Exercise the isolated synthetic diagnostic path.",
+        "development_goal": "Exercise the isolated diagnostic path.",
         "development_deadline": "2099-12-31",
         "evaluation_horizon_months": 24,
         "minimum_annualized_return_fraction": 0.2,
@@ -112,8 +118,8 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "forward_incubation_min_calendar_days": 90,
         "forward_incubation_min_trades": 30,
         "maximum_variants": 1,
-        "abandonment_rules": ["Stop after this fixture demonstration."],
-        "retirement_rules": ["Never promote this synthetic fixture."],
+        "abandonment_rules": ["Stop after this demonstration."],
+        "retirement_rules": ["Never promote this demonstration."],
         "confirmed": True,
     }
     research_factory = research_factory_binding(
@@ -127,8 +133,17 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         },
     )
     objectives_sha256 = research_objectives_sha256(objectives)
+    signature = "85bf616b7744fbef864ffddca3775d556941f5a10c91ca4f5c06202419bd7270"
+    hypothesis = "A fixed weekday direction entered after the open may capture a calendar effect."
+    expected_mechanism = "A predeclared calendar effect may persist during the first hour."
+    mechanic_rationale = "Express the calendar effect with a fixed post-open entry."
+    entry_rationale = "Enter only after the signal time is known."
+    stop_rationale = "Use a fixed points stop declared before testing."
+    target_rationale = "Use a fixed reward multiple declared before testing."
+    timeframe_rationale = "One-minute bars resolve the declared session timing."
+    known_failure_modes = ["The calendar effect may not survive costs."]
     source = {
-        "campaign_id": "synthetic_recipe_demo",
+        "campaign_id": "recipe_demo",
         "variant_id": "v01",
         "test_run_id": "run1",
         "attempt_id": "original",
@@ -144,6 +159,19 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "research_factory": research_factory,
         "research_metadata": {
             "mechanics_review_required": True,
+            "mechanics_review_version": 1,
+            "authoring_contract": "alphaquest.campaign-draft/v1",
+            "mechanic_signature": signature,
+            "timeframe_rationale": timeframe_rationale,
+            "mechanics_review": {
+                "mechanic_expresses_edge": mechanic_rationale,
+                "entry_logic_rationale": entry_rationale,
+                "stop_loss_rationale": stop_rationale,
+                "target_exit_rationale": target_rationale,
+                "profitability_rationale": f"{expected_mechanism} {mechanic_rationale}",
+                "known_failure_modes": " ".join(known_failure_modes),
+                "pre_test_decision": "approve_for_testing",
+            },
             "validation_gate": {
                 "required": True,
                 "lane": "bar",
@@ -174,6 +202,8 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
             "contract_column": None,
             "contract_count": 1,
             "certified_features": [],
+            "rth_start": "09:30:00",
+            "rth_end": "10:30:00",
         },
         "strategy": {
             "entry": {
@@ -185,10 +215,14 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
             "flatten_time": "10:25:00",
         },
         "core": {
+            "initial_balance": 50000.0,
             "tick_size": 0.25,
             "point_value": 50.0,
+            "tick_value": 12.5,
             "commission_per_contract": 2.5,
             "slippage_ticks": 1.0,
+            "position_sizing": {"contracts": 1},
+            "flatten_time": "10:25:00",
         },
         "apex_rules": {
             "enabled": True,
@@ -196,10 +230,20 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
             "force_flatten_time": "10:25:00",
             "latest_flat_time": "10:26:00",
             "latest_entry_time": "10:15:00",
+            "no_overnight_positions": True,
         },
+        "account_profile_bindings": [],
+        "prop_rules": resolve_prop_profile(
+            "synthetic_tutorial_non_promotable",
+            starting_balance=50000.0,
+            max_contracts=1,
+            force_flatten_time="10:25:00",
+        ),
         "core_grid": {"parameters": {}},
         "wfa": {"parameters": {}},
     }
+    if disabled_stage is not None:
+        source["campaign_tests"] = {disabled_stage: {"enabled": False}}
     _write_yaml(source_path, source)
     source_hash = file_sha256(source_path)
     _write_json(
@@ -209,7 +253,7 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
             "status": "approved_for_testing",
             "reviewer": "SIMULATED_MVP_FIXTURE_ONLY",
             "reviewed_at": "2026-09-27T00:00:00+00:00",
-            "notes": "Synthetic mechanics decision without owner authority.",
+            "notes": "SIMULATED mechanics decision on a synthetic fixture. No owner authority.",
             "config_hash": source_hash,
             "input_data_hash": canonical_hash,
             "lane": "bar",
@@ -226,26 +270,65 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
                 "resolved_ambiguities": [],
                 "universal_coverage": [],
             },
+            "sampling_reasons": {
+                str(trade_id): ["deterministic random baseline"] for trade_id in range(1, 6)
+            },
             "sampling_policy_version": SAMPLING_POLICY_VERSION,
             "sampling_policy_sha256": SAMPLING_POLICY_SHA256,
         },
     )
-    signature = "85bf616b7744fbef864ffddca3775d556941f5a10c91ca4f5c06202419bd7270"
     draft_sha256 = "2" * 64
     campaign = {
         "campaign_id": source["campaign_id"],
+        "title": "Calendar bias diagnostic edge",
+        "status": "authored_for_testing",
+        "edge_family": "calendar_bias",
         "created_at": "2026-09-27",
         "instrument": "ES",
         "timeframe": "1m",
         "variant_protocol": "sequential_failure_informed",
+        "governance_contract_version": 3,
+        "max_variants": 1,
         "research_objectives": objectives,
         "research_objectives_sha256": objectives_sha256,
         "authoring_lane": "certified_recipe",
         "certified_recipe": "calendar_session_bias",
         "event_strategy": None,
+        "event_strategies": {},
         "research_factory": research_factory,
+        "hypothesis": hypothesis,
+        "economic_edge_fingerprint": {
+            "market_behavior": "Calendar direction",
+            "causal_mechanism": "Session behavior",
+            "signal_inputs": "weekday",
+            "market_context": "regular session",
+            "holding_period": "intraday",
+        },
+        "duplicate_edge_review": {
+            "reviewed_campaign_ids": [],
+            "ledger_queries": ["calendar bias"],
+            "conclusion": "distinct",
+            "substantive_distinction": "Separate diagnostic campaign.",
+        },
+        "sources": [
+            {
+                "title": "Diagnostic research source",
+                "authors": "Research team",
+                "year": 2026,
+                "link": "https://example.invalid/research",
+                "doi": None,
+                "relevance": "Documents the predeclared calendar hypothesis.",
+            }
+        ],
         "variants": ["v01"],
-        "variant_distinctions": {"v01": {"mechanic_signature": signature}},
+        "variant_distinctions": {
+            "v01": {
+                "mechanic_signature": signature,
+                "mechanic": mechanic_rationale,
+                "material_difference": "One predeclared fixed-risk implementation.",
+            }
+        },
+        "rescue_policy": {"allowed": False, "max_rescues_per_failed_variant": 1},
     }
     strategy_spec = {
         "schema": "alphaquest.strategy-spec/v1",
@@ -261,13 +344,43 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "variant_strategy_certifications": {},
         "research_factory": research_factory,
         "dataset": dataset_manifest,
+        "hypothesis": hypothesis,
+        "expected_mechanism": expected_mechanism,
+        "holding_horizon": "Same-session first hour.",
+        "known_failure_modes": known_failure_modes,
+        "execution": {
+            "session_start": "09:30:00",
+            "session_end": "10:30:00",
+            "latest_entry_time": "10:15:00",
+            "flatten_time": "10:25:00",
+            "latest_flat_time": "10:26:00",
+            "overnight_allowed": False,
+            "initial_balance": 50000.0,
+            "tick_size": 0.25,
+            "point_value": 50.0,
+            "tick_value": 12.5,
+            "commission_per_contract": 2.5,
+            "slippage_ticks": 1.0,
+            "contracts": 1,
+            "prop_profile": "synthetic_tutorial_non_promotable",
+            "target_account_profiles": [],
+        },
         "variants": [
             {
                 "variant_id": "v01",
+                "title": "Calendar bias fixed-risk implementation",
                 "mechanic_signature": signature,
                 "entry": {**source["strategy"]["entry"], "parameter_grid": {}},
                 "stop": {**source["strategy"]["sl"], "parameter_grid": {}},
                 "target": {**source["strategy"]["tp"], "parameter_grid": {}},
+                "event_parameter_grid": {},
+                "rationales": {
+                    "mechanic": mechanic_rationale,
+                    "entry": entry_rationale,
+                    "stop": stop_rationale,
+                    "target": target_rationale,
+                    "timeframe_session": timeframe_rationale,
+                },
             }
         ],
     }
@@ -311,7 +424,7 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         },
     )
 
-    run = root / "research/evidence/runs/synthetic_recipe_demo/v01/ES/run1"
+    run = root / "research/evidence/runs/recipe_demo/v01/ES/run1"
     run.mkdir(parents=True)
     (run / "source_config.yaml").write_bytes(source_path.read_bytes())
     effective = canonicalize_campaign_config(source, include_acceptance=False)
@@ -341,9 +454,15 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
     stages: list[dict[str, object]] = []
     for index, stage in enumerate(PRE_ACCEPTANCE_STAGE_ORDER):
         stage_dir = run / stage
-        if index == 0:
-            output = stage_dir / "summary.json"
-            _write_json(output, {"fixture": True})
+        if stage == disabled_stage:
+            result = _annotate_stage_decisions(_skipped_stage(stage, "disabled"))
+        elif index == 0:
+            stage_summary = {
+                "total_combinations_tested": 1,
+                "percentage_profitable_iterations": 0.0,
+            }
+            output = stage_dir / mvp._CANONICAL_STAGE_SUMMARIES[stage]
+            _write_json(output, stage_summary)
             result: dict[str, object] = {
                 "stage": stage,
                 "label": STAGE_LABELS[stage],
@@ -352,31 +471,21 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
                 "started_at": "2026-09-27T00:00:00",
                 "completed_at": "2026-09-27T00:00:01",
                 "duration_seconds": 1.0,
-                "criteria": [
-                    {
-                        "metric": "summary.total_combinations_tested",
-                        "actual": 1,
-                        "expected": {"valid_parameter_combination_count": "1 fixed combo or 8-120 tunable combos"},
-                        "passed": True,
-                        "decision_role": "scientific_validity",
-                    },
-                    {
-                        "metric": "summary.percentage_profitable_iterations",
-                        "actual": 0.0,
-                        "expected": {"min": 0.7},
-                        "passed": False,
-                        "decision_role": "scientific_validity",
-                    }
-                ],
+                "summary": stage_summary,
                 "artifacts": [str(output.relative_to(root))],
             }
+            result["criteria"] = evaluate_criteria(
+                result,
+                _criteria_for_stage(stage, ((effective.get("campaign_tests") or {}).get(stage) or {})),
+            )
             result = _annotate_stage_decisions(result)
         else:
             result = _annotate_stage_decisions(
                 _error_stage(stage, RuntimeError("upstream fixture evidence unavailable"))
             )
         stages.append(result)
-        _write_json(stage_dir / "stage_result.json", result)
+        if result["status"] != "skipped":
+            _write_json(stage_dir / "stage_result.json", result)
     preflight: dict[str, object] = {
         "passed": True,
         "configs_checked": [str(source_path.relative_to(root))],
@@ -427,7 +536,6 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "rescue_policy": {},
     }
     results_index = campaign_root / "results_index.yaml"
-    _write_yaml(results_index, {"campaign_id": source["campaign_id"], "runs": []})
     summary = {
         **identity,
         "data_source": "csv",
@@ -463,6 +571,42 @@ def _project(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "mechanics_validation_gate": gate,
         "source_results_index_path": str(results_index.relative_to(root)),
     }
+    results_entry = {
+        "campaign_id": summary["campaign_id"],
+        "variant_id": summary["variant_id"],
+        "symbol": summary["symbol"],
+        "test_run_id": summary["test_run_id"],
+        "attempt_id": summary["attempt_id"],
+        "attempt_kind": summary["attempt_kind"],
+        "attempt_provenance": summary["attempt_provenance"],
+        "parent_attempt_id": summary["parent_attempt_id"],
+        "source_config_path": str(source_path),
+        "source_config_snapshot_path": summary["source_config_snapshot_path"],
+        "source_config_hash": summary["source_config_hash"],
+        "effective_config_path": summary["effective_config_path"],
+        "effective_config_hash": summary["config_hash"],
+        "run_dir": summary["output_dir"],
+        "campaign_test_summary": str(Path(str(summary["output_dir"])) / "campaign_test_summary.json"),
+        "variant_test_summary": str(Path(str(summary["output_dir"])) / "variant_test_summary.json"),
+        "passed": summary["passed"],
+        "research_verdict": summary["research_verdict"],
+        "finalization_state": None,
+        "result_bundle_path": None,
+        "incomplete_attempt_marker_path": None,
+        "diagnostic_only": summary["diagnostic_only"],
+        "halted": summary["halted"],
+        "failed_stage": PRE_ACCEPTANCE_STAGE_ORDER[0],
+        "updated_at": summary["updated_at"],
+    }
+    _write_yaml(
+        results_index,
+        {
+            "campaign_id": source["campaign_id"],
+            "generated_by": "alphaquest.run_campaign_stages",
+            "description": "Navigation pointers from authored source configs to generated backtest evidence.",
+            "runs": [results_entry],
+        },
+    )
     manifest = {
         **identity,
         "data_source": summary["data_source"],
@@ -544,7 +688,7 @@ def test_builds_bound_synthetic_report(tmp_path: Path, monkeypatch: pytest.Monke
         if document["path"].endswith("variants/v01/config.yaml")
     )
     assert published_config["file_sha256"] == file_sha256(
-        root / "research/campaigns/active/synthetic_recipe_demo/variants/v01/config.yaml"
+        root / "research/campaigns/active/recipe_demo/variants/v01/config.yaml"
     )
     assert published_config["compiled_object_sha256"]
     assert "sha256" not in published_config
@@ -560,7 +704,7 @@ def test_unverified_mode_never_claims_real_origin(tmp_path: Path, monkeypatch: p
     with pytest.raises(ValueError, match="explicit simulated fixture classification"):
         _build(root, run, preflight, monkeypatch, mode="unverified")
 
-    approval_path = root / "research_artifacts/validation_approvals/synthetic_recipe_demo/v01/approval.json"
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
     approval = json.loads(approval_path.read_text(encoding="utf-8"))
     approval["reviewer"] = "UNVERIFIED_USER_SUPPLIED"
     _write_json(approval_path, approval)
@@ -570,15 +714,56 @@ def test_unverified_mode_never_claims_real_origin(tmp_path: Path, monkeypatch: p
             "reviewer", "UNVERIFIED_USER_SUPPLIED"
         ),
     )
+    retained = _build(root, run, preflight, monkeypatch, mode="synthetic")
+    assert retained["input_classification"]["classification"] == "SYNTHETIC_OR_SIMULATED_CONTEXT"
+    assert "Mechanics approval is simulated and has no owner authority." in retained["labels"]
+    with pytest.raises(ValueError, match="explicit simulated fixture classification"):
+        _build(root, run, preflight, monkeypatch, mode="unverified")
+
+    approval["notes"] = "Recorded approval of unknown provenance."
+    _write_json(approval_path, approval)
     report = _build(root, run, preflight, monkeypatch, mode="unverified")
 
     assert report["assurance"]["data_origin_verified"] is False
-    assert report["input_classification"]["classification"] == "unverified"
+    assert report["input_classification"]["classification"] == "UNVERIFIED_ORIGIN"
     assert all("real-data diagnostic evidence" not in label.lower() for label in report["labels"])
     with pytest.raises(ValueError, match="synthetic mode requires"):
         _build(root, run, preflight, monkeypatch, mode="synthetic")
     with pytest.raises(ValueError, match="positive real-origin classification is unsupported"):
         _build(root, run, preflight, monkeypatch, mode="real")
+
+
+def test_synthetic_source_does_not_imply_simulated_mechanics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    campaign_root = root / "research/campaigns/active/recipe_demo"
+    campaign_path = campaign_root / "campaign.yaml"
+    campaign = yaml.safe_load(campaign_path.read_text(encoding="utf-8"))
+    campaign["title"] = "Synthetic teaching context"
+    _write_yaml(campaign_path, campaign)
+    manifest_path = campaign_root / "authoring_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["compiled_document_sha256"]["campaign.yaml"] = mvp._compiled_object_sha256(campaign)
+    _write_json(manifest_path, manifest)
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval["reviewer"] = "UNVERIFIED_USER_SUPPLIED"
+    approval["notes"] = "Recorded approval of unknown provenance."
+    _write_json(approval_path, approval)
+    _update_summary_and_manifest(
+        run,
+        lambda document: document.get("mechanics_validation_gate", {}).__setitem__(
+            "reviewer", "UNVERIFIED_USER_SUPPLIED"
+        ),
+    )
+
+    report = _build(root, run, preflight, monkeypatch, mode="synthetic")
+    classification = report["input_classification"]
+    assert classification["source_synthetic_disclosed"] is True
+    assert classification["mechanics_simulated_disclosed"] is False
+    assert "Synthetic fixture source; not independently verified." in report["labels"]
+    assert "Mechanics approval is simulated and has no owner authority." not in report["labels"]
 
 
 @pytest.mark.parametrize("field", ["run_uid", "test_run_id", "attempt_id", "attempt_kind", "attempt_provenance"])
@@ -655,14 +840,14 @@ def test_rejects_integer_for_boolean_control(tmp_path: Path, monkeypatch: pytest
 def test_rejects_missing_referenced_stage_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
     first = PRE_ACCEPTANCE_STAGE_ORDER[0]
-    (run / first / "summary.json").unlink()
+    (run / first / mvp._CANONICAL_STAGE_SUMMARIES[first]).unlink()
     with pytest.raises(ValueError, match="required artifact is not a file"):
         _build(root, run, preflight, monkeypatch)
 
 
 def test_rejects_approval_identity_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
-    approval_path = root / "research_artifacts/validation_approvals/synthetic_recipe_demo/v01/approval.json"
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
     approval = json.loads(approval_path.read_text(encoding="utf-8"))
     approval["reviewer"] = "different-reviewer"
     _write_json(approval_path, approval)
@@ -672,7 +857,7 @@ def test_rejects_approval_identity_drift(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_rejects_dataset_without_pass_quality(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
-    manifest_path = root / "research/datasets/synthetic_fixture_es/dataset_manifest.json"
+    manifest_path = root / "research/datasets/demo_es/dataset_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["quality_verdict"] = "NEEDS MANUAL REVIEW"
     _write_json(manifest_path, manifest)
@@ -682,7 +867,7 @@ def test_rejects_dataset_without_pass_quality(tmp_path: Path, monkeypatch: pytes
 
 def test_rejects_published_source_hash_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, run, preflight = _project(tmp_path)
-    manifest_path = root / "research/campaigns/active/synthetic_recipe_demo/authoring_manifest.json"
+    manifest_path = root / "research/campaigns/active/recipe_demo/authoring_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["compiled_document_sha256"]["variants/v01/config.yaml"] = "0" * 64
     _write_json(manifest_path, manifest)
@@ -694,7 +879,7 @@ def test_formatting_preserves_compiled_object_hash_but_breaks_raw_run_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, run, preflight = _project(tmp_path)
-    source_path = root / "research/campaigns/active/synthetic_recipe_demo/variants/v01/config.yaml"
+    source_path = root / "research/campaigns/active/recipe_demo/variants/v01/config.yaml"
     manifest_path = source_path.parents[2] / "authoring_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
@@ -778,7 +963,7 @@ def test_rejects_manifest_data_contract_drift(tmp_path: Path, monkeypatch: pytes
     [
         ("criteria_pass", "criteria aggregate"),
         ("verdict", "generic_objective_verdict"),
-        ("metric", "criterion 0 metric"),
+        ("metric", "authoritative criteria"),
     ],
 )
 def test_rejects_producer_impossible_stage_semantics(
@@ -803,7 +988,178 @@ def test_rejects_producer_impossible_stage_semantics(
             document["stages"][0] = result
 
     _update_summary_and_manifest(run, update)
+    if mutation == "criteria_pass":
+        results_path = root / "research/campaigns/active/recipe_demo/results_index.yaml"
+        results = yaml.safe_load(results_path.read_text(encoding="utf-8"))
+        results["runs"][0]["failed_stage"] = PRE_ACCEPTANCE_STAGE_ORDER[1]
+        _write_yaml(results_path, results)
     with pytest.raises(ValueError, match=message):
+        _build(root, run, preflight, monkeypatch)
+
+
+def test_rejects_coordinated_stage_relabel_when_canonical_summary_still_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    stage_name = PRE_ACCEPTANCE_STAGE_ORDER[0]
+    result_path = run / stage_name / "stage_result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["summary"]["percentage_profitable_iterations"] = 1.0
+    result["criteria"] = evaluate_criteria(result, _criteria_for_stage(stage_name, {}))
+    result["status"] = "passed"
+    result["passed"] = True
+    result = _annotate_stage_decisions(result)
+    _write_json(result_path, result)
+    _update_summary_and_manifest(
+        run,
+        lambda document: document["stages"].__setitem__(0, result) if "stages" in document else None,
+    )
+    results_path = root / "research/campaigns/active/recipe_demo/results_index.yaml"
+    results = yaml.safe_load(results_path.read_text(encoding="utf-8"))
+    results["runs"][0]["failed_stage"] = PRE_ACCEPTANCE_STAGE_ORDER[1]
+    _write_yaml(results_path, results)
+
+    with pytest.raises(ValueError, match="canonical summary projection"):
+        _build(root, run, preflight, monkeypatch)
+
+
+def test_accepts_exact_disabled_stage_without_stage_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    disabled = PRE_ACCEPTANCE_STAGE_ORDER[1]
+    root, run, preflight = _project(tmp_path, disabled_stage=disabled)
+    effective = yaml.safe_load((run / "effective_config.yaml").read_text(encoding="utf-8"))
+    effective["campaign_tests"][disabled]["enabled"] = False
+    summary = json.loads((run / "campaign_test_summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8"))
+    stages = mvp._stage_bindings(run, effective, summary, manifest, root)
+
+    bound = stages[1]
+    assert bound["summary"]["status"] == "skipped"
+    assert bound["summary"]["skip_reason"] == "disabled"
+    assert bound["stage_result"] is None
+    assert bound["missing_stage_result_reason"] == "disabled"
+
+
+def test_rejects_hash_valid_strategy_spec_execution_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    campaign_root = root / "research/campaigns/active/recipe_demo"
+    spec_path = campaign_root / "strategy_spec.yaml"
+    spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+    spec["execution"]["tick_size"] = 0.5
+    spec["execution"]["tick_value"] = 25.0
+    _write_yaml(spec_path, spec)
+    manifest_path = campaign_root / "authoring_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["compiled_document_sha256"]["strategy_spec.yaml"] = mvp._compiled_object_sha256(spec)
+    _write_json(manifest_path, manifest)
+
+    with pytest.raises(ValueError, match="strategy spec execution tick_size"):
+        _build(root, run, preflight, monkeypatch)
+
+
+def test_rejects_undersized_mechanics_random_sample(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval["sampled_trade_ids"] = [1]
+    approval["sampling_categories"] = {
+        "random_trades": [1],
+        "warning_representatives": [],
+        "resolved_ambiguities": [],
+        "universal_coverage": [],
+    }
+    approval["sampling_reasons"] = {"1": ["deterministic random baseline"]}
+    _write_json(approval_path, approval)
+
+    with pytest.raises(ValueError, match="random sample count"):
+        _build(root, run, preflight, monkeypatch)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("union", "sampled/category ordered union"),
+        ("reasons", "sampling reason IDs"),
+        ("boolean_id", "string or integer trade ID"),
+    ],
+)
+def test_rejects_malformed_mechanics_sampling_structure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    message: str,
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    if mutation == "union":
+        approval["sampled_trade_ids"] = [5, 4, 3, 2, 1]
+    elif mutation == "reasons":
+        approval["sampling_reasons"].pop("5")
+    else:
+        approval["sampled_trade_ids"][0] = True
+        approval["sampling_categories"]["random_trades"][0] = True
+        approval["sampling_reasons"]["True"] = approval["sampling_reasons"].pop("1")
+    _write_json(approval_path, approval)
+
+    with pytest.raises(ValueError, match=message):
+        _build(root, run, preflight, monkeypatch)
+
+
+def test_accepts_fewer_random_samples_when_evidence_has_fewer_trades(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    evidence_metadata = root / "research/evidence/mechanics/validation_runs/core/metadata.json"
+    metadata = json.loads(evidence_metadata.read_text(encoding="utf-8"))
+    metadata["source_trade_count"] = 2
+    _write_json(evidence_metadata, metadata)
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval["sampled_trade_ids"] = [1, 2]
+    approval["sampling_categories"] = {
+        "random_trades": [1, 2],
+        "warning_representatives": [],
+        "resolved_ambiguities": [],
+        "universal_coverage": [],
+    }
+    approval["sampling_reasons"] = {
+        "1": ["deterministic random baseline"],
+        "2": ["deterministic random baseline"],
+    }
+    _write_json(approval_path, approval)
+
+    report = _build(root, run, preflight, monkeypatch)
+    assert report["mechanics"]["approval_record"]["sampled_trade_ids"] == [1, 2]
+
+
+def test_results_index_allows_other_entries_but_requires_exact_current_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    results_path = root / "research/campaigns/active/recipe_demo/results_index.yaml"
+    results = yaml.safe_load(results_path.read_text(encoding="utf-8"))
+    results["runs"].insert(0, {"campaign_id": "recipe_demo", "test_run_id": "older"})
+    _write_yaml(results_path, results)
+    report = _build(root, run, preflight, monkeypatch)
+    assert report["producer_bindings"]["source_results_index_entry"]["test_run_id"] == "run1"
+
+    _update_summary_and_manifest(
+        run,
+        lambda document: document.__setitem__(
+            "source_results_index_path", "research/campaigns/active/recipe_demo/campaign.yaml"
+        )
+        if "source_results_index_path" in document
+        else document.__setitem__(
+            "source_results_index", "research/campaigns/active/recipe_demo/campaign.yaml"
+        ),
+    )
+    with pytest.raises(ValueError, match="canonical source results index path"):
         _build(root, run, preflight, monkeypatch)
 
 
@@ -811,7 +1167,7 @@ def test_rejects_incomplete_authoring_document_topology(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, run, preflight = _project(tmp_path)
-    manifest_path = root / "research/campaigns/active/synthetic_recipe_demo/authoring_manifest.json"
+    manifest_path = root / "research/campaigns/active/recipe_demo/authoring_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["compiled_document_sha256"].pop("campaign.yaml")
     _write_json(manifest_path, manifest)
@@ -823,7 +1179,7 @@ def test_rejects_hash_valid_semantically_contradictory_authoring_documents(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, run, preflight = _project(tmp_path)
-    campaign_root = root / "research/campaigns/active/synthetic_recipe_demo"
+    campaign_root = root / "research/campaigns/active/recipe_demo"
     manifest_path = campaign_root / "authoring_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     for name in ("campaign.yaml", "strategy_spec.yaml"):
@@ -841,7 +1197,7 @@ def test_rejects_hash_valid_forged_mechanic_signature(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, run, preflight = _project(tmp_path)
-    campaign_root = root / "research/campaigns/active/synthetic_recipe_demo"
+    campaign_root = root / "research/campaigns/active/recipe_demo"
     manifest_path = campaign_root / "authoring_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     forged = "0" * 64
@@ -879,7 +1235,7 @@ def test_rejects_dataset_execution_metadata_drift(
     message: str,
 ) -> None:
     root, run, preflight = _project(tmp_path)
-    manifest_path = root / "research/datasets/synthetic_fixture_es/dataset_manifest.json"
+    manifest_path = root / "research/datasets/demo_es/dataset_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest[field] = value
     _write_json(manifest_path, manifest)
@@ -930,7 +1286,7 @@ def test_rejects_malformed_mechanics_approval(
     message: str,
 ) -> None:
     root, run, preflight = _project(tmp_path)
-    approval_path = root / "research_artifacts/validation_approvals/synthetic_recipe_demo/v01/approval.json"
+    approval_path = root / "research_artifacts/validation_approvals/recipe_demo/v01/approval.json"
     approval = json.loads(approval_path.read_text(encoding="utf-8"))
     approval[field] = value
     _write_json(approval_path, approval)
@@ -945,13 +1301,13 @@ def test_rejects_malformed_mechanics_approval(
         ([], 1, "config identity"),
         (
             [
-                "research/campaigns/active/synthetic_recipe_demo/variants/v01/config.yaml",
+                "research/campaigns/active/recipe_demo/variants/v01/config.yaml",
                 "research/campaigns/active/different/variants/v99/config.yaml",
             ],
             1,
             "config identity",
         ),
-        (["research/campaigns/active/synthetic_recipe_demo/variants/v01/config.yaml"], 0, "data source count"),
+        (["research/campaigns/active/recipe_demo/variants/v01/config.yaml"], 0, "data source count"),
     ],
 )
 def test_rejects_preflight_input_identity_drift(
@@ -977,7 +1333,7 @@ def test_preflight_accepts_equivalent_absolute_config_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, run, preflight = _project(tmp_path)
-    source_path = root / "research/campaigns/active/synthetic_recipe_demo/variants/v01/config.yaml"
+    source_path = root / "research/campaigns/active/recipe_demo/variants/v01/config.yaml"
     preflight["configs_checked"] = [str(source_path)]
     _write_json(root / "pre-run-preflight.json", preflight)
     _update_summary_and_manifest(

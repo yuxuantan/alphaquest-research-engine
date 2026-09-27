@@ -230,10 +230,13 @@ the governed human workflow and remain separately reviewable.
    embedded successful configuration/data preflight receipts for exactly that one
    config and data source; the canonical effective config derived from the exact
    published source; the complete one-variant certified-recipe publication and its
-   semantic identities; the producer's complete run/manifest fields and
-   criteria-derived stage decisions; the recorded approved mechanics gate and the
-   governed structure, scope, sampling policy, config, data, reviewer and timestamp
-   of its approval record; one local CSV or Parquet bar dataset with a `PASS`
+   shared hypothesis, rationale, execution and prop-profile semantics; the
+   producer's complete run/manifest fields and canonical results-index entry;
+   criteria recomputed by the producer evaluator and exact projections from each
+   canonical stage summary; the recorded approved mechanics gate and the governed
+   structure, scope, sampling policy, ordered category union, sample count, reasons,
+   config, data, reviewer and timestamp of its approval record; one local CSV or
+   Parquet bar dataset with a `PASS`
    quality manifest whose execution metadata matches the frozen config and strategy
    specification; and the sole diagnostic reason that acceptance was omitted. It
    validates and hashes every stage-referenced artifact. The staged run did not
@@ -254,17 +257,24 @@ delete, repair, or silently replay the same attempt. Create a fresh governed
 follow-up attempt with a new identity after resolving the cause. The report index
 also refuses to overwrite a previous index.
 
-For an isolated synthetic demonstration, use `--mode synthetic` and retain the
-explicit fixture labels: the source is unverified, duplicate and admission
-decisions are scripted, and mechanics approval is simulated without owner
-authority. Synthetic evidence can demonstrate stops, stale-input rejection,
-attempt immutability, stage rejection, and report binding. It cannot substitute
-for the real human decisions or support a scientific, trading-readiness, P3, or
-promotion claim. For any user-supplied case whose origin is not established by a
-separately audited provenance chain, use `--mode unverified`. That mode never calls
-the data real and records data-origin, source-review, implementation-admission,
-current mechanics-gate and human-authority verification as false. Positive
-real-origin classification is outside this bounded report. A run carrying the exact
-simulated-fixture reviewer classification cannot be relabelled `unverified`; the
-index requires `synthetic` and retains all synthetic/simulated warnings. Conversely,
-`synthetic` is rejected when that explicit governed classification is absent.
+For an isolated synthetic demonstration, use `--mode synthetic`. The index derives
+its warning from explicit structured disclosures in the hash-bound campaign,
+source config, approval reviewer and approval notes. It preserves every matched
+field with the artifact path and hash. Source-synthetic and simulated-mechanics
+warnings are separate: a synthetic dataset does not imply that a recorded human
+review was simulated, and an explicitly simulated approval does not verify data
+origin. A scripted duplicate/admission label is emitted only when the bound text
+actually discloses that fact. Synthetic evidence can demonstrate stops,
+stale-input rejection, attempt immutability, stage rejection, and report binding.
+It cannot substitute for the real human decisions or support a scientific,
+trading-readiness, P3, or promotion claim. For any user-supplied case whose origin
+is not established by a separately audited provenance chain, use `--mode
+unverified`. That mode never calls the data real and records data-origin,
+source-review, implementation-admission, current mechanics-gate and human-authority
+verification as false. Positive real-origin classification is outside this bounded
+report. `--mode` is a consistency assertion, not the classification source. Any
+accepted synthetic, simulated, fixture or no-owner-authority disclosure requires
+`synthetic`, even if another field is edited or silent. `synthetic` is rejected when
+no selected structured field contains such a disclosure. Historical contracts have
+no universal typed origin field, so absence of a warning yields
+`UNVERIFIED_ORIGIN`, never a positive real-data claim.
