@@ -4,8 +4,10 @@ import { FactoryStructuredReview } from "./FactoryStructuredReview";
 import { FactoryReviewReceipt } from "./FactoryReviewRecord";
 import type { CodexTaskRecord } from "../types";
 
-const mocks = vi.hoisted(() => ({ hypothesis: vi.fn(), engineering: vi.fn() }));
+const mocks = vi.hoisted(() => ({ hypothesis: vi.fn(), engineering: vi.fn(), source: vi.fn(), factoryTask: vi.fn() }));
 vi.mock("../api", () => ({ api: {
+  recordFactoryReviewedSource: mocks.source,
+  factoryTask: mocks.factoryTask,
   recordFactoryReviewedHypothesis: mocks.hypothesis,
   recordFactoryReviewedEngineeringIntent: mocks.engineering,
 } }));
@@ -55,15 +57,61 @@ describe("structured review experience", () => {
     expect(mocks.hypothesis).toHaveBeenCalledTimes(1);
   });
 
-  it("retains evidence choices and allows retry when the write itself fails", async () => {
+  it("allows retry only after reading back a task with no stored review", async () => {
     mocks.hypothesis.mockRejectedValueOnce(new Error("Service unavailable"));
+    mocks.factoryTask.mockResolvedValue({ task: { ...task, structured_review: null } });
     render(<FactoryStructuredReview task={task} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
     checkAll();
     fireEvent.click(screen.getByRole("button"));
-    expect(await screen.findByText("Service unavailable")).toBeVisible();
+    expect(await screen.findByText(/Service unavailable/)).toBeVisible();
+    expect(mocks.factoryTask).toHaveBeenCalledWith(task.task_id);
     expect(screen.getByRole("button")).toBeEnabled();
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(mocks.hypothesis).toHaveBeenCalledTimes(2));
+  });
+
+  it.each(["SOURCE_RESEARCH", "HYPOTHESIS_PROPOSAL", "MECHANICS_INTENT"])(
+    "recovers a lost POST response from the durable %s receipt without another write",
+    async (taskType) => {
+      const proposal = taskType === "SOURCE_RESEARCH" ? { claims: [{ claim_id: "claim", support: "DIRECT", statement: "Captured evidence supports the source claim.", source_location: "Page 1" }] }
+        : taskType === "MECHANICS_INTENT" ? { execution_lane: "ENGINEERING_HANDOFF" } : task.proposal;
+      const currentTask = { ...task, task_type: taskType, proposal };
+      const mutation = taskType === "SOURCE_RESEARCH" ? mocks.source : taskType === "MECHANICS_INTENT" ? mocks.engineering : mocks.hypothesis;
+      mutation.mockRejectedValueOnce(new Error("Response lost after commit"));
+      const status = taskType === "SOURCE_RESEARCH" ? "ACCEPTED_FOR_HYPOTHESIS" : taskType === "MECHANICS_INTENT" ? "ACCEPTED_FOR_ENGINEERING_HANDOFF" : "ACCEPTED_FOR_MECHANICS";
+      mocks.factoryTask.mockResolvedValue({ task: { ...currentTask, structured_review: {
+        status, proposal_payload_sha256: "a".repeat(64), artifact_sha256: "c".repeat(64),
+      } } });
+      const onComplete = vi.fn().mockResolvedValue(undefined);
+      render(<FactoryStructuredReview task={currentTask} reviewer="Researcher" notes="Checked the evidence" onComplete={onComplete} />);
+      checkAll();
+      if (taskType === "SOURCE_RESEARCH") {
+        for (const [label, value] of [
+          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked publisher metadata"],
+          ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
+          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
+        ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      }
+      const button = screen.getByRole("button");
+      expect(button).toBeEnabled();
+      fireEvent.click(button);
+      await waitFor(() => expect(mocks.factoryTask).toHaveBeenCalledWith(task.task_id));
+      await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+      expect(mutation).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("keeps submission locked when neither the save nor readback can be confirmed", async () => {
+    mocks.hypothesis.mockRejectedValueOnce(new Error("Connection lost"));
+    mocks.factoryTask.mockRejectedValueOnce(new Error("Readback unavailable"));
+    render(<FactoryStructuredReview task={task} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
+    checkAll();
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByText(/could not confirm whether the review was saved/i)).toBeVisible();
+    expect(screen.getByRole("button")).toBeDisabled();
+    expect(screen.queryByText("Review saved. Read the receipt before continuing.")).not.toBeInTheDocument();
   });
 
   it("keeps engineering intent restricted to a handoff and requires every contract field", async () => {

@@ -161,6 +161,47 @@ export function FactoryStructuredReview({
   return null;
 }
 
+async function recoverReviewSubmission(
+  task: CodexTaskRecord,
+  reason: unknown,
+  onComplete: ReviewProps["onComplete"],
+  setSaved: (saved: boolean) => void,
+  setUncertain: (uncertain: boolean) => void,
+  setError: (message: string) => void,
+) {
+  // A rejected fetch can follow a successful immutable write. Read authority
+  // back from the service before either claiming success or enabling a retry.
+  setUncertain(true);
+  const unknownOutcome = "Could not confirm whether the review was saved. Reload Studio to check the stored task before retrying. Submission remains locked.";
+  setError(unknownOutcome);
+  try {
+    const result = await api.factoryTask(task.task_id);
+    const current = "task" in result ? result.task : result;
+    if (current.task_id !== task.task_id ||
+      current.proposal_validation?.payload_sha256 !== task.proposal_validation?.payload_sha256 ||
+      current.proposal_validation?.status !== "VALIDATED_NOT_APPLIED") return;
+    const receipt = current.structured_review;
+    const expectedStatus = task.task_type === "SOURCE_RESEARCH" ? "ACCEPTED_FOR_HYPOTHESIS"
+      : task.task_type === "HYPOTHESIS_PROPOSAL" ? "ACCEPTED_FOR_MECHANICS" : "ACCEPTED_FOR_ENGINEERING_HANDOFF";
+    if (receipt?.status === expectedStatus &&
+      receipt.proposal_payload_sha256 === task.proposal_validation?.payload_sha256) {
+      setSaved(true);
+      setError("");
+      try {
+        await onComplete("A stored review was found for this proposal. Read its receipt before continuing.");
+      } catch {
+        setError("Review saved, but the screen could not refresh. Reload Studio to read the stored receipt before continuing. Do not resubmit.");
+      }
+    } else if (receipt === null && !current.proposal_disposition) {
+      setUncertain(false);
+      const message = reason instanceof Error ? reason.message : "Review submission failed.";
+      setError(`${message} No stored review was found when the task was checked. Review the inputs before retrying.`);
+    }
+  } catch {
+    setError(unknownOutcome);
+  }
+}
+
 function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewProps) {
   const claims = useMemo(() => claimsFrom(task), [task.proposal]);
   const [metadataFields, setMetadataFields] = useState<string[]>([]);
@@ -173,6 +214,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
   const [claimNotes, setClaimNotes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     setMetadataFields([]);
@@ -193,7 +235,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
     claims.some((claim) => decisions[claim.claim_id] === "ACCEPT"),
   );
   async function submit() {
-    if (!complete || !retractionStatus || busy || saved || disabled) return;
+    if (!complete || !retractionStatus || busy || saved || uncertain || disabled) return;
     setBusy(true);
     setError("");
     try {
@@ -222,7 +264,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
         setError("Review saved, but the screen could not refresh. Reload Studio to read the stored receipt before continuing. Do not resubmit.");
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Source review was not stored.");
+      await recoverReviewSubmission(task, reason, onComplete, setSaved, setUncertain, setError);
     } finally {
       setBusy(false);
     }
@@ -288,7 +330,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
       {!complete && <p className="factory-proposal-requirement">Verify all metadata, enter valid hashes, decide every claim, accept at least one claim, and complete reviewer notes.</p>}
       {saved && <Notice tone="info">Review saved. Read the receipt before continuing.</Notice>}
       {error && <Notice tone="warning">{error}</Notice>}
-      <Button type="button" disabled={disabled || busy || saved || !complete} onClick={() => void submit()}>ACCEPT REVIEWED SOURCE EVIDENCE</Button>
+      <Button type="button" disabled={disabled || busy || saved || uncertain || !complete} onClick={() => void submit()}>ACCEPT REVIEWED SOURCE EVIDENCE</Button>
     </div>
   );
 }
@@ -298,12 +340,13 @@ function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: Revie
   const [gates, setGates] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState("");
   const gateNames = ["objective_alignment", "source_claim_alignment", "falsifiability", "information_timeline_no_lookahead", "execution_cost_awareness"];
   useEffect(() => { setFields([]); setGates([]); setError(""); }, [task.task_id]);
   const complete = reviewer.trim() && notes.trim() && fields.length === HYPOTHESIS_FIELDS.length && gates.length === gateNames.length;
   async function submit() {
-    if (!complete || busy || saved || disabled) return;
+    if (!complete || busy || saved || uncertain || disabled) return;
     setBusy(true);
     setError("");
     try {
@@ -319,7 +362,7 @@ function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: Revie
         setError("Review saved, but the screen could not refresh. Reload Studio to read the stored receipt before continuing. Do not resubmit.");
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Hypothesis review was not stored.");
+      await recoverReviewSubmission(task, reason, onComplete, setSaved, setUncertain, setError);
     } finally { setBusy(false); }
   }
   return (
@@ -336,7 +379,7 @@ function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: Revie
       {!complete && <p className="factory-proposal-requirement">Review every field and pass every gate with reviewer identity and notes.</p>}
       {saved && <Notice tone="info">Review saved. Read the receipt before continuing.</Notice>}
       {error && <Notice tone="warning">{error}</Notice>}
-      <Button type="button" disabled={disabled || busy || saved || !complete} onClick={() => void submit()}>ACCEPT REVIEWED HYPOTHESIS</Button>
+      <Button type="button" disabled={disabled || busy || saved || uncertain || !complete} onClick={() => void submit()}>ACCEPT REVIEWED HYPOTHESIS</Button>
     </div>
   );
 }
@@ -346,12 +389,13 @@ function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete }
   const [gates, setGates] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState("");
   const gateNames = ["hypothesis_alignment", "unsupported_scope_confirmed", "causal_timeline_reviewed"];
   useEffect(() => { setFields([]); setGates([]); setError(""); }, [task.task_id]);
   const complete = reviewer.trim() && notes.trim() && fields.length === MECHANICS_FIELDS.length && gates.length === gateNames.length;
   async function submit() {
-    if (!complete || busy || saved || disabled) return;
+    if (!complete || busy || saved || uncertain || disabled) return;
     setBusy(true);
     setError("");
     try {
@@ -366,7 +410,7 @@ function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete }
         setError("Review saved, but the screen could not refresh. Reload Studio to read the stored receipt before continuing. Do not resubmit.");
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Engineering-intent review was not stored.");
+      await recoverReviewSubmission(task, reason, onComplete, setSaved, setUncertain, setError);
     } finally { setBusy(false); }
   }
   return (
@@ -376,7 +420,7 @@ function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete }
       <details open><summary>Confirm handoff gates ({gates.length}/{gateNames.length})</summary><FieldChecklist fields={gateNames} selected={gates} setSelected={setGates} /></details>
       {saved && <Notice tone="info">Review saved. Read the receipt before continuing.</Notice>}
       {error && <Notice tone="warning">{error}</Notice>}
-      <Button type="button" disabled={disabled || busy || saved || !complete} onClick={() => void submit()}>ACCEPT FOR ENGINEERING HANDOFF</Button>
+      <Button type="button" disabled={disabled || busy || saved || uncertain || !complete} onClick={() => void submit()}>ACCEPT FOR ENGINEERING HANDOFF</Button>
     </div>
   );
 }
