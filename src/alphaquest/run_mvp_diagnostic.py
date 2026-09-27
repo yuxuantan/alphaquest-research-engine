@@ -2290,19 +2290,19 @@ def _validate_wfa_execution_evidence(
     actual_data_period = canonical_summary.get("actual_data_period")
     if not isinstance(actual_data_period, dict):
         raise ValueError("WFA actual_data_period must be a mapping")
-    first_timestamp = _market_timestamp(
+    actual_data_first_timestamp = _market_timestamp(
         actual_data_period.get("first_timestamp"),
         "WFA actual data first_timestamp",
         timezone_name,
     )
-    last_timestamp = _market_timestamp(
+    actual_data_last_timestamp = _market_timestamp(
         actual_data_period.get("last_timestamp"),
         "WFA actual data last_timestamp",
         timezone_name,
     )
     producer_windows = _producer_wfa_windows(
-        first_timestamp=first_timestamp,
-        last_timestamp=last_timestamp,
+        first_timestamp=actual_data_first_timestamp,
+        last_timestamp=actual_data_last_timestamp,
         runtime_wfa=runtime_wfa,
     )
     planned_windows = _nonnegative_int(
@@ -2422,17 +2422,17 @@ def _validate_wfa_execution_evidence(
             _objective_label(grid_config["objective"]),
             f"WFA results row {index} objective",
         )
-        first_timestamp = _market_timestamp(
+        observed_test_first_timestamp = _market_timestamp(
             row.get("test_first_timestamp"),
             f"WFA results row {index} test_first_timestamp",
             timezone_name,
         )
-        last_timestamp = _market_timestamp(
+        observed_test_last_timestamp = _market_timestamp(
             row.get("test_last_timestamp"),
             f"WFA results row {index} test_last_timestamp",
             timezone_name,
         )
-        if last_timestamp < first_timestamp:
+        if observed_test_last_timestamp < observed_test_first_timestamp:
             raise ValueError(f"WFA results row {index} test timestamps are reversed")
         record = {
             "window_id": window_id,
@@ -2448,8 +2448,8 @@ def _validate_wfa_execution_evidence(
                 row.get("test_observations"), f"WFA results row {index} test_observations"
             ),
             "test_trades": _nonnegative_int(row.get("test_trades"), f"WFA results row {index} test_trades"),
-            "test_first_timestamp": first_timestamp,
-            "test_last_timestamp": last_timestamp,
+            "test_first_timestamp": observed_test_first_timestamp,
+            "test_last_timestamp": observed_test_last_timestamp,
             "result_row": row,
         }
         if record["test_observations"] <= 0:
@@ -2471,7 +2471,12 @@ def _validate_wfa_execution_evidence(
             raise ValueError(f"WFA window {window_id} train interval disagrees with the frozen calendar length")
         test_start = pd.Timestamp(record["test_start"])
         test_end = pd.Timestamp(record["test_end"])
-        if not (test_start <= first_timestamp.tz_localize(None) <= last_timestamp.tz_localize(None) < test_end):
+        if not (
+            test_start
+            <= observed_test_first_timestamp.tz_localize(None)
+            <= observed_test_last_timestamp.tz_localize(None)
+            < test_end
+        ):
             raise ValueError(f"WFA window {window_id} retained test timestamps fall outside its test interval")
         windows[window_id] = record
         if evaluated:
@@ -2727,8 +2732,8 @@ def _validate_wfa_execution_evidence(
             "train_months": runtime_wfa["train_months"],
             "test_months": runtime_wfa["test_months"],
             "step_months": runtime_wfa["step_months"],
-            "actual_data_first_timestamp": first_timestamp.isoformat(),
-            "actual_data_last_timestamp": last_timestamp.isoformat(),
+            "actual_data_first_timestamp": actual_data_first_timestamp.isoformat(),
+            "actual_data_last_timestamp": actual_data_last_timestamp.isoformat(),
             "producer_window_count": len(producer_windows),
             "early_exit_min_train_profit_factor": early_exit_profit_factor,
             "early_exit_require_train_profitable": bool(runtime_wfa.get("early_exit_require_train_profitable", False)),

@@ -1342,6 +1342,16 @@ def _validate_wfa_contract(contract: dict[str, object]) -> dict[str, object]:
     )
 
 
+def _assert_runtime_actual_data_endpoints(
+    validated: dict[str, object],
+    contract: dict[str, object],
+) -> None:
+    actual_data_period = contract["canonical"]["actual_data_period"]
+    runtime_wfa = validated["runtime_wfa"]
+    assert runtime_wfa["actual_data_first_timestamp"] == actual_data_period["first_timestamp"]
+    assert runtime_wfa["actual_data_last_timestamp"] == actual_data_period["last_timestamp"]
+
+
 @pytest.mark.parametrize("optimized", [False, True])
 def test_validates_actual_fixed_and_optimized_wfa_contract(tmp_path: Path, optimized: bool) -> None:
     contract = _write_wfa_contract(tmp_path, optimized=optimized)
@@ -1353,6 +1363,7 @@ def test_validates_actual_fixed_and_optimized_wfa_contract(tmp_path: Path, optim
     assert len(validated["train_grid_bindings"]) == expected_windows
     assert validated["runtime_wfa"]["selection_filter"] == {"exclusive_min_trades_per_year": 50}
     assert validated["runtime_wfa"]["exchange_timezone"] == "America/New_York"
+    _assert_runtime_actual_data_endpoints(validated, contract)
     if optimized:
         assert validated["incubation_selected_params"] == {"entry.params.lookback": 20}
     else:
@@ -1372,6 +1383,7 @@ def test_accepts_iterative_month_end_windows_with_skipped_ids(tmp_path: Path, mo
 
     assert [item["window_id"] for item in validated["window_selections"]] == ["1", "3"]
     assert validated["runtime_wfa"]["producer_window_count"] == 3
+    _assert_runtime_actual_data_endpoints(validated, contract)
     results = pd.read_csv(contract["results"])
     if mode == "unanchored":
         assert results.loc[1, "train_start"] == "2023-03-28"
@@ -1387,6 +1399,44 @@ def test_accepts_actual_data_end_exactly_on_final_test_boundary(tmp_path: Path) 
 
     assert contract["canonical"]["actual_data_period"]["last_timestamp"].startswith(results.iloc[-1]["test_end"])
     assert validated["runtime_wfa"]["producer_window_count"] == 2
+    _assert_runtime_actual_data_endpoints(validated, contract)
+
+
+def test_preserves_actual_data_endpoints_with_zero_producer_windows(tmp_path: Path) -> None:
+    contract = _write_wfa_contract(tmp_path, optimized=False)
+    contract["results"].write_text("", encoding="utf-8")
+    contract["trades"].write_text("", encoding="utf-8")
+    for path in contract["grids"]:
+        path.unlink()
+    contract["grids"] = []
+    contract["artifacts"] = [contract["results"], contract["trades"]]
+    contract["canonical"].update(
+        {
+            "windows": 0,
+            "planned_complete_oos_windows": 0,
+            "realized_oos_windows": 0,
+            "skipped_complete_oos_windows": 0,
+            "realized_oos_observations": 0,
+            "realized_oos_trades": 0,
+            "realized_oos_start": None,
+            "realized_oos_end": None,
+            "realized_oos_intervals": [],
+            "stitched_oos_trades": 0,
+            "early_exit": False,
+            "actual_data_period": {
+                "first_timestamp": "2023-12-01T09:30:00-05:00",
+                "last_timestamp": "2023-12-15T09:30:00-05:00",
+            },
+            "train_grid_report_files": [],
+            "incubation_selected_params": {},
+        }
+    )
+
+    validated = _validate_wfa_contract(contract)
+
+    assert validated["runtime_wfa"]["producer_window_count"] == 0
+    assert validated["window_selections"] == []
+    _assert_runtime_actual_data_endpoints(validated, contract)
 
 
 @pytest.mark.parametrize("empty_results", [False, True])
@@ -1652,6 +1702,7 @@ def test_accepts_exact_producer_early_exit_and_rejects_invented_unevaluated_stat
     validated = _validate_wfa_contract(contract)
     assert validated["train_grid_bindings"] == []
     assert validated["trade_selections"] == []
+    _assert_runtime_actual_data_endpoints(validated, contract)
     assert validated["early_exit_bindings"][0]["runtime_predicate_consistent"] is True
     if reason == "no_in_sample_rows_after_selection_filter":
         assert validated["early_exit_bindings"][0]["filter_exhaustion_independently_verified"] is False
