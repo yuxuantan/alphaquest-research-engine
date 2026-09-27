@@ -373,3 +373,6 @@ accepted synthetic, simulated, fixture or no-owner-authority disclosure requires
 no selected structured field contains such a disclosure. Historical contracts have
 no universal typed origin field, so absence of a warning yields
 `UNVERIFIED_ORIGIN`, never a positive real-data claim.
+
+The [structured review workflow](review-workflow.md) defines the proposal,
+checklist and durable receipt experience using the existing review contracts.

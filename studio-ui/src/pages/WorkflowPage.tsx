@@ -5,6 +5,7 @@ import {
   FactoryStructuredReview,
   isStructuredReviewTask,
 } from "../components/FactoryStructuredReview";
+import { FactoryReviewIdentity, FactoryReviewReceipt } from "../components/FactoryReviewRecord";
 import { Button, Card, Notice, PageHeader, StatusBadge } from "../components/UI";
 import { useStudio } from "../state";
 import type {
@@ -176,6 +177,7 @@ export function WorkflowPage() {
   );
   const [proposalNotes, setProposalNotes] = useState("");
   const [proposalReviewError, setProposalReviewError] = useState("");
+  const [selectedProposalId, setSelectedProposalId] = useState("");
   const [proposalSelectedAction, setProposalSelectedAction] = useState<
     SelectableFactoryNextAction | ""
   >("");
@@ -265,7 +267,11 @@ export function WorkflowPage() {
     ...factoryTasks,
     factoryStatus?.latest_task,
   ].filter((task): task is CodexTaskRecord => Boolean(task));
+  const reviewableProposals = proposalCandidates.filter((task, index, all) =>
+    isValidatedNotApplied(task) && all.findIndex((other) => other.task_id === task.task_id) === index,
+  );
   const validatedProposalSummary =
+    reviewableProposals.find((task) => task.task_id === selectedProposalId) ||
     proposalCandidates.find(
       (task) =>
         isValidatedNotApplied(task) &&
@@ -284,6 +290,7 @@ export function WorkflowPage() {
     setProposalNotes("");
     setProposalReviewError("");
     setProposalSelectedAction("");
+    setValidatedProposalDetail(null);
     if (!taskId) {
       setValidatedProposalDetail(null);
       return;
@@ -310,7 +317,8 @@ export function WorkflowPage() {
     return () => {
       cancelled = true;
     };
-  }, [validatedProposalSummary?.task_id]);
+  }, [validatedProposalSummary?.task_id, validatedProposalSummary?.proposal_validation?.payload_sha256,
+    validatedProposalSummary?.proposal_validation?.validation_sha256]);
   const validatedProposalTask =
     validatedProposalDetail &&
     validatedProposalDetail.task_id === validatedProposalSummary?.task_id &&
@@ -567,6 +575,7 @@ export function WorkflowPage() {
     setFactoryStatus(status);
     setFactoryTasks(Array.isArray(rawTasks) ? rawTasks : rawTasks.tasks);
     setValidatedProposalDetail(refreshedTask);
+    setSelectedProposalId(taskId);
     setProposalNotes("");
     setFactoryMessage(message);
     setProposalReviewError("");
@@ -670,6 +679,16 @@ export function WorkflowPage() {
             </p>
           </div>
         )}
+        {reviewableProposals.length > 0 && (
+          <label className="field">
+            <span className="field-label">Recent proposals and saved reviews</span>
+            <select value={validatedProposalSummary?.task_id || ""} onChange={(event) => setSelectedProposalId(event.target.value)}>
+              {reviewableProposals.map((task) => <option key={task.task_id} value={task.task_id}>
+                {task.task_type || "Proposal"} · {task.task_id} · {task.structured_review?.status || task.proposal_disposition?.status || "Pending review"}
+              </option>)}
+            </select>
+          </label>
+        )}
         {validatedProposalTask && (
           <section className="factory-proposal-review" aria-labelledby="factory-proposal-heading">
             <div className="section-heading">
@@ -701,6 +720,14 @@ export function WorkflowPage() {
                 </span>
               )}
             </div>
+            {isStructuredReview && <>
+              <Notice tone="info" title="Review in three steps">
+                Read the proposed values, complete each evidence check, then submit one explicit decision with your notes.
+                Leave the review pending if evidence is missing. Dismiss only when you intend to close this proposal.
+                Reviewer identity is a local attribution label, not an authenticated signature.
+              </Notice>
+              <FactoryReviewIdentity task={validatedProposalTask} />
+            </>}
             <details className="factory-proposal-payload">
               <summary>Inspect validated proposal</summary>
               <pre>{JSON.stringify(validatedProposalTask.proposal, null, 2)}</pre>
@@ -713,7 +740,9 @@ export function WorkflowPage() {
                     : validatedProposalTask.structured_review?.status ||
                       validatedProposalTask.proposal_disposition?.status ||
                       "This proposal has left the pending review queue."}{" "}
-                  It remains not applied and not approved.
+                  {validatedProposalTask.structured_review
+                    ? "Campaign publication and mechanics approval remain separate."
+                    : "It remains not applied and not approved."}
                   {(validatedProposalTask.selected_action?.reviewer ||
                     validatedProposalTask.structured_review?.reviewer ||
                     validatedProposalTask.proposal_disposition?.reviewer) && (
@@ -725,6 +754,7 @@ export function WorkflowPage() {
                     </>
                   )}
                 </Notice>
+                <FactoryReviewReceipt task={validatedProposalTask} />
                 {terminalCompletionRequired && (
                   <div className="factory-proposal-disposition">
                     <Notice tone="warning" title="Terminal decision still requires completion">

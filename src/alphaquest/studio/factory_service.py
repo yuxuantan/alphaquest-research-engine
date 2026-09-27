@@ -988,7 +988,9 @@ class ResearchFactoryService:
         if include_proposal:
             payload["proposal"] = self._validated_proposal_payload(record, validation)
         payload["proposal_disposition"] = self._proposal_disposition(record)
-        payload["structured_review"] = self._structured_review_summary(record)
+        payload["structured_review"] = self._structured_review_summary(
+            record, include_artifact=include_proposal
+        )
         payload["selected_action"] = self._selected_next_action(record)
         payload["selected_action_completion"] = self._selected_action_completion(record)
         payload["applied"] = False
@@ -998,7 +1000,9 @@ class ResearchFactoryService:
         payload["factory_task_id"] = metadata.get("factory_task_id")
         return payload
 
-    def _structured_review_summary(self, record: CodexTaskRecordV1) -> dict[str, Any] | None:
+    def _structured_review_summary(
+        self, record: CodexTaskRecordV1, *, include_artifact: bool = False
+    ) -> dict[str, Any] | None:
         metadata = self._task_metadata(record)
         campaign_id = str(metadata.get("campaign_id") or "")
         if not campaign_id:
@@ -1012,12 +1016,10 @@ class ResearchFactoryService:
                 ]
                 if matches:
                     item = matches[0]
-                    return {
-                        "status": "ACCEPTED_FOR_HYPOTHESIS",
-                        "artifact_sha256": item.artifact_sha256,
-                        "reviewer": item.human_verification.reviewer,
-                        "recorded_at": item.human_verification.reviewed_at.isoformat(),
-                    }
+                    return self._review_receipt(
+                        item, "ACCEPTED_FOR_HYPOTHESIS", item.human_verification,
+                        include_artifact=include_artifact,
+                    )
             elif task_type == CodexTaskType.HYPOTHESIS_PROPOSAL:
                 matches = [
                     item for item in self._reviewed_hypothesis_artifacts(campaign_id)
@@ -1025,12 +1027,10 @@ class ResearchFactoryService:
                 ]
                 if matches:
                     item = matches[0]
-                    return {
-                        "status": "ACCEPTED_FOR_MECHANICS",
-                        "artifact_sha256": item.artifact_sha256,
-                        "reviewer": item.human_acceptance.reviewer,
-                        "recorded_at": item.human_acceptance.reviewed_at.isoformat(),
-                    }
+                    return self._review_receipt(
+                        item, "ACCEPTED_FOR_MECHANICS", item.human_acceptance,
+                        include_artifact=include_artifact,
+                    )
             elif task_type == CodexTaskType.MECHANICS_INTENT:
                 matches = [
                     item for item in self._reviewed_engineering_intent_artifacts(campaign_id)
@@ -1038,12 +1038,10 @@ class ResearchFactoryService:
                 ]
                 if matches:
                     item = matches[0]
-                    return {
-                        "status": "ACCEPTED_FOR_ENGINEERING_HANDOFF",
-                        "artifact_sha256": item.artifact_sha256,
-                        "reviewer": item.human_acceptance.reviewer,
-                        "recorded_at": item.human_acceptance.reviewed_at.isoformat(),
-                    }
+                    return self._review_receipt(
+                        item, "ACCEPTED_FOR_ENGINEERING_HANDOFF", item.human_acceptance,
+                        include_artifact=include_artifact,
+                    )
         except (OSError, RuntimeError, ValueError):
             return {
                 "status": "INTEGRITY_ERROR",
@@ -1052,6 +1050,33 @@ class ResearchFactoryService:
                 "recorded_at": None,
             }
         return None
+
+    @staticmethod
+    def _review_receipt(
+        artifact: ReviewedSourceEvidenceArtifactV1 | ReviewedHypothesisArtifactV1
+        | ReviewedEngineeringHandoffIntentArtifactV1,
+        status: str,
+        review: SourceEvidenceHumanVerificationV1 | HypothesisHumanAcceptanceV1
+        | EngineeringHandoffIntentHumanAcceptanceV1,
+        *,
+        include_artifact: bool,
+    ) -> dict[str, Any]:
+        """Present the existing verified record; never infer approval from UI state."""
+        receipt = {
+            "status": status,
+            "artifact_sha256": artifact.artifact_sha256,
+            "review_id": review.review_id,
+            "reviewer": review.reviewer,
+            "recorded_at": review.reviewed_at.isoformat(),
+            "decision": review.decision,
+            "notes": review.notes,
+            "proposal_id": artifact.proposal_id,
+            "proposal_payload_sha256": artifact.proposal_payload_sha256,
+            "proposal_validation_sha256": artifact.proposal_validation_sha256,
+        }
+        if include_artifact:
+            receipt["artifact"] = artifact.model_dump(mode="json", by_alias=True)
+        return receipt
 
     def _validate_and_persist(self, record: CodexTaskRecordV1) -> ImportedProposalV1:
         if record.state != CodexTaskState.PROPOSAL_READY or record.proposal is None:

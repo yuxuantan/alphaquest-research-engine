@@ -281,6 +281,12 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
     assert reviewed_source["source_evidence"]["claims"] == _source_proposal()["claims"]
     assert reviewed_source["source_evidence"]["verification_status"] == "PARTIAL"
     assert reviewed_source["human_verification"]["source_identity_status"] == "VERIFIED"
+    detail = service.get_task(str(source_task["task_id"]))
+    assert detail["structured_review"]["artifact"] == reviewed_source
+    assert detail["structured_review"]["decision"] == "ACCEPT_FOR_HYPOTHESIS"
+    assert detail["structured_review"]["proposal_payload_sha256"] == reviewed_source["proposal_payload_sha256"]
+    summary = service.public_task(service.queue.get(str(source_task["task_id"])))
+    assert "artifact" not in summary["structured_review"]
     assert draft_path.read_bytes() == initial_draft
 
     hypothesis_plan = service._discover_plan("structured_factory")
@@ -316,6 +322,7 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
     assert reviewed_hypothesis["reviewed_source_artifact_sha256s"] == [
         reviewed_source["artifact_sha256"]
     ]
+    assert service.get_task(str(hypothesis_task["task_id"]))["structured_review"]["artifact"] == reviewed_hypothesis
     assert draft_path.read_bytes() == before_hypothesis_review
 
     document = DraftStore(tmp_path).load("structured_factory")
@@ -354,6 +361,9 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
         ),
     )
     assert reviewed_mechanics["mechanics_intent"] == _mechanics_proposal(binding)
+    receipt = service.get_task(str(mechanics_task["task_id"]))["structured_review"]
+    assert receipt["artifact"] == reviewed_mechanics
+    assert receipt["decision"] == "ACCEPT_FOR_ENGINEERING_HANDOFF"
     handoff_plan = service._discover_plan("structured_factory")
     assert handoff_plan["task_type"] == "ENGINEERING_HANDOFF"
     handoff_binding = handoff_plan["artifacts"]["engineering_handoff_binding"]
@@ -511,4 +521,8 @@ def test_reviewed_source_api_requires_explicit_hashes_and_advances_factory(tmp_p
     assert body["reviewed_artifact"]["source_evidence"]["verification_status"] == "PARTIAL"
     detail = client.get(f"/api/factory/tasks/{task['task_id']}").json()["task"]
     assert detail["structured_review"]["status"] == "ACCEPTED_FOR_HYPOTHESIS"
+    assert detail["structured_review"]["artifact"] == body["reviewed_artifact"]
+    assert detail["structured_review"]["notes"] == payload["notes"]
+    reopened = ResearchFactoryService(tmp_path).get_task(str(task["task_id"]))
+    assert reopened["structured_review"] == detail["structured_review"]
     assert draft_path.read_bytes() == before

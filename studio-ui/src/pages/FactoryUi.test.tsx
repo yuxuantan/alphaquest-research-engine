@@ -351,6 +351,9 @@ describe("Codex research factory UI", () => {
     fireEvent.change(screen.getByLabelText("Claim evidence SHA-256"), {
       target: { value: "b".repeat(64) },
     });
+    fireEvent.change(screen.getByLabelText("Claim verification method"), {
+      target: { value: "Checked page 7 against the captured PDF." },
+    });
     fireEvent.change(screen.getByLabelText("Claim review notes"), {
       target: { value: "The captured passage directly supports the narrow claim." },
     });
@@ -735,4 +738,24 @@ describe("Codex research factory UI", () => {
     ).toBeVisible();
     expect(await screen.findByText(/EDGE_ABANDONED/)).toBeVisible();
   });
+});
+
+
+it("reopens a saved structured receipt while another proposal is pending", async () => {
+  const pending = { task_id: "pending-hypothesis", state: "PROPOSAL_READY", task_type: "HYPOTHESIS_PROPOSAL",
+    campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+    proposal: { schema: "alphaquest.hypothesis-proposal/v1" } };
+  const saved = { task_id: "saved-source", state: "PROPOSAL_READY", task_type: "SOURCE_RESEARCH",
+    campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+    proposal: { schema: "alphaquest.source-evidence-bundle/v1", claims: [] },
+    structured_review: { status: "ACCEPTED_FOR_HYPOTHESIS", reviewer: "Source Reviewer", notes: "Verified captured source.", review_id: "source-review-1" } };
+  mocks.factoryStatus.mockResolvedValue(status({ latest_task: pending }));
+  mocks.factoryTasks.mockResolvedValue({ tasks: [pending, saved] });
+  mocks.factoryTask.mockImplementation(async (id: string) => ({ task: id === saved.task_id ? saved : pending }));
+  render(<MemoryRouter><WorkflowPage /></MemoryRouter>);
+  expect(await screen.findByRole("button", { name: "ACCEPT REVIEWED HYPOTHESIS" })).toBeVisible();
+  fireEvent.change(screen.getByLabelText("Recent proposals and saved reviews"), { target: { value: saved.task_id } });
+  expect(await screen.findByRole("region", { name: "Saved review receipt" })).toBeVisible();
+  expect(screen.getByText("source-review-1")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "ACCEPT REVIEWED SOURCE EVIDENCE" })).not.toBeInTheDocument();
 });
