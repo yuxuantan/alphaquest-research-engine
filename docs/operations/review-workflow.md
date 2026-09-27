@@ -35,11 +35,14 @@ inputs must pass the existing freshness checks; prior acceptance is not copied.
 
 If the save succeeds but refreshing the screen fails, the form says the review
 was saved and disables resubmission. Reload Studio to retrieve the receipt.
-If the request itself fails, Studio reads back the task before enabling a retry.
-A stored decision opens the receipt flow; confirmed absence allows correction
-and retry. If readback also fails or the evidence cannot be verified, submission
-stays locked until you reload and inspect the task. Existing one-shot storage
-prevents a retry from replacing a review. An integrity error remains blocked.
+If the request itself fails, Studio reads back the task and keeps submission
+locked. A stored decision opens the receipt flow. An empty readback does not
+prove the original write has finished, so it never enables another submission.
+Use **Check saved review** to read the task again without issuing another write.
+If readback also fails or evidence cannot be verified, the outcome stays
+uncertain. Reopen the task to inspect its authoritative state before taking
+further action; do not assume the save failed. Existing one-shot storage
+prevents replacing a review. An integrity error remains blocked.
 
 ## Decision scope
 

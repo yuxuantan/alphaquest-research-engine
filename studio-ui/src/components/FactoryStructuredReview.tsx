@@ -193,13 +193,34 @@ async function recoverReviewSubmission(
         setError("Review saved, but the screen could not refresh. Reload Studio to read the stored receipt before continuing. Do not resubmit.");
       }
     } else if (receipt === null && !current.proposal_disposition) {
-      setUncertain(false);
-      const message = reason instanceof Error ? reason.message : "Review submission failed.";
-      setError(`${message} No stored review was found when the task was checked. Review the inputs before retrying.`);
+      const message = reason instanceof Error ? reason.message : "Review submission outcome is uncertain.";
+      setError(`${message} No stored review is visible yet; the original save may still be finishing. Submission remains locked. Check for the saved review again before taking further action.`);
     }
   } catch {
     setError(unknownOutcome);
   }
+}
+
+function ReviewRecovery({ task, onComplete, disabled, setSaved, setUncertain, setError }: {
+  task: CodexTaskRecord;
+  onComplete: ReviewProps["onComplete"];
+  disabled: boolean;
+  setSaved: (value: boolean) => void;
+  setUncertain: (value: boolean) => void;
+  setError: (value: string) => void;
+}) {
+  const [checking, setChecking] = useState(false);
+  async function check() {
+    if (checking || disabled) return;
+    setChecking(true);
+    try {
+      await recoverReviewSubmission(task, new Error("Submission outcome is still uncertain."),
+        onComplete, setSaved, setUncertain, setError);
+    } finally { setChecking(false); }
+  }
+  return <Button type="button" variant="secondary" disabled={disabled || checking} onClick={() => void check()}>
+    {checking ? "CHECKING SAVED REVIEW…" : "CHECK SAVED REVIEW"}
+  </Button>;
 }
 
 function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewProps) {
@@ -328,6 +349,8 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
         </fieldset>
       ))}
       {!complete && <p className="factory-proposal-requirement">Verify all metadata, enter valid hashes, decide every claim, accept at least one claim, and complete reviewer notes.</p>}
+      {uncertain && !saved && <ReviewRecovery task={task} onComplete={onComplete} disabled={busy}
+        setSaved={setSaved} setUncertain={setUncertain} setError={setError} />}
       {saved && <Notice tone="info">Review saved. Read the receipt before continuing.</Notice>}
       {error && <Notice tone="warning">{error}</Notice>}
       <Button type="button" disabled={disabled || busy || saved || uncertain || !complete} onClick={() => void submit()}>ACCEPT REVIEWED SOURCE EVIDENCE</Button>
@@ -377,6 +400,8 @@ function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: Revie
         <FieldChecklist fields={gateNames} selected={gates} setSelected={setGates} />
       </details>
       {!complete && <p className="factory-proposal-requirement">Review every field and pass every gate with reviewer identity and notes.</p>}
+      {uncertain && !saved && <ReviewRecovery task={task} onComplete={onComplete} disabled={busy}
+        setSaved={setSaved} setUncertain={setUncertain} setError={setError} />}
       {saved && <Notice tone="info">Review saved. Read the receipt before continuing.</Notice>}
       {error && <Notice tone="warning">{error}</Notice>}
       <Button type="button" disabled={disabled || busy || saved || uncertain || !complete} onClick={() => void submit()}>ACCEPT REVIEWED HYPOTHESIS</Button>
@@ -418,6 +443,8 @@ function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete }
       <Notice tone="warning" title="Engineering handoff only">This review may queue a bounded handoff proposal. It cannot implement code, certify a strategy, publish a variant, or authorize P&amp;L.</Notice>
       <details open><summary>Review every mechanics-intent field ({fields.length}/{MECHANICS_FIELDS.length})</summary><FieldChecklist fields={MECHANICS_FIELDS} selected={fields} setSelected={setFields} proposal={task.proposal} /></details>
       <details open><summary>Confirm handoff gates ({gates.length}/{gateNames.length})</summary><FieldChecklist fields={gateNames} selected={gates} setSelected={setGates} /></details>
+      {uncertain && !saved && <ReviewRecovery task={task} onComplete={onComplete} disabled={busy}
+        setSaved={setSaved} setUncertain={setUncertain} setError={setError} />}
       {saved && <Notice tone="info">Review saved. Read the receipt before continuing.</Notice>}
       {error && <Notice tone="warning">{error}</Notice>}
       <Button type="button" disabled={disabled || busy || saved || uncertain || !complete} onClick={() => void submit()}>ACCEPT FOR ENGINEERING HANDOFF</Button>

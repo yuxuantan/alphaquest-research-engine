@@ -57,19 +57,6 @@ describe("structured review experience", () => {
     expect(mocks.hypothesis).toHaveBeenCalledTimes(1);
   });
 
-  it("allows retry only after reading back a task with no stored review", async () => {
-    mocks.hypothesis.mockRejectedValueOnce(new Error("Service unavailable"));
-    mocks.factoryTask.mockResolvedValue({ task: { ...task, structured_review: null } });
-    render(<FactoryStructuredReview task={task} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
-    checkAll();
-    fireEvent.click(screen.getByRole("button"));
-    expect(await screen.findByText(/Service unavailable/)).toBeVisible();
-    expect(mocks.factoryTask).toHaveBeenCalledWith(task.task_id);
-    expect(screen.getByRole("button")).toBeEnabled();
-    fireEvent.click(screen.getByRole("button"));
-    await waitFor(() => expect(mocks.hypothesis).toHaveBeenCalledTimes(2));
-  });
-
   it.each(["SOURCE_RESEARCH", "HYPOTHESIS_PROPOSAL", "MECHANICS_INTENT"])(
     "recovers a lost POST response from the durable %s receipt without another write",
     async (taskType) => {
@@ -103,6 +90,47 @@ describe("structured review experience", () => {
     },
   );
 
+  it.each(["SOURCE_RESEARCH", "HYPOTHESIS_PROPOSAL", "MECHANICS_INTENT"])(
+    "keeps an empty readback locked while a %s write is still in flight",
+    async (taskType) => {
+      const currentTask = { ...task, task_type: taskType, proposal: taskType === "SOURCE_RESEARCH"
+        ? { claims: [{ claim_id: "claim", support: "DIRECT", statement: "Captured evidence supports the source claim.", source_location: "Page 1" }] }
+        : taskType === "MECHANICS_INTENT" ? { execution_lane: "ENGINEERING_HANDOFF" } : task.proposal };
+      const mutation = taskType === "SOURCE_RESEARCH" ? mocks.source : taskType === "MECHANICS_INTENT" ? mocks.engineering : mocks.hypothesis;
+      mutation.mockRejectedValueOnce(new Error("Response lost while server is processing"));
+      let finishCommit!: () => void;
+      let committed = false;
+      const pendingCommit = new Promise<void>((resolve) => { finishCommit = resolve; }).then(() => { committed = true; });
+      const status = taskType === "SOURCE_RESEARCH" ? "ACCEPTED_FOR_HYPOTHESIS" : taskType === "MECHANICS_INTENT" ? "ACCEPTED_FOR_ENGINEERING_HANDOFF" : "ACCEPTED_FOR_MECHANICS";
+      mocks.factoryTask.mockImplementation(async () => ({ task: { ...currentTask, structured_review: committed
+        ? { status, proposal_payload_sha256: "a".repeat(64), artifact_sha256: "c".repeat(64) } : null } }));
+      const onComplete = vi.fn().mockResolvedValue(undefined);
+      render(<FactoryStructuredReview task={currentTask} reviewer="Researcher" notes="Checked" onComplete={onComplete} />);
+      checkAll();
+      if (taskType === "SOURCE_RESEARCH") {
+        for (const [label, value] of [
+          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked metadata"],
+          ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
+          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
+        ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      }
+      const submit = screen.getByRole("button");
+      fireEvent.click(submit);
+      await waitFor(() => expect(mocks.factoryTask).toHaveBeenCalledTimes(1));
+      await screen.findByText(/No stored review is visible yet/);
+      expect(submit).toBeDisabled();
+      fireEvent.click(submit);
+      expect(mutation).toHaveBeenCalledTimes(1);
+      finishCommit();
+      await pendingCommit;
+      fireEvent.click(screen.getByRole("button", { name: "CHECK SAVED REVIEW" }));
+      await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+      expect(submit).toBeDisabled();
+      expect(mutation).toHaveBeenCalledTimes(1);
+      expect(mocks.factoryTask).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it("keeps submission locked when neither the save nor readback can be confirmed", async () => {
     mocks.hypothesis.mockRejectedValueOnce(new Error("Connection lost"));
     mocks.factoryTask.mockRejectedValueOnce(new Error("Readback unavailable"));
@@ -110,7 +138,7 @@ describe("structured review experience", () => {
     checkAll();
     fireEvent.click(screen.getByRole("button"));
     expect(await screen.findByText(/could not confirm whether the review was saved/i)).toBeVisible();
-    expect(screen.getByRole("button")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "ACCEPT REVIEWED HYPOTHESIS" })).toBeDisabled();
     expect(screen.queryByText("Review saved. Read the receipt before continuing.")).not.toBeInTheDocument();
   });
 
