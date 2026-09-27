@@ -25,7 +25,7 @@ from alphaquest.research.factory_policy import research_factory_binding, researc
 from alphaquest.prop.profiles import resolve_prop_profile
 from alphaquest.dashboard.validation_app import save_manual_review_annotation
 from alphaquest.studio.approvals import MechanicsApprovalService
-from alphaquest.utils.hashing import file_sha256
+from alphaquest.utils.hashing import file_sha256, object_sha256
 from alphaquest.validation.promotion_gate import (
     REQUIRED_AUTOMATED_CATEGORIES,
     REQUIRED_AUTOMATED_CHECK_NAMES,
@@ -112,7 +112,7 @@ def _project(tmp_path: Path, *, disabled_stage: str | None = None) -> tuple[Path
         "development_deadline": "2099-12-31",
         "evaluation_horizon_months": 24,
         "minimum_annualized_return_fraction": 0.2,
-        "minimum_mar": 0.4,
+        "minimum_mar": 2.0,
         "maximum_drawdown_fraction": 0.1,
         "minimum_complete_wfa_windows": 3,
         "minimum_wfa_oos_trades": 50,
@@ -562,7 +562,10 @@ def _project(tmp_path: Path, *, disabled_stage: str | None = None) -> tuple[Path
                 "purpose": "fixed_config_mechanics_cross_check",
                 "parameter_source": "strategy section in effective config",
                 "uses_grid_selected_params": False,
-                "reproducibility": {"execution_assumptions": execution_assumptions},
+                "reproducibility": {
+                    "config_hash": object_sha256(effective),
+                    "execution_assumptions": execution_assumptions,
+                },
                 "strategy": deepcopy(effective["strategy"]),
                 "core": deepcopy(effective["core"]),
             }
@@ -605,8 +608,8 @@ def _project(tmp_path: Path, *, disabled_stage: str | None = None) -> tuple[Path
                 "label": STAGE_LABELS[stage],
                 "status": "failed",
                 "passed": False,
-                "started_at": "2026-09-27T00:00:00",
-                "completed_at": "2026-09-27T00:00:01",
+                "started_at": "2026-09-27T00:00:00.000000+00:00",
+                "completed_at": "2026-09-27T00:00:01.000000+00:00",
                 "duration_seconds": 1.0,
                 "summary": stage_summary,
                 "data_quality": data_quality,
@@ -621,7 +624,14 @@ def _project(tmp_path: Path, *, disabled_stage: str | None = None) -> tuple[Path
             result = _annotate_stage_decisions(result)
         else:
             result = _annotate_stage_decisions(
-                _error_stage(stage, RuntimeError("upstream fixture evidence unavailable"))
+                _error_stage(
+                    stage,
+                    RuntimeError("upstream fixture evidence unavailable"),
+                    criteria=_criteria_for_stage(
+                        stage,
+                        ((effective.get("campaign_tests") or {}).get(stage) or {}),
+                    ),
+                )
             )
         stages.append(result)
         if result["status"] != "skipped":
@@ -691,8 +701,8 @@ def _project(tmp_path: Path, *, disabled_stage: str | None = None) -> tuple[Path
         "source_config_path": str(source_path),
         "source_config_snapshot_path": str((run / "source_config.yaml").relative_to(root)),
         "output_dir": str(run.relative_to(root)),
-        "created_at": "2026-09-27T00:00:00",
-        "updated_at": "2026-09-27T00:00:00",
+        "created_at": "2026-09-27T00:00:02.000000+00:00",
+        "updated_at": "2026-09-27T00:00:02.000000+00:00",
         "passed": False,
         "halted": False,
         "stages": stages,
@@ -862,6 +872,79 @@ def test_builds_bound_synthetic_report(tmp_path: Path, monkeypatch: pytest.Monke
         "parameter_value_counts": {},
         "expected_combinations": 1,
     }
+    assert report["stages"][0]["validated_engine_config_hashes"]
+    wfa_mar = next(
+        criterion
+        for criterion in report["stages"][2]["summary"]["criteria"]
+        if criterion["metric"] == "stitched_oos_metrics.mar"
+    )
+    assert wfa_mar["expected"] == {"min": 2.0}
+
+
+def test_reader_uses_stricter_frozen_criteria_and_rejects_weaker_or_divergent_grid() -> None:
+    criteria = deepcopy(mvp.DEFAULT_STAGE_CRITERIA["walk_forward_analysis"])
+    next(item for item in criteria if item["metric"] == "stitched_oos_metrics.mar")["min"] = 2.0
+    retained = mvp._frozen_stage_criteria("walk_forward_analysis", {"criteria": criteria})
+    mar = next(item for item in retained if item["metric"] == "stitched_oos_metrics.mar")
+    assert evaluate_criteria({"stitched_oos_metrics": {"mar": 1.0}}, [mar])[0]["passed"] is False
+
+    weaker = deepcopy(criteria)
+    next(item for item in weaker if item["metric"] == "stitched_oos_metrics.mar")["min"] = 0.1
+    with pytest.raises(ValueError, match="weakens repository min"):
+        mvp._frozen_stage_criteria("walk_forward_analysis", {"criteria": weaker})
+    non_finite = deepcopy(criteria)
+    next(item for item in non_finite if item["metric"] == "stitched_oos_metrics.mar")["min"] = float("nan")
+    with pytest.raises(ValueError, match="weakens repository min"):
+        mvp._frozen_stage_criteria("walk_forward_analysis", {"criteria": non_finite})
+
+    effective = {"wfa": {"parameters": {"entry.params.lookback": [10, 20]}}}
+    with pytest.raises(ValueError, match="diverge from the published grid"):
+        mvp._published_parameter_grid(
+            effective,
+            "wfa",
+            {"parameters": {"entry.params.lookback": [99]}},
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("naive", "started_at must be timezone-aware"),
+        ("reverse", "completed_at precedes started_at"),
+        ("duration", "duration_seconds disagrees"),
+        ("nan_duration", "duration_seconds must be non-negative"),
+        ("run_naive", "summary created_at must be timezone-aware"),
+    ],
+)
+def test_rejects_ambiguous_or_impossible_producer_chronology(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    message: str,
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    if mutation == "run_naive":
+        _update_summary_and_manifest(
+            run,
+            lambda document: (
+                document.__setitem__("created_at", "2026-09-27T00:00:02")
+                or document.__setitem__("updated_at", "2026-09-27T00:00:02")
+            ),
+        )
+    else:
+        stage = json.loads((run / PRE_ACCEPTANCE_STAGE_ORDER[0] / "stage_result.json").read_text(encoding="utf-8"))
+        if mutation == "naive":
+            stage["started_at"] = "2026-09-27T00:00:00"
+        elif mutation == "reverse":
+            stage["completed_at"] = "2026-09-26T23:59:59.000000+00:00"
+        elif mutation == "duration":
+            stage["duration_seconds"] = 2.0
+        else:
+            stage["duration_seconds"] = float("nan")
+        _replace_stage_in_run(run, 0, stage)
+
+    with pytest.raises(ValueError, match=message):
+        _build(root, run, preflight, monkeypatch)
 
 
 @pytest.mark.parametrize(
@@ -1000,16 +1083,101 @@ def test_rejects_incomplete_subordinate_fixed_metrics_projection(
         _build(root, run, preflight, monkeypatch)
 
 
+def test_rejects_coordinated_forged_fixed_replay_engine_config_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, run, preflight = _project(tmp_path)
+    stage_name = PRE_ACCEPTANCE_STAGE_ORDER[0]
+    canonical_path = run / stage_name / mvp._CANONICAL_STAGE_SUMMARIES[stage_name]
+    canonical = json.loads(canonical_path.read_text(encoding="utf-8"))
+    canonical["fixed_config_core"]["reproducibility"]["config_hash"] = "0" * 64
+    _write_json(canonical_path, canonical)
+    _write_json(run / stage_name / "fixed_config_core_metrics.json", canonical["fixed_config_core"])
+    stage = json.loads((run / stage_name / "stage_result.json").read_text(encoding="utf-8"))
+    stage["summary"] = canonical
+    _replace_stage_in_run(run, 0, stage)
+
+    with pytest.raises(ValueError, match="fixed engine config hash"):
+        _build(root, run, preflight, monkeypatch)
+
+
 def test_validates_wfa_selections_against_frozen_grid(tmp_path: Path) -> None:
     stage_dir = tmp_path / "walk_forward_analysis"
     stage_dir.mkdir()
     results = stage_dir / "wfa_results.csv"
     trades = stage_dir / "wfa_oos_trade_log.csv"
-    results.write_text("selected_params\n\"{'entry.params.lookback': 10}\"\n", encoding="utf-8")
-    trades.write_text("wfa_selected_params\n\"{'entry.params.lookback': 10}\"\n", encoding="utf-8")
+    result_rows = pd.DataFrame(
+        [
+            {
+                "window_id": 1,
+                "test_start": "2024-01-01",
+                "test_end": "2024-02-01",
+                "selected_params": {"entry.params.lookback": 10},
+                "oos_window_complete": True,
+                "oos_evaluated": True,
+                "test_observations": 20,
+                "test_trades": 1,
+                "test_profit_factor": 1.5,
+                "test_mar": 2.0,
+                "test_net_profit": 100.0,
+            },
+            {
+                "window_id": 2,
+                "test_start": "2024-02-01",
+                "test_end": "2024-03-01",
+                "selected_params": {"entry.params.lookback": 20},
+                "oos_window_complete": True,
+                "oos_evaluated": True,
+                "test_observations": 19,
+                "test_trades": 1,
+                "test_profit_factor": 2.0,
+                "test_mar": 1.0,
+                "test_net_profit": 80.0,
+            },
+        ]
+    )
+    trade_rows = pd.DataFrame(
+        [
+            {
+                "wfa_window_id": 1,
+                "wfa_test_start": "2024-01-01",
+                "wfa_test_end": "2024-02-01",
+                "wfa_selected_params": {"entry.params.lookback": 10},
+            },
+            {
+                "wfa_window_id": 2,
+                "wfa_test_start": "2024-02-01",
+                "wfa_test_end": "2024-03-01",
+                "wfa_selected_params": {"entry.params.lookback": 20},
+            },
+        ]
+    )
+    result_rows.to_csv(results, index=False)
+    trade_rows.to_csv(trades, index=False)
     canonical = {
         "parameter_mode": "predeclared_optimization",
-        "incubation_selected_params": {"entry.params.lookback": 10},
+        "windows": 2,
+        "realized_oos_windows": 2,
+        "realized_oos_trades": 2,
+        "stitched_oos_trades": 2,
+        "realized_oos_intervals": [
+            {
+                "window_id": 1,
+                "test_start": "2024-01-01",
+                "test_end": "2024-02-01",
+                "observations": 20,
+                "trades": 1,
+            },
+            {
+                "window_id": 2,
+                "test_start": "2024-02-01",
+                "test_end": "2024-03-01",
+                "observations": 19,
+                "trades": 1,
+            },
+        ],
+        "incubation_selected_params": {"entry.params.lookback": 20},
     }
     effective = {"wfa": {"parameters": {"entry.params.lookback": [10, 20]}}}
 
@@ -1021,9 +1189,84 @@ def test_validates_wfa_selections_against_frozen_grid(tmp_path: Path) -> None:
         effective_config=effective,
     )
 
-    assert validated["window_selected_params"] == [{"entry.params.lookback": 10}]
+    assert validated["window_selections"] == [
+        {"window_id": "1", "selected_params": {"entry.params.lookback": 10}},
+        {"window_id": "2", "selected_params": {"entry.params.lookback": 20}},
+    ]
+    assert validated["incubation_selected_params"] == {"entry.params.lookback": 20}
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("trade", "window selection"),
+        ("empty", "complete frozen parameter selection"),
+        ("incubation", "deterministic incubation selection"),
+    ],
+)
+def test_rejects_incoherent_wfa_window_trade_or_incubation_selection(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    stage_dir = tmp_path / mutation
+    stage_dir.mkdir()
+    results = stage_dir / "wfa_results.csv"
+    trades = stage_dir / "wfa_oos_trade_log.csv"
+    selected = {} if mutation == "empty" else {"entry.params.lookback": 10}
+    pd.DataFrame(
+        [
+            {
+                "window_id": 1,
+                "test_start": "2024-01-01",
+                "test_end": "2024-02-01",
+                "selected_params": selected,
+                "oos_window_complete": True,
+                "oos_evaluated": True,
+                "test_observations": 20,
+                "test_trades": 1,
+                "test_profit_factor": 1.5,
+                "test_mar": 1.0,
+                "test_net_profit": 100.0,
+            }
+        ]
+    ).to_csv(results, index=False)
+    trade_selected = {"entry.params.lookback": 20} if mutation == "trade" else selected
+    pd.DataFrame(
+        [
+            {
+                "wfa_window_id": 1,
+                "wfa_test_start": "2024-01-01",
+                "wfa_test_end": "2024-02-01",
+                "wfa_selected_params": trade_selected,
+            }
+        ]
+    ).to_csv(trades, index=False)
+    canonical = {
+        "parameter_mode": "predeclared_optimization",
+        "windows": 1,
+        "realized_oos_windows": 1,
+        "realized_oos_trades": 1,
+        "stitched_oos_trades": 1,
+        "realized_oos_intervals": [
+            {
+                "window_id": 1,
+                "test_start": "2024-01-01",
+                "test_end": "2024-02-01",
+                "observations": 20,
+                "trades": 1,
+            }
+        ],
+        "incubation_selected_params": (
+            {"entry.params.lookback": 20} if mutation == "incubation" else {"entry.params.lookback": 10}
+        ),
+    }
+    effective = {"wfa": {"parameters": {"entry.params.lookback": [10, 20]}}}
+
     canonical["incubation_selected_params"] = {"entry.params.lookback": 99}
-    with pytest.raises(ValueError, match="outside the frozen grid"):
+    if mutation != "incubation":
+        canonical["incubation_selected_params"] = {"entry.params.lookback": 10}
+    with pytest.raises(ValueError, match=message):
         mvp._validate_stage_execution_config(
             stage="walk_forward_analysis",
             stage_cfg={},
@@ -1379,6 +1622,16 @@ def test_accepts_exact_disabled_stage_without_stage_result(tmp_path: Path, monke
     effective["campaign_tests"][disabled]["enabled"] = False
     summary = json.loads((run / "campaign_test_summary.json").read_text(encoding="utf-8"))
     manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8"))
+    limited = PRE_ACCEPTANCE_STAGE_ORDER[0]
+    canonical_path = run / limited / mvp._CANONICAL_STAGE_SUMMARIES[limited]
+    canonical_summary = json.loads(canonical_path.read_text(encoding="utf-8"))
+    canonical_summary["fixed_config_core"]["reproducibility"]["config_hash"] = object_sha256(effective)
+    _write_json(canonical_path, canonical_summary)
+    _write_json(run / limited / "fixed_config_core_metrics.json", canonical_summary["fixed_config_core"])
+    stage_result = json.loads((run / limited / "stage_result.json").read_text(encoding="utf-8"))
+    stage_result["summary"] = canonical_summary
+    _write_json(run / limited / "stage_result.json", stage_result)
+    summary["stages"][0] = stage_result
     canonical = root / "research/datasets/demo_es/bars.csv"
     stages = mvp._stage_bindings(
         run,
@@ -1420,6 +1673,7 @@ def test_rejects_hash_valid_strategy_spec_execution_drift(tmp_path: Path, monkey
         ("draft_sha", "authoring draft_sha256 must be a lowercase SHA-256"),
         ("date", "authoring created_at must be a valid YYYY-MM-DD date"),
         ("certification", "certified recipe strategy certification mismatch"),
+        ("manifest_extra", "authoring manifest fields"),
     ],
 )
 def test_rejects_hash_valid_authoring_identity_or_certification_forgery(
@@ -1442,12 +1696,14 @@ def test_rejects_hash_valid_authoring_identity_or_certification_forgery(
     elif mutation == "date":
         campaign["created_at"] = "2026-02-30"
         manifest["created_at"] = "2026-02-30"
-    else:
+    elif mutation == "certification":
         forged = {"strategy_id": "forged", "implementation_sha256": "0" * 64}
         spec["strategy_certification"] = forged
         spec["variant_strategy_certifications"] = {"v01": forged}
         manifest["strategy_certification"] = forged
         manifest["variant_strategy_certifications"] = {"v01": forged}
+    else:
+        manifest["forged_noncompiler_field"] = "accepted"
     _write_yaml(campaign_path, campaign)
     _write_yaml(spec_path, spec)
     manifest["compiled_document_sha256"]["campaign.yaml"] = mvp._compiled_object_sha256(campaign)

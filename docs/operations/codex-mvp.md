@@ -99,6 +99,12 @@ attempt. Synthetic results are always labelled synthetic and confer no scientifi
 approval. An unverified user-supplied demonstration is conditional on actual source/data readiness
 and owner decisions, not the clock.
 
+Engineering acceptance also requires fresh independent reviews of the frozen
+candidate, full local validation after those reviews accept it, and the required
+checks on the exact pull-request head. A passing older candidate or a successful
+synthetic run does not satisfy those gates for a changed candidate. Keep the
+delivery status separate from the diagnostic research verdict.
+
 Deferred by the timebox, **not** by a safeguard:
 
 - Automatic reviewed-research-to-draft/admission and certified-mechanics compilers.
@@ -121,6 +127,11 @@ confirms the mechanics scope, reviews the deterministic mechanics sample, and
 authorizes use of locked acceptance data. Missing data and unsupported mechanics
 can introduce additional decisions. Never combine these decisions into an implied
 blanket approval.
+
+For this MVP, the initial review pack must distinguish source verification,
+hypothesis admission, exact implementation admission, dataset and execution-cost
+acceptance, and the duplicate decision. Mechanics approval follows generated
+evidence and is a separate decision. Locked acceptance remains deferred.
 
 ## Recording another safeguard skip
 
@@ -247,7 +258,8 @@ the governed human workflow and remain separately reviewable.
    published source; the complete one-variant certified-recipe publication and its
    shared hypothesis, rationale, execution and prop-profile semantics; the
    producer's complete run/manifest fields and canonical results-index entry;
-   criteria recomputed by the producer evaluator; exact stage-specific payloads;
+   criteria derived from repository policy and the frozen research objectives,
+   with their outcomes recomputed by the producer evaluator; exact stage-specific payloads;
    the selected input hash and frozen parameter grids; retained data-quality
    fields; and the complete engine execution assumptions found in canonical and
    referenced stage artifacts. It also requires the recorded approved mechanics
@@ -278,10 +290,37 @@ the governed human workflow and remain separately reviewable.
    grant admission or approval, write a `ResultBundleV2`, promote a candidate, or
    establish source-review assurance.
 
+   The publication must match its declared compiler schema, including the exact
+   authoring-manifest fields. The fixed-default replay's engine configuration hash
+   must identify the complete effective config, and its subordinate metrics must
+   match the canonical replay. Core and WFA stage grids must agree with the
+   published parameter space; a stage override cannot introduce another grid.
+   Realized optimized WFA windows require complete selected parameters, and each
+   OOS trade must match its window's selection. The retained incubation selection
+   must agree with the producer's deterministic selection from the WFA results.
+   These are consistency checks on retained evidence, not an independent PnL
+   recalculation or proof that a selection method has scientific approval.
+
+   New producer run and stage timestamps use timezone-aware UTC. The index rejects
+   timestamps without an offset, completion before start, or elapsed durations
+   inconsistent with the serialized timestamps by more than `0.000001` seconds.
+   Market and
+   session timestamps continue to use the configured exchange timezone.
+
 If a run reserves its attempt or writes partial/failure evidence, keep it. Do not
 delete, repair, or silently replay the same attempt. Create a fresh governed
 follow-up attempt with a new identity after resolving the cause. The report index
 also refuses to overwrite a previous index.
+
+If older evidence has ambiguous timestamps or fails a current contract check,
+retain its original files and previous reports as historical evidence. Record the
+reader's rejection separately and keep the research classification
+`NEEDS MANUAL REVIEW`. Do not infer a missing offset from the current host, edit
+old timestamps, or recompute historical verdicts to make the index accept them.
+A new execution needs its own authorization and identity; a reader rejection alone
+does not authorize another performance run. A separately authorized synthetic
+demonstration can exercise a corrected producer using unchanged teaching inputs,
+fresh simulated fixture-only review records, and explicit no-owner-authority labels.
 
 For an isolated synthetic demonstration, use `--mode synthetic`. The index derives
 its warning from explicit structured disclosures in the hash-bound campaign,

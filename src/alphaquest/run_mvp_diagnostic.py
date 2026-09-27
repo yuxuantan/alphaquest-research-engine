@@ -13,10 +13,12 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any
 
 import pyarrow.parquet as pq
+import pandas as pd
 from pydantic import TypeAdapter
 import yaml
 
@@ -34,15 +36,14 @@ from alphaquest.dashboard.validation_app import load_manual_reviews, trade_id_ke
 from alphaquest.prop.profiles import resolve_prop_profile
 from alphaquest.research.campaign_stages import (
     ACCEPTANCE_STAGE,
+    DEFAULT_STAGE_CRITERIA,
     PRE_ACCEPTANCE_STAGE_ORDER,
     STAGE_LABELS,
     _annotate_stage_decisions,
-    _criteria_for_stage,
-    _error_stage,
     _first_failed_stage,
-    _merged_section,
     _research_verdict,
     _scientific_validity_verdict,
+    _select_incubation_params,
     _skipped_stage,
     apply_authoritative_parallel_defaults,
     canonicalize_campaign_config,
@@ -62,7 +63,7 @@ from alphaquest.research.storage import (
 )
 from alphaquest.studio.approvals import MechanicsApprovalService
 from alphaquest.utils.config import strategy_mechanic, validate_campaign_run_root
-from alphaquest.utils.hashing import file_sha256
+from alphaquest.utils.hashing import file_sha256, object_sha256
 from alphaquest.validation.promotion_gate import (
     APPROVAL_SCHEMA,
     REQUIRED_SAMPLE_CATEGORIES,
@@ -82,6 +83,7 @@ from alphaquest.version import ENGINE_CONTRACT_VERSION
 
 SCHEMA = "alphaquest.mvp-diagnostic-index/v1"
 DIAGNOSTIC_REASON = f"mandatory {ACCEPTANCE_STAGE} was omitted"
+_DURATION_TOLERANCE_SECONDS = 0.000001
 _SHA256_ADAPTER = TypeAdapter(Sha256)
 _IDENTITY_FIELDS = (
     "run_uid",
@@ -225,6 +227,30 @@ _STRATEGY_SPEC_VARIANT_KEYS = {
     "event_parameter_grid",
     "rationales",
 }
+_AUTHORING_MANIFEST_KEYS = {
+    "schema",
+    "campaign_id",
+    "draft_schema",
+    "draft_sha256",
+    "research_objectives_sha256",
+    "research_factory",
+    "dataset_id",
+    "dataset_canonical_sha256",
+    "authoring_lane",
+    "certified_recipe",
+    "event_strategy",
+    "strategy_certification",
+    "variant_strategy_certifications",
+    "compiler",
+    "created_at",
+    "variant_count",
+    "variant_protocol",
+    "max_variants",
+    "variant_mechanic_signatures",
+    "compiled_document_sha256",
+    "planned_files",
+    "generated_python_stubs",
+}
 
 
 def _read_json(path: Path, label: str) -> dict[str, Any]:
@@ -288,6 +314,55 @@ def _require_iso_date(value: Any, label: str) -> str:
         raise ValueError(f"{label} must be a valid YYYY-MM-DD date") from exc
     _require_equal(text, parsed.isoformat(), label)
     return text
+
+
+def _require_aware_datetime(value: Any, label: str) -> datetime:
+    text = _require_nonempty_string(value, label)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be an ISO timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{label} must be timezone-aware")
+    return parsed
+
+
+def _frozen_stage_criteria(stage_name: str, stage_cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    configured = stage_cfg.get("criteria")
+    if not isinstance(configured, list) or not configured or not all(isinstance(item, dict) for item in configured):
+        raise ValueError(f"{stage_name} frozen criteria must be a non-empty list of mappings")
+    metrics = [item.get("metric") for item in configured]
+    if len(metrics) != len(set(metrics)):
+        raise ValueError(f"{stage_name} frozen criteria contain duplicate metrics")
+    by_metric = {item.get("metric"): item for item in configured}
+    for baseline in DEFAULT_STAGE_CRITERIA.get(stage_name, []):
+        metric = baseline["metric"]
+        observed = by_metric.get(metric)
+        if observed is None:
+            raise ValueError(f"{stage_name} frozen criteria omit repository criterion {metric}")
+        for field, expected in baseline.items():
+            if field in {"metric", "source"}:
+                continue
+            actual = observed.get(field)
+            if field in {"min", "exclusive_min"}:
+                if (
+                    isinstance(actual, bool)
+                    or not isinstance(actual, (int, float))
+                    or not math.isfinite(float(actual))
+                    or float(actual) < float(expected)
+                ):
+                    raise ValueError(f"{stage_name} frozen criterion {metric} weakens repository {field}")
+            elif field in {"max", "exclusive_max"}:
+                if (
+                    isinstance(actual, bool)
+                    or not isinstance(actual, (int, float))
+                    or not math.isfinite(float(actual))
+                    or float(actual) > float(expected)
+                ):
+                    raise ValueError(f"{stage_name} frozen criterion {metric} weakens repository {field}")
+            elif actual != expected:
+                raise ValueError(f"{stage_name} frozen criterion {metric} changes repository {field}")
+    return deepcopy(configured)
 
 
 def _validate_campaign_research_contract(campaign: dict[str, Any]) -> None:
@@ -648,6 +723,7 @@ def _authoring_binding(
         raise ValueError("source config must belong to a published active campaign")
     manifest_path = context.campaign_root / "authoring_manifest.json"
     authoring = _read_json(manifest_path, "authoring manifest")
+    _require_exact_keys(authoring, _AUTHORING_MANIFEST_KEYS, "authoring manifest")
     _require_equal(authoring.get("schema"), "alphaquest.authoring-manifest/v1", "authoring manifest schema")
     _require_equal(authoring.get("compiler"), "alphaquest.authoring.CampaignCompiler/v1", "authoring compiler")
     _require_equal(authoring.get("generated_python_stubs"), False, "authoring generated Python stubs")
@@ -1506,10 +1582,7 @@ def _bind_run_manifest(
     _require_equal(summary.get("engine_contract_version"), ENGINE_CONTRACT_VERSION, "summary engine contract")
     created_at = _require_nonempty_string(summary.get("created_at"), "summary created_at")
     _require_equal(summary.get("updated_at"), created_at, "summary producer timestamp")
-    try:
-        datetime.fromisoformat(created_at)
-    except ValueError as exc:
-        raise ValueError("summary created_at must be an ISO timestamp") from exc
+    _require_aware_datetime(created_at, "summary created_at")
     for field in (
         *_IDENTITY_FIELDS,
         "timeframe",
@@ -1691,10 +1764,61 @@ def _validate_execution_assumptions(
             raise ValueError(f"{stage} lacks required execution-assumption evidence: {sorted(required - set(found))}")
 
 
-def _validate_selected_params(selected: Any, parameters: Any, label: str) -> dict[str, Any]:
+def _engine_config_hash_records(value: Any, location: str = "$") -> list[tuple[str, Any]]:
+    records: list[tuple[str, Any]] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_location = f"{location}.{key}"
+            if key == "reproducibility" and isinstance(child, dict) and "config_hash" in child:
+                records.append((f"{child_location}.config_hash", child.get("config_hash")))
+            records.extend(_engine_config_hash_records(child, child_location))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            records.extend(_engine_config_hash_records(child, f"{location}[{index}]"))
+    return records
+
+
+def _validate_engine_config_hashes(
+    stage: str,
+    canonical_summary: dict[str, Any],
+    artifact_paths: list[Path],
+    effective_config: dict[str, Any],
+) -> list[dict[str, str]]:
+    expected = object_sha256(effective_config)
+    records = _engine_config_hash_records(canonical_summary, "canonical_summary")
+    for path in artifact_paths:
+        if path.suffix.lower() == ".json":
+            records.extend(
+                _engine_config_hash_records(
+                    _read_json(path, f"{stage} JSON artifact"),
+                    path.name,
+                )
+            )
+    bound: list[dict[str, str]] = []
+    for location, value in records:
+        is_fixed_replay = stage == "limited_core_grid_test" and (
+            ".fixed_config_core.reproducibility.config_hash" in location
+            or location == "fixed_config_core_metrics.json.reproducibility.config_hash"
+        )
+        if not is_fixed_replay:
+            raise ValueError(f"{stage} contains an engine config hash for an unbound transformed execution: {location}")
+        _require_equal(value, expected, f"{stage} {location}")
+        bound.append({"location": location, "config_hash": expected})
+    return bound
+
+
+def _validate_selected_params(
+    selected: Any,
+    parameters: Any,
+    label: str,
+    *,
+    require_complete: bool = False,
+) -> dict[str, Any]:
     if not isinstance(selected, dict):
         raise ValueError(f"{label} must be a mapping")
     if not selected:
+        if require_complete and parameters:
+            raise ValueError(f"{label} must contain the complete frozen parameter selection")
         return {}
     if not isinstance(parameters, dict):
         raise ValueError(f"{label} frozen parameters must be a mapping")
@@ -1706,33 +1830,268 @@ def _validate_selected_params(selected: Any, parameters: Any, label: str) -> dic
     return deepcopy(selected)
 
 
-def _selected_params_from_csv(
-    path: Path,
-    column: str,
-    parameters: dict[str, Any],
-    label: str,
-) -> list[dict[str, Any]]:
+def _published_parameter_grid(
+    effective_config: dict[str, Any],
+    section: str,
+    stage_cfg: dict[str, Any],
+) -> dict[str, Any]:
+    section_config = effective_config.get(section) or {}
+    parameters = section_config.get("parameters") or {}
+    if not isinstance(parameters, dict):
+        raise ValueError(f"published {section} parameters must be a mapping")
+    if "parameters" in stage_cfg and stage_cfg.get("parameters") != parameters:
+        raise ValueError(f"{section} stage-local parameters diverge from the published grid")
+    return deepcopy(parameters)
+
+
+def _read_stage_csv(path: Path, label: str) -> pd.DataFrame:
     if not path.is_file():
         raise ValueError(f"missing required {label}: {path}")
-    with path.open(encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        rows = list(reader)
-        if not rows and not reader.fieldnames:
-            return []
-        if column not in (reader.fieldnames or []):
-            raise ValueError(f"{label} lacks {column}")
-    selected_rows: list[dict[str, Any]] = []
-    for index, row in enumerate(rows):
-        raw = str(row.get(column) or "").strip()
-        if not raw:
-            selected: Any = {}
-        else:
-            try:
-                selected = ast.literal_eval(raw)
-            except (SyntaxError, ValueError) as exc:
-                raise ValueError(f"{label} row {index} has invalid {column}") from exc
-        selected_rows.append(_validate_selected_params(selected, parameters, f"{label} row {index} {column}"))
-    return selected_rows
+    try:
+        return pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
+
+
+def _parse_selected_params(value: Any, label: str) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return deepcopy(value)
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return {}
+    raw = str(value).strip()
+    if not raw:
+        return {}
+    try:
+        selected = ast.literal_eval(raw)
+    except (SyntaxError, ValueError) as exc:
+        raise ValueError(f"{label} is invalid") from exc
+    if not isinstance(selected, dict):
+        raise ValueError(f"{label} must encode a mapping")
+    return selected
+
+
+def _strict_csv_bool(value: Any, label: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and not pd.isna(value):
+        if float(value) in {0.0, 1.0}:
+            return bool(value)
+    text = str(value).strip().casefold()
+    if text in {"true", "false"}:
+        return text == "true"
+    raise ValueError(f"{label} must be boolean")
+
+
+def _window_id_key(value: Any, label: str) -> str:
+    if value is None or isinstance(value, bool) or (isinstance(value, float) and pd.isna(value)):
+        raise ValueError(f"{label} must be a window identity")
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"{label} must be a window identity")
+    return text
+
+
+def _date_key(value: Any, label: str) -> str:
+    try:
+        parsed = pd.Timestamp(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a date") from exc
+    if pd.isna(parsed):
+        raise ValueError(f"{label} must be a date")
+    return parsed.date().isoformat()
+
+
+def _nonnegative_int(value: Any, label: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{label} must be a non-negative integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a non-negative integer") from exc
+    if parsed < 0 or float(value) != parsed:
+        raise ValueError(f"{label} must be a non-negative integer")
+    return parsed
+
+
+def _validate_wfa_execution_evidence(
+    results_path: Path,
+    trades_path: Path,
+    parameters: dict[str, Any],
+    canonical_summary: dict[str, Any],
+) -> dict[str, Any]:
+    results = _read_stage_csv(results_path, "WFA results")
+    trades = _read_stage_csv(trades_path, "WFA OOS trade log")
+    required_result_columns = {
+        "window_id",
+        "test_start",
+        "test_end",
+        "selected_params",
+        "oos_window_complete",
+        "oos_evaluated",
+        "test_observations",
+        "test_trades",
+    }
+    if not results.empty:
+        missing = sorted(required_result_columns - set(results.columns))
+        if missing:
+            raise ValueError(f"WFA results lack producer columns: {', '.join(missing)}")
+
+    normalized_results = results.copy()
+    windows: dict[str, dict[str, Any]] = {}
+    ordered_realized: list[dict[str, Any]] = []
+    normalized_params: list[dict[str, Any]] = []
+    normalized_early_exit: list[bool] = []
+    for index, row in results.iterrows():
+        window_id = _window_id_key(row.get("window_id"), f"WFA results row {index} window_id")
+        if window_id in windows:
+            raise ValueError(f"WFA results contain duplicate window_id {window_id}")
+        complete = _strict_csv_bool(
+            row.get("oos_window_complete"),
+            f"WFA results row {index} oos_window_complete",
+        )
+        if not complete:
+            raise ValueError(f"WFA results row {index} is not a complete OOS window")
+        evaluated = _strict_csv_bool(row.get("oos_evaluated"), f"WFA results row {index} oos_evaluated")
+        early_exit = (
+            _strict_csv_bool(row.get("early_exit"), f"WFA results row {index} early_exit")
+            if "early_exit" in results.columns and not pd.isna(row.get("early_exit"))
+            else False
+        )
+        selected = _validate_selected_params(
+            _parse_selected_params(row.get("selected_params"), f"WFA results row {index} selected_params"),
+            parameters,
+            f"WFA results row {index} selected_params",
+            require_complete=evaluated,
+        )
+        if not evaluated and selected:
+            raise ValueError(f"WFA unevaluated window {window_id} cannot record selected parameters")
+        if evaluated and early_exit:
+            raise ValueError(f"WFA evaluated window {window_id} cannot be marked early_exit")
+        record = {
+            "window_id": window_id,
+            "test_start": _date_key(row.get("test_start"), f"WFA results row {index} test_start"),
+            "test_end": _date_key(row.get("test_end"), f"WFA results row {index} test_end"),
+            "selected_params": selected,
+            "oos_evaluated": evaluated,
+            "test_observations": _nonnegative_int(
+                row.get("test_observations"), f"WFA results row {index} test_observations"
+            ),
+            "test_trades": _nonnegative_int(row.get("test_trades"), f"WFA results row {index} test_trades"),
+        }
+        windows[window_id] = record
+        if evaluated:
+            ordered_realized.append(record)
+        normalized_params.append(selected)
+        normalized_early_exit.append(early_exit)
+
+    if not normalized_results.empty:
+        normalized_results["selected_params"] = normalized_params
+        normalized_results["early_exit"] = normalized_early_exit
+    derived_incubation = _select_incubation_params(normalized_results)
+    derived_incubation = _validate_selected_params(
+        derived_incubation,
+        parameters,
+        "WFA derived incubation selected parameters",
+        require_complete=bool(derived_incubation),
+    )
+    _require_equal(
+        canonical_summary.get("incubation_selected_params"),
+        derived_incubation,
+        "WFA deterministic incubation selection",
+    )
+
+    trade_records: list[dict[str, Any]] = []
+    counts = {window_id: 0 for window_id in windows}
+    if not trades.empty:
+        required_trade_columns = {"wfa_window_id", "wfa_test_start", "wfa_test_end", "wfa_selected_params"}
+        missing = sorted(required_trade_columns - set(trades.columns))
+        if missing:
+            raise ValueError(f"WFA OOS trade log lacks producer columns: {', '.join(missing)}")
+        for index, row in trades.iterrows():
+            window_id = _window_id_key(
+                row.get("wfa_window_id"),
+                f"WFA OOS trade row {index} wfa_window_id",
+            )
+            window = windows.get(window_id)
+            if window is None:
+                raise ValueError(f"WFA OOS trade row {index} references unknown window {window_id}")
+            if not window["oos_evaluated"]:
+                raise ValueError(f"WFA OOS trade row {index} references unevaluated window {window_id}")
+            selected = _validate_selected_params(
+                _parse_selected_params(
+                    row.get("wfa_selected_params"),
+                    f"WFA OOS trade row {index} wfa_selected_params",
+                ),
+                parameters,
+                f"WFA OOS trade row {index} wfa_selected_params",
+                require_complete=True,
+            )
+            _require_equal(selected, window["selected_params"], f"WFA OOS trade row {index} window selection")
+            _require_equal(
+                _date_key(row.get("wfa_test_start"), f"WFA OOS trade row {index} wfa_test_start"),
+                window["test_start"],
+                f"WFA OOS trade row {index} test start",
+            )
+            _require_equal(
+                _date_key(row.get("wfa_test_end"), f"WFA OOS trade row {index} wfa_test_end"),
+                window["test_end"],
+                f"WFA OOS trade row {index} test end",
+            )
+            counts[window_id] += 1
+            trade_records.append({"window_id": window_id, "selected_params": selected})
+
+    for window_id, window in windows.items():
+        _require_equal(counts[window_id], window["test_trades"], f"WFA window {window_id} trade count")
+
+    _require_equal(canonical_summary.get("windows"), len(results), "WFA summary window count")
+    _require_equal(
+        canonical_summary.get("realized_oos_windows"),
+        len(ordered_realized),
+        "WFA summary realized window count",
+    )
+    _require_equal(
+        canonical_summary.get("realized_oos_trades"),
+        len(trades),
+        "WFA summary realized trade count",
+    )
+    _require_equal(canonical_summary.get("stitched_oos_trades"), len(trades), "WFA stitched trade count")
+    intervals = canonical_summary.get("realized_oos_intervals")
+    if not isinstance(intervals, list):
+        raise ValueError("WFA realized_oos_intervals must be a list")
+    _require_equal(len(intervals), len(ordered_realized), "WFA realized interval count")
+    for index, (interval, realized) in enumerate(zip(intervals, ordered_realized, strict=True)):
+        if not isinstance(interval, dict):
+            raise ValueError(f"WFA realized interval {index} must be a mapping")
+        _require_equal(
+            _window_id_key(interval.get("window_id"), f"WFA realized interval {index} window_id"),
+            realized["window_id"],
+            f"WFA realized interval {index} window",
+        )
+        for field in ("test_start", "test_end"):
+            _require_equal(
+                _date_key(interval.get(field), f"WFA realized interval {index} {field}"),
+                realized[field],
+                f"WFA realized interval {index} {field}",
+            )
+        _require_equal(
+            _nonnegative_int(interval.get("observations"), f"WFA realized interval {index} observations"),
+            realized["test_observations"],
+            f"WFA realized interval {index} observations",
+        )
+        _require_equal(
+            _nonnegative_int(interval.get("trades"), f"WFA realized interval {index} trades"),
+            realized["test_trades"],
+            f"WFA realized interval {index} trades",
+        )
+    return {
+        "incubation_selected_params": derived_incubation,
+        "window_selections": [
+            {"window_id": value["window_id"], "selected_params": value["selected_params"]} for value in windows.values()
+        ],
+        "trade_selections": trade_records,
+    }
 
 
 def _validate_stage_execution_config(
@@ -1744,8 +2103,7 @@ def _validate_stage_execution_config(
     effective_config: dict[str, Any],
 ) -> dict[str, Any]:
     if stage == "limited_core_grid_test":
-        grid = _merged_section(effective_config, "core_grid", stage_cfg)
-        parameters = grid.get("parameters") or {}
+        parameters = _published_parameter_grid(effective_config, "core_grid", stage_cfg)
         _require_equal(
             canonical_summary.get("parameter_mode"),
             "fixed_config" if not parameters else "predeclared_optimization",
@@ -1779,6 +2137,15 @@ def _validate_stage_execution_config(
         _require_equal(fixed.get("uses_grid_selected_params"), False, "limited core fixed grid-selected flag")
         _require_equal(fixed.get("core"), effective_config.get("core"), "limited core fixed core snapshot")
         _require_equal(fixed.get("strategy"), effective_config.get("strategy"), "limited core fixed strategy snapshot")
+        reproducibility = fixed.get("reproducibility")
+        if not isinstance(reproducibility, dict):
+            raise ValueError("limited core fixed reproducibility must be a mapping")
+        engine_config_hash = object_sha256(effective_config)
+        _require_equal(
+            reproducibility.get("config_hash"),
+            engine_config_hash,
+            "limited core fixed engine config hash",
+        )
         subordinate_paths = [path for path in artifact_paths if path.name == "fixed_config_core_metrics.json"]
         _require_equal(len(subordinate_paths), 1, "limited core fixed metrics artifact count")
         subordinate = _read_json(subordinate_paths[0], "limited core fixed metrics")
@@ -1787,6 +2154,7 @@ def _validate_stage_execution_config(
             "fixed_config_core": {
                 "core": deepcopy(fixed["core"]),
                 "strategy": deepcopy(fixed["strategy"]),
+                "engine_config_hash": engine_config_hash,
             },
             "grid": {
                 "parameter_mode": canonical_summary["parameter_mode"],
@@ -1795,31 +2163,25 @@ def _validate_stage_execution_config(
             },
         }
     if stage == "walk_forward_analysis":
-        wfa = _merged_section(effective_config, "wfa", stage_cfg)
-        parameters = wfa.get("parameters") or {}
+        parameters = _published_parameter_grid(effective_config, "wfa", stage_cfg)
         _require_equal(
             canonical_summary.get("parameter_mode"),
             "fixed_config" if not parameters else "predeclared_optimization",
             "WFA canonical parameter mode",
         )
-        incubation = _validate_selected_params(
-            canonical_summary.get("incubation_selected_params"),
-            parameters,
-            "WFA incubation selected parameters",
-        )
         results_paths = [path for path in artifact_paths if path.name == "wfa_results.csv"]
         trade_paths = [path for path in artifact_paths if path.name == "wfa_oos_trade_log.csv"]
         _require_equal(len(results_paths), 1, "WFA results artifact count")
         _require_equal(len(trade_paths), 1, "WFA trade-log artifact count")
-        window_selections = _selected_params_from_csv(results_paths[0], "selected_params", parameters, "WFA results")
-        trade_selections = _selected_params_from_csv(
-            trade_paths[0], "wfa_selected_params", parameters, "WFA OOS trade log"
+        evidence = _validate_wfa_execution_evidence(
+            results_paths[0],
+            trade_paths[0],
+            parameters,
+            canonical_summary,
         )
         return {
             "wfa_grid": deepcopy(parameters),
-            "incubation_selected_params": incubation,
-            "window_selected_params": window_selections,
-            "trade_selected_params": trade_selections,
+            **evidence,
         }
     return {}
 
@@ -1843,11 +2205,11 @@ def _completed_stage_projection(
         projected["data_quality"] = quality
         omitted.extend(f"data_quality.{field}" for field in quality_omitted)
     if stage == "limited_core_grid_test":
-        grid = _merged_section(effective_config, "core_grid", stage_cfg)
-        _require_equal(item.get("core_grid_parameters"), grid.get("parameters") or {}, "limited core grid parameters")
+        parameters = _published_parameter_grid(effective_config, "core_grid", stage_cfg)
+        _require_equal(item.get("core_grid_parameters"), parameters, "limited core grid parameters")
     if stage == "limited_monkey_test":
         limited_core_cfg = (effective_config.get("campaign_tests") or {}).get("limited_core_grid_test") or {}
-        parameters = _merged_section(effective_config, "core_grid", limited_core_cfg).get("parameters") or {}
+        parameters = _published_parameter_grid(effective_config, "core_grid", limited_core_cfg)
         _validate_selected_params(item.get("selected_core_params"), parameters, "limited monkey selected parameters")
     return projected, omitted
 
@@ -1867,6 +2229,8 @@ def _stage_bindings(
     names = [item.get("stage") for item in stages]
     _require_equal(names, PRE_ACCEPTANCE_STAGE_ORDER, "pre-acceptance stage order")
     _require_equal(manifest.get("stage_order"), PRE_ACCEPTANCE_STAGE_ORDER, "manifest stage order")
+    run_created_at = _require_aware_datetime(summary.get("created_at"), "summary created_at")
+    previous_completed_at: datetime | None = None
     bindings: list[dict[str, Any]] = []
     for item in stages:
         stage = str(item["stage"])
@@ -1877,10 +2241,11 @@ def _stage_bindings(
             raise ValueError(f"{stage} status and passed flag are inconsistent")
         criteria = item.get("criteria") or []
         stage_cfg = (effective_config.get("campaign_tests") or {}).get(stage) or {}
-        criteria_contract = _criteria_for_stage(stage, stage_cfg)
+        criteria_contract = _frozen_stage_criteria(stage, stage_cfg)
         projected_item = deepcopy(item)
         omitted_unverified_fields: list[str] = []
         validated_execution_config_snapshots: dict[str, Any] = {}
+        validated_engine_config_hashes: list[dict[str, str]] = []
         if status == "skipped":
             _require_equal(stage_cfg.get("enabled"), False, f"{stage} disabled stage config")
             expected_skipped = _annotate_stage_decisions(_skipped_stage(stage, "disabled"))
@@ -1901,11 +2266,29 @@ def _stage_bindings(
             expected_passed = all(criterion.get("passed") is True for criterion in criteria)
             _require_equal(item.get("passed"), expected_passed, f"{stage} criteria aggregate")
             _require_equal(status, "passed" if expected_passed else "failed", f"{stage} criteria status")
-            for field in ("started_at", "completed_at"):
-                _require_nonempty_string(item.get(field), f"{stage} {field}")
+            started_at = _require_aware_datetime(item.get("started_at"), f"{stage} started_at")
+            completed_at = _require_aware_datetime(item.get("completed_at"), f"{stage} completed_at")
+            if completed_at < started_at:
+                raise ValueError(f"{stage} completed_at precedes started_at")
+            if previous_completed_at is not None and started_at < previous_completed_at:
+                raise ValueError(f"{stage} started_at precedes the prior completed stage")
+            if completed_at > run_created_at:
+                raise ValueError(f"{stage} completed_at follows the run summary timestamp")
             duration = item.get("duration_seconds")
-            if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
+            if (
+                isinstance(duration, bool)
+                or not isinstance(duration, (int, float))
+                or not math.isfinite(float(duration))
+                or duration < 0
+            ):
                 raise ValueError(f"{stage} duration_seconds must be non-negative")
+            elapsed = (completed_at - started_at).total_seconds()
+            if abs(float(duration) - elapsed) > _DURATION_TOLERANCE_SECONDS:
+                raise ValueError(
+                    f"{stage} duration_seconds disagrees with timestamps beyond "
+                    f"{_DURATION_TOLERANCE_SECONDS:g}s tolerance"
+                )
+            previous_completed_at = completed_at
             if item.get("error") is not None or item.get("skip_reason") is not None:
                 raise ValueError(f"{stage} completed result cannot record error or skip_reason")
             expected_criteria = evaluate_criteria(item, criteria_contract)
@@ -1929,10 +2312,13 @@ def _stage_bindings(
                 },
                 f"{stage} error payload fields",
             )
-            if not criteria or any(criterion.get("passed") is not False for criterion in criteria):
-                raise ValueError(f"{stage} error result must retain failed producer criteria")
-            expected_error = _error_stage(stage, RuntimeError(str(item["error"])))
-            _require_equal(criteria, expected_error["criteria"], f"{stage} error criteria")
+            if not criteria:
+                raise ValueError(f"{stage} error result must retain producer criteria")
+            expected_error_criteria = evaluate_criteria(
+                {"stage": stage, "error": str(item["error"])},
+                criteria_contract,
+            )
+            _require_equal(criteria, expected_error_criteria, f"{stage} error criteria")
             if item.get("artifacts") is not None or item.get("skip_reason") is not None:
                 raise ValueError(f"{stage} error result cannot record artifacts or skip_reason")
         if status == "skipped" and not str(item.get("skip_reason") or "").strip():
@@ -1990,6 +2376,12 @@ def _stage_bindings(
                     artifact_paths=artifact_paths,
                     effective_config=effective_config,
                 )
+                validated_engine_config_hashes = _validate_engine_config_hashes(
+                    stage,
+                    canonical_summary,
+                    artifact_paths,
+                    effective_config,
+                )
                 if stage == "walk_forward_analysis":
                     for field in ("stitched_oos_metrics", "incubation_selected_params"):
                         _require_equal(item.get(field), canonical_summary.get(field), f"{stage} {field} projection")
@@ -2008,6 +2400,7 @@ def _stage_bindings(
                     "missing_stage_result_reason": None,
                     "omitted_unverified_fields": omitted_unverified_fields,
                     "validated_execution_config_snapshots": validated_execution_config_snapshots,
+                    "validated_engine_config_hashes": validated_engine_config_hashes,
                 }
             )
             continue
@@ -2022,6 +2415,7 @@ def _stage_bindings(
                 "missing_stage_result_reason": str(item["skip_reason"]),
                 "omitted_unverified_fields": [],
                 "validated_execution_config_snapshots": {},
+                "validated_engine_config_hashes": [],
             }
         )
     return bindings
