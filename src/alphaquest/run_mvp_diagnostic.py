@@ -2009,6 +2009,109 @@ def _require_scalar_equal(actual: Any, expected: Any, label: str) -> None:
     _require_equal(actual, expected, label)
 
 
+def _required_wfa_numeric(
+    value: Any,
+    label: str,
+    *,
+    finite: bool = False,
+    nonnegative: bool = False,
+) -> float:
+    value = _plain_scalar(value)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a producer numeric value")
+    number = float(value)
+    if math.isnan(number) or (finite and not math.isfinite(number)):
+        raise ValueError(f"{label} must be a valid producer numeric value")
+    if nonnegative and number < 0:
+        raise ValueError(f"{label} must be non-negative")
+    return number
+
+
+def _expected_wfa_window(
+    *,
+    origin: pd.Timestamp,
+    window_number: int,
+    runtime_wfa: dict[str, Any],
+) -> dict[str, str]:
+    def advance_months_iteratively(value: pd.Timestamp, months: int, repetitions: int) -> pd.Timestamp:
+        for _ in range(repetitions):
+            value = value + pd.DateOffset(months=months)
+        return value
+
+    step_months = int(runtime_wfa["step_months"])
+    if _wfa_mode(runtime_wfa) == "anchored":
+        train_start = origin
+        first_test_start = origin + pd.DateOffset(months=int(runtime_wfa["train_months"]))
+        train_end = advance_months_iteratively(first_test_start, step_months, window_number - 1)
+    else:
+        train_start = advance_months_iteratively(origin, step_months, window_number - 1)
+        train_end = train_start + pd.DateOffset(months=int(runtime_wfa["train_months"]))
+    test_start = train_end
+    test_end = test_start + pd.DateOffset(months=int(runtime_wfa["test_months"]))
+    return {
+        "train_start": train_start.date().isoformat(),
+        "train_end": train_end.date().isoformat(),
+        "test_start": test_start.date().isoformat(),
+        "test_end": test_end.date().isoformat(),
+    }
+
+
+def _validate_wfa_early_exit_state(
+    row: pd.Series,
+    *,
+    window_id: str,
+    reason: str,
+    runtime_wfa: dict[str, Any],
+) -> dict[str, Any]:
+    train_fields = (
+        "train_objective",
+        "train_mar",
+        "train_cagr",
+        "train_max_drawdown_pct",
+        "train_net_profit",
+        "train_profit_factor",
+        "train_max_drawdown",
+    )
+    train_metrics = {
+        field: _required_wfa_numeric(row.get(field), f"WFA early-exit window {window_id} {field}")
+        for field in train_fields
+    }
+    if reason == "no_in_sample_rows_after_selection_filter":
+        for field, value in train_metrics.items():
+            _require_scalar_equal(value, 0.0, f"WFA filter-exhaustion window {window_id} {field}")
+        return {
+            "window_id": window_id,
+            "reason": reason,
+            "runtime_predicate_consistent": True,
+            "filter_exhaustion_independently_verified": False,
+            "evidence_basis": "producer-reported reason and exact zero-train-metric state; no train grid retained",
+        }
+
+    train_net_profit = train_metrics["train_net_profit"]
+    train_profit_factor = train_metrics["train_profit_factor"]
+    require_profitable = bool(runtime_wfa.get("early_exit_require_train_profitable", False))
+    threshold = runtime_wfa.get("early_exit_min_train_profit_factor")
+    if reason == "selected_train_net_profit_not_positive":
+        if not require_profitable:
+            raise ValueError(f"WFA early-exit window {window_id} uses a disabled train-profitability control")
+        if train_net_profit > 0:
+            raise ValueError(f"WFA early-exit window {window_id} train_net_profit does not satisfy its reason")
+    elif reason == "selected_train_profit_factor_below_minimum":
+        if threshold is None:
+            raise ValueError(f"WFA early-exit window {window_id} uses a disabled profit-factor control")
+        if require_profitable and train_net_profit <= 0:
+            raise ValueError(f"WFA early-exit window {window_id} violates producer reason precedence")
+        if not train_profit_factor < float(threshold):
+            raise ValueError(f"WFA early-exit window {window_id} train_profit_factor does not satisfy its reason")
+    return {
+        "window_id": window_id,
+        "reason": reason,
+        "runtime_predicate_consistent": True,
+        "filter_exhaustion_independently_verified": None,
+        "evidence_basis": "retained runtime control and selected-train metrics",
+    }
+
+
 def _validate_wfa_train_grid(
     path: Path,
     *,
@@ -2185,6 +2288,19 @@ def _validate_wfa_execution_evidence(
         or (effective_config.get("data") or {}).get("timezone"),
         "WFA exchange timezone",
     )
+    actual_data_period = canonical_summary.get("actual_data_period")
+    if not isinstance(actual_data_period, dict):
+        raise ValueError("WFA actual_data_period must be a mapping")
+    origin_timestamp = _market_timestamp(
+        actual_data_period.get("first_timestamp"),
+        "WFA actual data first_timestamp",
+        timezone_name,
+    )
+    window_origin = origin_timestamp.tz_localize(None).normalize()
+    planned_windows = _nonnegative_int(
+        canonical_summary.get("planned_complete_oos_windows"),
+        "WFA planned complete OOS windows",
+    )
     required_result_columns = {
         "window_id",
         "train_start",
@@ -2199,6 +2315,17 @@ def _validate_wfa_execution_evidence(
         "test_first_timestamp",
         "test_last_timestamp",
         "test_trades",
+        "test_passed",
+        "train_objective",
+        "train_mar",
+        "train_cagr",
+        "train_max_drawdown_pct",
+        "train_net_profit",
+        "train_profit_factor",
+        "train_max_drawdown",
+        "test_profit_factor",
+        "test_mar",
+        "test_net_profit",
     }
     if not results.empty:
         missing = sorted(required_result_columns - set(results.columns))
@@ -2210,11 +2337,14 @@ def _validate_wfa_execution_evidence(
     ordered_realized: list[dict[str, Any]] = []
     normalized_params: list[dict[str, Any]] = []
     normalized_early_exit: list[bool] = []
+    early_exit_bindings: list[dict[str, Any]] = []
     for index, row in results.iterrows():
         window_id = _window_id_key(row.get("window_id"), f"WFA results row {index} window_id")
         window_number = _window_number(row.get("window_id"), f"WFA results row {index} window_id")
         if window_id in windows:
             raise ValueError(f"WFA results contain duplicate window_id {window_id}")
+        if window_number > planned_windows:
+            raise ValueError(f"WFA retained window {window_id} exceeds the planned window count")
         complete = _strict_csv_bool(
             row.get("oos_window_complete"),
             f"WFA results row {index} oos_window_complete",
@@ -2237,6 +2367,17 @@ def _validate_wfa_execution_evidence(
             raise ValueError(f"WFA unevaluated window {window_id} cannot record selected parameters")
         if evaluated and early_exit:
             raise ValueError(f"WFA evaluated window {window_id} cannot be marked early_exit")
+        _required_wfa_numeric(
+            row.get("test_profit_factor"),
+            f"WFA results row {index} test_profit_factor",
+            nonnegative=True,
+        )
+        _required_wfa_numeric(row.get("test_mar"), f"WFA results row {index} test_mar")
+        _required_wfa_numeric(
+            row.get("test_net_profit"),
+            f"WFA results row {index} test_net_profit",
+            finite=True,
+        )
         if not evaluated:
             reason = str(row.get("early_exit_reason") or "").strip()
             if not early_exit or reason not in _WFA_EARLY_EXIT_REASONS:
@@ -2258,6 +2399,14 @@ def _validate_wfa_execution_evidence(
                 _strict_csv_bool(row.get("test_passed"), f"WFA early-exit window {window_id} test_passed"),
                 False,
                 f"WFA early-exit window {window_id} test_passed",
+            )
+            early_exit_bindings.append(
+                _validate_wfa_early_exit_state(
+                    row,
+                    window_id=window_id,
+                    reason=reason,
+                    runtime_wfa=runtime_wfa,
+                )
             )
         _require_equal(
             str(row.get("objective")),
@@ -2296,6 +2445,13 @@ def _validate_wfa_execution_evidence(
         }
         if record["test_observations"] <= 0:
             raise ValueError(f"WFA retained window {window_id} must have positive test observations")
+        expected_window = _expected_wfa_window(
+            origin=window_origin,
+            window_number=window_number,
+            runtime_wfa=runtime_wfa,
+        )
+        for field, expected in expected_window.items():
+            _require_equal(record[field], expected, f"WFA window {window_id} producer calendar {field}")
         if record["train_start"] >= record["train_end"] or record["test_start"] >= record["test_end"]:
             raise ValueError(f"WFA window {window_id} must contain valid half-open train/test intervals")
         if record["train_end"] != record["test_start"]:
@@ -2362,6 +2518,7 @@ def _validate_wfa_execution_evidence(
             "wfa_train_objective",
             "wfa_selected_params",
             "entry_timestamp",
+            "source_trade_id",
         }
         missing = sorted(required_trade_columns - set(trades.columns))
         if missing:
@@ -2376,6 +2533,12 @@ def _validate_wfa_execution_evidence(
                 raise ValueError(f"WFA OOS trade row {index} references unknown window {window_id}")
             if not window["oos_evaluated"]:
                 raise ValueError(f"WFA OOS trade row {index} references unevaluated window {window_id}")
+            source_trade_id = _nonnegative_int(
+                row.get("source_trade_id"),
+                f"WFA OOS trade row {index} source_trade_id",
+            )
+            if source_trade_id <= 0:
+                raise ValueError(f"WFA OOS trade row {index} source_trade_id must be a positive producer identity")
             selected = _validate_selected_params(
                 _parse_selected_params(
                     row.get("wfa_selected_params"),
@@ -2425,6 +2588,7 @@ def _validate_wfa_execution_evidence(
                     "window_id": window_id,
                     "entry_timestamp": entry.isoformat(),
                     "selected_params": selected,
+                    "source_trade_id": source_trade_id,
                 }
             )
 
@@ -2448,10 +2612,6 @@ def _validate_wfa_execution_evidence(
         "WFA summary realized trade count",
     )
     _require_equal(canonical_summary.get("stitched_oos_trades"), len(trades), "WFA stitched trade count")
-    planned_windows = _nonnegative_int(
-        canonical_summary.get("planned_complete_oos_windows"),
-        "WFA planned complete OOS windows",
-    )
     if planned_windows < len(results):
         raise ValueError("WFA planned window count is smaller than retained results")
     _require_equal(
@@ -2562,6 +2722,8 @@ def _validate_wfa_execution_evidence(
             "train_months": runtime_wfa["train_months"],
             "test_months": runtime_wfa["test_months"],
             "step_months": runtime_wfa["step_months"],
+            "early_exit_min_train_profit_factor": early_exit_profit_factor,
+            "early_exit_require_train_profitable": bool(runtime_wfa.get("early_exit_require_train_profitable", False)),
         },
         "incubation_selected_params": derived_incubation,
         "window_selections": [
@@ -2569,6 +2731,7 @@ def _validate_wfa_execution_evidence(
         ],
         "trade_selections": trade_records,
         "train_grid_bindings": train_grid_bindings,
+        "early_exit_bindings": early_exit_bindings,
     }
 
 

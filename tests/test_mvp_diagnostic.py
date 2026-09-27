@@ -1104,14 +1104,21 @@ def test_rejects_coordinated_forged_fixed_replay_engine_config_hash(
         _build(root, run, preflight, monkeypatch)
 
 
-def _write_wfa_contract(tmp_path: Path, *, optimized: bool = True) -> dict[str, object]:
+def _write_wfa_contract(
+    tmp_path: Path,
+    *,
+    optimized: bool = True,
+    window_ids: tuple[int, ...] = (1, 2),
+    origin: str = "2023-12-01",
+    mode: str = "unanchored",
+) -> dict[str, object]:
     stage_dir = tmp_path / "walk_forward_analysis"
     stage_dir.mkdir()
     parameters = {"entry.params.lookback": [10, 20]} if optimized else {}
     effective = {
         "data": {"exchange_timezone": "America/New_York"},
         "wfa": {
-            "mode": "unanchored",
+            "mode": mode,
             "train_months": 1,
             "test_months": 1,
             "step_months": 1,
@@ -1120,12 +1127,35 @@ def _write_wfa_contract(tmp_path: Path, *, optimized: bool = True) -> dict[str, 
     }
     _, grid_config = mvp._runtime_wfa_grid_contract(effective, {})
     input_hash = "a" * 64
+    origin_timestamp = pd.Timestamp(origin).tz_localize("America/New_York")
+    producer_data = pd.DataFrame(
+        {
+            "timestamp": [
+                origin_timestamp,
+                origin_timestamp + pd.DateOffset(months=max(window_ids) + 3),
+            ]
+        }
+    )
+    producer_windows = list(
+        wfa_module.create_windows(
+            producer_data,
+            train_months=1,
+            test_months=1,
+            step_months=1,
+            mode=mode,
+        )
+    )
     window_specs = [
-        (1, "2023-12-01", "2024-01-01", "2024-01-01", "2024-02-01", 10),
-        (2, "2024-01-01", "2024-02-01", "2024-02-01", "2024-03-01", 20),
+        (
+            window_id,
+            *(value.date().isoformat() for value in producer_windows[window_id - 1]),
+            10 if position % 2 == 0 else 20,
+        )
+        for position, window_id in enumerate(window_ids)
     ]
     if not optimized:
         window_specs = [window_specs[0][:-1] + (None,)]
+    planned_window_count = max(spec[0] for spec in window_specs)
     results_rows: list[dict[str, object]] = []
     trade_frames: list[pd.DataFrame] = []
     intervals: list[dict[str, object]] = []
@@ -1164,8 +1194,14 @@ def _write_wfa_contract(tmp_path: Path, *, optimized: bool = True) -> dict[str, 
         write_report_csv(annotated, grid_path, "America/New_York", index=False)
         grid_paths.append(grid_path)
         selected_params = {"entry.params.lookback": selected_value} if optimized else {}
-        first_timestamp = f"2024-0{window_id}-05T09:30:00-05:00"
-        last_timestamp = f"2024-0{window_id}-25T15:59:00-05:00"
+        first_timestamp = (
+            pd.Timestamp(test_start).tz_localize("America/New_York") + pd.DateOffset(days=4, hours=9, minutes=30)
+        ).isoformat()
+        last_timestamp = (
+            pd.Timestamp(test_end).tz_localize("America/New_York")
+            - pd.DateOffset(days=4)
+            + pd.DateOffset(hours=15, minutes=59)
+        ).isoformat()
         results_rows.append(
             {
                 "window_id": window_id,
@@ -1201,9 +1237,14 @@ def _write_wfa_contract(tmp_path: Path, *, optimized: bool = True) -> dict[str, 
             [
                 {
                     "trade_id": 1,
-                    "session_date": f"2024-0{window_id}-15",
-                    "entry_timestamp": f"2024-0{window_id}-15T10:00:00-05:00",
-                    "exit_timestamp": f"2024-0{window_id}-15T10:05:00-05:00",
+                    "session_date": (pd.Timestamp(test_start) + pd.DateOffset(days=14)).date().isoformat(),
+                    "entry_timestamp": (
+                        pd.Timestamp(test_start).tz_localize("America/New_York") + pd.DateOffset(days=14, hours=10)
+                    ).isoformat(),
+                    "exit_timestamp": (
+                        pd.Timestamp(test_start).tz_localize("America/New_York")
+                        + pd.DateOffset(days=14, hours=10, minutes=5)
+                    ).isoformat(),
                     "net_pnl": 25.0,
                     "contracts": 1,
                 }
@@ -1243,7 +1284,7 @@ def _write_wfa_contract(tmp_path: Path, *, optimized: bool = True) -> dict[str, 
     canonical = {
         "parameter_mode": "predeclared_optimization" if optimized else "fixed_config",
         "objective": "MAR",
-        "window_mode": "unanchored",
+        "window_mode": mode,
         "train_months": 1,
         "test_months": 1,
         "step_months": 1,
@@ -1253,9 +1294,9 @@ def _write_wfa_contract(tmp_path: Path, *, optimized: bool = True) -> dict[str, 
         "early_exit_min_train_profit_factor": 1.0,
         "early_exit_require_train_profitable": False,
         "windows": len(results_frame),
-        "planned_complete_oos_windows": len(results_frame),
+        "planned_complete_oos_windows": planned_window_count,
         "realized_oos_windows": len(results_frame),
-        "skipped_complete_oos_windows": 0,
+        "skipped_complete_oos_windows": planned_window_count - len(results_frame),
         "realized_oos_observations": 20 * len(results_frame),
         "realized_oos_trades": len(trades_frame),
         "realized_oos_start": intervals[0]["test_start"],
@@ -1263,6 +1304,12 @@ def _write_wfa_contract(tmp_path: Path, *, optimized: bool = True) -> dict[str, 
         "realized_oos_intervals": intervals,
         "stitched_oos_trades": len(trades_frame),
         "early_exit": False,
+        "actual_data_period": {
+            "first_timestamp": (origin_timestamp + pd.DateOffset(hours=9, minutes=30)).isoformat(),
+            "last_timestamp": (
+                pd.Timestamp(intervals[-1]["test_end"]).tz_localize("America/New_York") + pd.DateOffset(days=1)
+            ).isoformat(),
+        },
         "train_grid_reports_retained": True,
         "train_grid_report_files": [str(path) for path in grid_paths],
         "incubation_selected_params": incubation,
@@ -1309,14 +1356,37 @@ def test_validates_actual_fixed_and_optimized_wfa_contract(tmp_path: Path, optim
         assert validated["incubation_selected_params"] == {}
 
 
+@pytest.mark.parametrize("mode", ["unanchored", "anchored"])
+def test_accepts_iterative_month_end_windows_with_skipped_ids(tmp_path: Path, mode: str) -> None:
+    contract = _write_wfa_contract(
+        tmp_path,
+        window_ids=(1, 3),
+        origin="2023-01-31",
+        mode=mode,
+    )
+
+    validated = _validate_wfa_contract(contract)
+
+    assert [item["window_id"] for item in validated["window_selections"]] == ["1", "3"]
+    results = pd.read_csv(contract["results"])
+    if mode == "unanchored":
+        assert results.loc[1, "train_start"] == "2023-03-28"
+    else:
+        assert results.loc[1, "test_start"] == "2023-04-28"
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
         ("outside", "outside its half-open test interval"),
         ("wrong_timezone", "not serialized in configured exchange timezone"),
-        ("reverse", "valid half-open train/test intervals"),
-        ("overlap", "overlapping OOS intervals"),
+        ("reverse", "producer calendar"),
+        ("overlap", "producer calendar"),
+        ("numbered_sequence", "producer calendar"),
         ("duplicate", "duplicate source trade IDs"),
+        ("null_source_id", "source_trade_id"),
+        ("zero_source_id", "positive producer identity"),
+        ("missing_source_id", "lacks producer columns: source_trade_id"),
         ("zero_observations", "positive test observations"),
     ],
 )
@@ -1343,6 +1413,9 @@ def test_rejects_impossible_wfa_temporal_or_trade_identity(
         results.loc[1, "test_end"] = "2024-02-15"
         results.loc[1, "test_first_timestamp"] = "2024-01-20 09:30:00-05:00"
         results.loc[1, "test_last_timestamp"] = "2024-01-25 15:59:00-05:00"
+    elif mutation == "numbered_sequence":
+        calendar_columns = ["train_start", "train_end", "test_start", "test_end"]
+        results.loc[:, calendar_columns] = results.loc[::-1, calendar_columns].to_numpy()
     elif mutation == "duplicate":
         duplicate = trades.iloc[[0]].copy()
         trades = pd.concat([trades, duplicate], ignore_index=True)
@@ -1350,6 +1423,18 @@ def test_rejects_impossible_wfa_temporal_or_trade_identity(
         canonical["realized_oos_trades"] = 3
         canonical["stitched_oos_trades"] = 3
         canonical["realized_oos_intervals"][0]["trades"] = 2
+    elif mutation == "null_source_id":
+        duplicate = trades.iloc[[0]].copy()
+        trades = pd.concat([trades, duplicate], ignore_index=True)
+        trades.loc[0:1, "source_trade_id"] = float("nan")
+        results.loc[0, "test_trades"] = 2
+        canonical["realized_oos_trades"] = 3
+        canonical["stitched_oos_trades"] = 3
+        canonical["realized_oos_intervals"][0]["trades"] = 2
+    elif mutation == "zero_source_id":
+        trades.loc[0, "source_trade_id"] = 0
+    elif mutation == "missing_source_id":
+        trades = trades.drop(columns=["source_trade_id"])
     else:
         results.loc[0, "test_observations"] = 0
         canonical["realized_oos_observations"] = 20
@@ -1364,8 +1449,68 @@ def test_rejects_impossible_wfa_temporal_or_trade_identity(
         _validate_wfa_contract(contract)
 
 
-def _write_early_exit_wfa_contract(tmp_path: Path) -> dict[str, object]:
+@pytest.mark.parametrize("column", ["test_profit_factor", "test_mar", "test_net_profit"])
+def test_rejects_missing_mandatory_wfa_incubation_metric(tmp_path: Path, column: str) -> None:
     contract = _write_wfa_contract(tmp_path)
+    results = pd.read_csv(contract["results"]).drop(columns=[column])
+    write_report_csv(results, contract["results"], "America/New_York", index=False)
+
+    with pytest.raises(ValueError, match=rf"lack producer columns:.*{column}"):
+        _validate_wfa_contract(contract)
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("test_profit_factor", float("nan")),
+        ("test_mar", "not-a-number"),
+        ("test_net_profit", float("inf")),
+    ],
+)
+def test_rejects_invalid_mandatory_wfa_incubation_metric(
+    tmp_path: Path,
+    column: str,
+    value: object,
+) -> None:
+    contract = _write_wfa_contract(tmp_path)
+    results = pd.read_csv(contract["results"])
+    if isinstance(value, str):
+        results[column] = results[column].astype(object)
+    results.loc[0, column] = value
+    results.to_csv(contract["results"], index=False)
+
+    with pytest.raises(ValueError, match=column):
+        _validate_wfa_contract(contract)
+
+
+def _write_early_exit_wfa_contract(
+    tmp_path: Path,
+    *,
+    reason: str = "no_in_sample_rows_after_selection_filter",
+) -> dict[str, object]:
+    contract = _write_wfa_contract(tmp_path)
+    best: dict[str, float] = {}
+    require_profitable = False
+    minimum_profit_factor: float | None = 1.0
+    if reason == "selected_train_net_profit_not_positive":
+        require_profitable = True
+        best = {
+            "mar": -1.0,
+            "cagr": -0.1,
+            "max_drawdown_pct": 0.1,
+            "net_profit": -1.0,
+            "profit_factor": 0.5,
+            "max_drawdown": 10.0,
+        }
+    elif reason == "selected_train_profit_factor_below_minimum":
+        best = {
+            "mar": 0.5,
+            "cagr": 0.05,
+            "max_drawdown_pct": 0.1,
+            "net_profit": 1.0,
+            "profit_factor": 0.5,
+            "max_drawdown": 10.0,
+        }
     row = wfa_module._early_exit_row(
         1,
         pd.Timestamp("2023-12-01"),
@@ -1373,8 +1518,8 @@ def _write_early_exit_wfa_contract(tmp_path: Path) -> dict[str, object]:
         pd.Timestamp("2024-01-01"),
         pd.Timestamp("2024-02-01"),
         "mar",
-        {},
-        "no_in_sample_rows_after_selection_filter",
+        best,
+        reason,
         test_observations=20,
         test_first_timestamp="2024-01-05T09:30:00-05:00",
         test_last_timestamp="2024-01-25T15:59:00-05:00",
@@ -1386,6 +1531,8 @@ def _write_early_exit_wfa_contract(tmp_path: Path) -> dict[str, object]:
         path.unlink()
     contract["grids"] = []
     contract["artifacts"] = [contract["results"], contract["trades"]]
+    contract["effective"]["wfa"]["early_exit_min_train_profit_factor"] = minimum_profit_factor
+    contract["effective"]["wfa"]["early_exit_require_train_profitable"] = require_profitable
     contract["canonical"] = {
         "parameter_mode": "predeclared_optimization",
         "objective": "MAR",
@@ -1396,8 +1543,8 @@ def _write_early_exit_wfa_contract(tmp_path: Path) -> dict[str, object]:
         "parallel": {"enabled": False, "scope": "grid"},
         "complete_oos_windows_only": True,
         "selection_filter": {"exclusive_min_trades_per_year": 50},
-        "early_exit_min_train_profit_factor": 1.0,
-        "early_exit_require_train_profitable": False,
+        "early_exit_min_train_profit_factor": minimum_profit_factor,
+        "early_exit_require_train_profitable": require_profitable,
         "windows": 1,
         "planned_complete_oos_windows": 1,
         "realized_oos_windows": 0,
@@ -1409,6 +1556,10 @@ def _write_early_exit_wfa_contract(tmp_path: Path) -> dict[str, object]:
         "realized_oos_intervals": [],
         "stitched_oos_trades": 0,
         "early_exit": True,
+        "actual_data_period": {
+            "first_timestamp": "2023-12-01T09:30:00-05:00",
+            "last_timestamp": "2024-03-01T09:30:00-05:00",
+        },
         "train_grid_reports_retained": True,
         "train_grid_report_files": [],
         "incubation_selected_params": {},
@@ -1416,16 +1567,74 @@ def _write_early_exit_wfa_contract(tmp_path: Path) -> dict[str, object]:
     return contract
 
 
-def test_accepts_exact_producer_early_exit_and_rejects_invented_unevaluated_state(tmp_path: Path) -> None:
-    contract = _write_early_exit_wfa_contract(tmp_path)
+@pytest.mark.parametrize("reason", sorted(mvp._WFA_EARLY_EXIT_REASONS))
+def test_accepts_exact_producer_early_exit_and_rejects_invented_unevaluated_state(
+    tmp_path: Path,
+    reason: str,
+) -> None:
+    contract = _write_early_exit_wfa_contract(tmp_path, reason=reason)
     validated = _validate_wfa_contract(contract)
     assert validated["train_grid_bindings"] == []
     assert validated["trade_selections"] == []
+    assert validated["early_exit_bindings"][0]["runtime_predicate_consistent"] is True
+    if reason == "no_in_sample_rows_after_selection_filter":
+        assert validated["early_exit_bindings"][0]["filter_exhaustion_independently_verified"] is False
 
     results = pd.read_csv(contract["results"])
     results.loc[0, "early_exit"] = False
     write_report_csv(results, contract["results"], "America/New_York", index=False)
     with pytest.raises(ValueError, match="must be a producer early-exit row"):
+        _validate_wfa_contract(contract)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("disabled_profitability", "disabled train-profitability control"),
+        ("false_profitability", "train_net_profit does not satisfy"),
+        ("disabled_profit_factor", "disabled profit-factor control"),
+        ("false_profit_factor", "train_profit_factor does not satisfy"),
+        ("reason_precedence", "producer reason precedence"),
+        ("nonzero_filter_exhaustion", "filter-exhaustion"),
+    ],
+)
+def test_rejects_impossible_wfa_early_exit_state(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    if mutation in {"false_profitability"}:
+        contract = _write_early_exit_wfa_contract(
+            tmp_path,
+            reason="selected_train_net_profit_not_positive",
+        )
+    elif mutation in {"false_profit_factor", "reason_precedence"}:
+        contract = _write_early_exit_wfa_contract(
+            tmp_path,
+            reason="selected_train_profit_factor_below_minimum",
+        )
+    else:
+        contract = _write_early_exit_wfa_contract(tmp_path)
+    results = pd.read_csv(contract["results"])
+    if mutation == "disabled_profitability":
+        results.loc[0, "early_exit_reason"] = "selected_train_net_profit_not_positive"
+    elif mutation == "false_profitability":
+        results.loc[0, "train_net_profit"] = 1.0
+    elif mutation == "disabled_profit_factor":
+        results.loc[0, "early_exit_reason"] = "selected_train_profit_factor_below_minimum"
+        contract["effective"]["wfa"]["early_exit_min_train_profit_factor"] = None
+        contract["canonical"]["early_exit_min_train_profit_factor"] = None
+    elif mutation == "false_profit_factor":
+        results.loc[0, "train_profit_factor"] = 2.0
+    elif mutation == "reason_precedence":
+        contract["effective"]["wfa"]["early_exit_require_train_profitable"] = True
+        contract["canonical"]["early_exit_require_train_profitable"] = True
+        results.loc[0, "train_net_profit"] = -1.0
+    else:
+        results.loc[0, "train_mar"] = 1.0
+    write_report_csv(results, contract["results"], "America/New_York", index=False)
+
+    with pytest.raises(ValueError, match=message):
         _validate_wfa_contract(contract)
 
 

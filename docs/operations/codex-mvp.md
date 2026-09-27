@@ -300,11 +300,22 @@ the governed human workflow and remain separately reviewable.
    must agree with the producer's deterministic selection from the WFA results.
 
    Realized OOS windows must have unique, non-overlapping intervals that include
-   the start and exclude the end. Each trade's actual entry timestamp must lie
+   the start and exclude the end. Their numeric IDs must match the producer's
+   iterative calendar-month sequence from the actual data origin, including
+   anchored versus unanchored mode and any legitimate gaps in retained IDs.
+   Each trade's actual entry timestamp must lie
    within its declared window under the producer's market-time convention;
+   every scoped bar trade must retain a positive producer `source_trade_id`, and
    duplicate stitched trade identities are rejected. An unevaluated window must
-   record a valid early-exit reason and have no selected parameters or OOS trades.
-   Every retained result window has positive test observations.
+   record a valid early-exit reason, have no selected parameters or OOS trades,
+   and satisfy the corresponding frozen runtime control and retained training
+   metric predicate. The no-eligible-row reason requires the producer's exact
+   zero-training-metric state. Because the producer does not retain a training
+   grid when that early exit occurs, the index labels filter exhaustion as
+   producer-reported only and does not claim it was independently proven. Every
+   retained result window has positive test observations and the complete
+   producer incubation metrics `test_profit_factor`, `test_mar`, and
+   `test_net_profit`.
    When training grids are retained, the declared file list and evaluated windows
    must match the retained grids. Each grid must identify the correct window,
    train/test intervals, objective, base config, parameter space, selection filter,
