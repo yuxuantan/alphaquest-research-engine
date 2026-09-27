@@ -301,8 +301,11 @@ the governed human workflow and remain separately reviewable.
 
    Realized OOS windows must have unique, non-overlapping intervals that include
    the start and exclude the end. Their numeric IDs must match the producer's
-   iterative calendar-month sequence from the actual data origin, including
-   anchored versus unanchored mode and any legitimate gaps in retained IDs.
+   complete finite `create_windows` sequence derived from both timezone-valid,
+   ordered actual-data endpoints. The declared planned-window count must equal
+   that sequence length. This includes anchored versus unanchored mode,
+   iterative month-end behavior, exact test-end boundary inclusion, and any
+   legitimate gaps in retained IDs; an ID beyond the available data fails.
    Each trade's actual entry timestamp must lie
    within its declared window under the producer's market-time convention;
    every scoped bar trade must retain a positive producer `source_trade_id`, and

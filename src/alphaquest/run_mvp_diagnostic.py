@@ -72,6 +72,7 @@ from alphaquest.research.wfa import (
     _validate_stitched_oos_trade_identity,
     _wfa_grid_config,
     _wfa_mode,
+    create_windows,
 )
 from alphaquest.studio.approvals import MechanicsApprovalService
 from alphaquest.utils.config import strategy_mechanic, validate_campaign_run_root
@@ -2027,33 +2028,31 @@ def _required_wfa_numeric(
     return number
 
 
-def _expected_wfa_window(
+def _producer_wfa_windows(
     *,
-    origin: pd.Timestamp,
-    window_number: int,
+    first_timestamp: pd.Timestamp,
+    last_timestamp: pd.Timestamp,
     runtime_wfa: dict[str, Any],
-) -> dict[str, str]:
-    def advance_months_iteratively(value: pd.Timestamp, months: int, repetitions: int) -> pd.Timestamp:
-        for _ in range(repetitions):
-            value = value + pd.DateOffset(months=months)
-        return value
-
-    step_months = int(runtime_wfa["step_months"])
-    if _wfa_mode(runtime_wfa) == "anchored":
-        train_start = origin
-        first_test_start = origin + pd.DateOffset(months=int(runtime_wfa["train_months"]))
-        train_end = advance_months_iteratively(first_test_start, step_months, window_number - 1)
-    else:
-        train_start = advance_months_iteratively(origin, step_months, window_number - 1)
-        train_end = train_start + pd.DateOffset(months=int(runtime_wfa["train_months"]))
-    test_start = train_end
-    test_end = test_start + pd.DateOffset(months=int(runtime_wfa["test_months"]))
-    return {
-        "train_start": train_start.date().isoformat(),
-        "train_end": train_end.date().isoformat(),
-        "test_start": test_start.date().isoformat(),
-        "test_end": test_end.date().isoformat(),
-    }
+) -> list[dict[str, str]]:
+    if last_timestamp < first_timestamp:
+        raise ValueError("WFA actual data timestamps are reversed")
+    endpoint_frame = pd.DataFrame({"timestamp": [first_timestamp, last_timestamp]})
+    windows = create_windows(
+        endpoint_frame,
+        train_months=int(runtime_wfa["train_months"]),
+        test_months=int(runtime_wfa["test_months"]),
+        step_months=int(runtime_wfa["step_months"]),
+        mode=_wfa_mode(runtime_wfa),
+    )
+    return [
+        {
+            "train_start": train_start.date().isoformat(),
+            "train_end": train_end.date().isoformat(),
+            "test_start": test_start.date().isoformat(),
+            "test_end": test_end.date().isoformat(),
+        }
+        for train_start, train_end, test_start, test_end in windows
+    ]
 
 
 def _validate_wfa_early_exit_state(
@@ -2291,16 +2290,26 @@ def _validate_wfa_execution_evidence(
     actual_data_period = canonical_summary.get("actual_data_period")
     if not isinstance(actual_data_period, dict):
         raise ValueError("WFA actual_data_period must be a mapping")
-    origin_timestamp = _market_timestamp(
+    first_timestamp = _market_timestamp(
         actual_data_period.get("first_timestamp"),
         "WFA actual data first_timestamp",
         timezone_name,
     )
-    window_origin = origin_timestamp.tz_localize(None).normalize()
+    last_timestamp = _market_timestamp(
+        actual_data_period.get("last_timestamp"),
+        "WFA actual data last_timestamp",
+        timezone_name,
+    )
+    producer_windows = _producer_wfa_windows(
+        first_timestamp=first_timestamp,
+        last_timestamp=last_timestamp,
+        runtime_wfa=runtime_wfa,
+    )
     planned_windows = _nonnegative_int(
         canonical_summary.get("planned_complete_oos_windows"),
         "WFA planned complete OOS windows",
     )
+    _require_equal(planned_windows, len(producer_windows), "WFA planned producer window count")
     required_result_columns = {
         "window_id",
         "train_start",
@@ -2343,8 +2352,8 @@ def _validate_wfa_execution_evidence(
         window_number = _window_number(row.get("window_id"), f"WFA results row {index} window_id")
         if window_id in windows:
             raise ValueError(f"WFA results contain duplicate window_id {window_id}")
-        if window_number > planned_windows:
-            raise ValueError(f"WFA retained window {window_id} exceeds the planned window count")
+        if window_number > len(producer_windows):
+            raise ValueError(f"WFA retained window {window_id} exceeds the actual producer window count")
         complete = _strict_csv_bool(
             row.get("oos_window_complete"),
             f"WFA results row {index} oos_window_complete",
@@ -2445,11 +2454,7 @@ def _validate_wfa_execution_evidence(
         }
         if record["test_observations"] <= 0:
             raise ValueError(f"WFA retained window {window_id} must have positive test observations")
-        expected_window = _expected_wfa_window(
-            origin=window_origin,
-            window_number=window_number,
-            runtime_wfa=runtime_wfa,
-        )
+        expected_window = producer_windows[window_number - 1]
         for field, expected in expected_window.items():
             _require_equal(record[field], expected, f"WFA window {window_id} producer calendar {field}")
         if record["train_start"] >= record["train_end"] or record["test_start"] >= record["test_end"]:
@@ -2722,6 +2727,9 @@ def _validate_wfa_execution_evidence(
             "train_months": runtime_wfa["train_months"],
             "test_months": runtime_wfa["test_months"],
             "step_months": runtime_wfa["step_months"],
+            "actual_data_first_timestamp": first_timestamp.isoformat(),
+            "actual_data_last_timestamp": last_timestamp.isoformat(),
+            "producer_window_count": len(producer_windows),
             "early_exit_min_train_profit_factor": early_exit_profit_factor,
             "early_exit_require_train_profitable": bool(runtime_wfa.get("early_exit_require_train_profitable", False)),
         },

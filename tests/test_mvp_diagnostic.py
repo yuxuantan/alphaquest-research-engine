@@ -1127,31 +1127,36 @@ def _write_wfa_contract(
     }
     _, grid_config = mvp._runtime_wfa_grid_contract(effective, {})
     input_hash = "a" * 64
+    retained_window_ids = window_ids if optimized else (window_ids[0],)
     origin_timestamp = pd.Timestamp(origin).tz_localize("America/New_York")
-    producer_data = pd.DataFrame(
+    bootstrap_data = pd.DataFrame(
         {
             "timestamp": [
                 origin_timestamp,
-                origin_timestamp + pd.DateOffset(months=max(window_ids) + 3),
+                origin_timestamp + pd.DateOffset(months=max(retained_window_ids) + 3),
             ]
         }
     )
-    producer_windows = list(
+    bootstrap_windows = list(
         wfa_module.create_windows(
-            producer_data,
+            bootstrap_data,
             train_months=1,
             test_months=1,
             step_months=1,
             mode=mode,
         )
     )
+    actual_last_timestamp = bootstrap_windows[max(retained_window_ids) - 1][3].tz_localize("America/New_York")
+    producer_data = pd.DataFrame({"timestamp": [origin_timestamp, actual_last_timestamp]})
+    producer_windows = list(wfa_module.create_windows(producer_data, 1, 1, 1, mode=mode))
+    assert len(producer_windows) == max(retained_window_ids)
     window_specs = [
         (
             window_id,
             *(value.date().isoformat() for value in producer_windows[window_id - 1]),
             10 if position % 2 == 0 else 20,
         )
-        for position, window_id in enumerate(window_ids)
+        for position, window_id in enumerate(retained_window_ids)
     ]
     if not optimized:
         window_specs = [window_specs[0][:-1] + (None,)]
@@ -1306,9 +1311,7 @@ def _write_wfa_contract(
         "early_exit": False,
         "actual_data_period": {
             "first_timestamp": (origin_timestamp + pd.DateOffset(hours=9, minutes=30)).isoformat(),
-            "last_timestamp": (
-                pd.Timestamp(intervals[-1]["test_end"]).tz_localize("America/New_York") + pd.DateOffset(days=1)
-            ).isoformat(),
+            "last_timestamp": actual_last_timestamp.isoformat(),
         },
         "train_grid_reports_retained": True,
         "train_grid_report_files": [str(path) for path in grid_paths],
@@ -1368,11 +1371,84 @@ def test_accepts_iterative_month_end_windows_with_skipped_ids(tmp_path: Path, mo
     validated = _validate_wfa_contract(contract)
 
     assert [item["window_id"] for item in validated["window_selections"]] == ["1", "3"]
+    assert validated["runtime_wfa"]["producer_window_count"] == 3
     results = pd.read_csv(contract["results"])
     if mode == "unanchored":
         assert results.loc[1, "train_start"] == "2023-03-28"
     else:
         assert results.loc[1, "test_start"] == "2023-04-28"
+
+
+def test_accepts_actual_data_end_exactly_on_final_test_boundary(tmp_path: Path) -> None:
+    contract = _write_wfa_contract(tmp_path, origin="2023-01-31")
+    results = pd.read_csv(contract["results"])
+
+    validated = _validate_wfa_contract(contract)
+
+    assert contract["canonical"]["actual_data_period"]["last_timestamp"].startswith(results.iloc[-1]["test_end"])
+    assert validated["runtime_wfa"]["producer_window_count"] == 2
+
+
+@pytest.mark.parametrize("empty_results", [False, True])
+def test_rejects_inflated_planned_count_beyond_actual_data_end(
+    tmp_path: Path,
+    empty_results: bool,
+) -> None:
+    contract = _write_wfa_contract(
+        tmp_path,
+        window_ids=(3,),
+        origin="2023-01-31",
+    )
+    results = pd.read_csv(contract["results"])
+    shortened_end = pd.Timestamp(results.loc[0, "train_end"]).tz_localize("America/New_York").isoformat()
+    contract["canonical"]["actual_data_period"]["last_timestamp"] = shortened_end
+    if empty_results:
+        contract["results"].write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="planned producer window count"):
+        _validate_wfa_contract(contract)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("first_timestamp", None, "first_timestamp must be a valid timestamp"),
+        ("last_timestamp", None, "last_timestamp must be a valid timestamp"),
+        ("first_timestamp", "not-a-timestamp", "first_timestamp must be a valid timestamp"),
+        ("last_timestamp", "not-a-timestamp", "last_timestamp must be a valid timestamp"),
+        ("first_timestamp", "2023-12-01T09:30:00", "first_timestamp must include the producer market offset"),
+        ("last_timestamp", "2024-02-01T00:00:00", "last_timestamp must include the producer market offset"),
+        (
+            "first_timestamp",
+            "2023-12-01T14:30:00+00:00",
+            "first_timestamp is not serialized in configured exchange timezone",
+        ),
+        (
+            "last_timestamp",
+            "2024-02-01T05:00:00+00:00",
+            "last_timestamp is not serialized in configured exchange timezone",
+        ),
+    ],
+)
+def test_rejects_invalid_actual_data_endpoint(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    contract = _write_wfa_contract(tmp_path, optimized=False)
+    contract["canonical"]["actual_data_period"][field] = value
+
+    with pytest.raises(ValueError, match=message):
+        _validate_wfa_contract(contract)
+
+
+def test_rejects_reversed_actual_data_endpoints(tmp_path: Path) -> None:
+    contract = _write_wfa_contract(tmp_path, optimized=False)
+    contract["canonical"]["actual_data_period"]["last_timestamp"] = "2023-11-30T09:30:00-05:00"
+
+    with pytest.raises(ValueError, match="actual data timestamps are reversed"):
+        _validate_wfa_contract(contract)
 
 
 @pytest.mark.parametrize(
@@ -1558,7 +1634,7 @@ def _write_early_exit_wfa_contract(
         "early_exit": True,
         "actual_data_period": {
             "first_timestamp": "2023-12-01T09:30:00-05:00",
-            "last_timestamp": "2024-03-01T09:30:00-05:00",
+            "last_timestamp": "2024-02-01T00:00:00-05:00",
         },
         "train_grid_reports_retained": True,
         "train_grid_report_files": [],
