@@ -566,6 +566,18 @@ def _parser() -> argparse.ArgumentParser:
     factory_status.add_argument("--campaign-id")
     factory_status.add_argument("--json", action="store_true")
     factory_status.set_defaults(handler=_factory_status)
+    factory_development_status = factory_commands.add_parser(
+        "development-status",
+        help="Resolve the read-only development dependency roadmap.",
+    )
+    factory_development_status.add_argument("--project-root", default=".")
+    factory_development_status.add_argument(
+        "--roadmap",
+        help="Roadmap JSON path; relative paths are resolved from the project root.",
+    )
+    factory_development_status.add_argument("--json", action="store_true")
+    factory_development_status.add_argument("--check-unit")
+    factory_development_status.set_defaults(handler=_factory_development_status)
     factory_tasks = factory_commands.add_parser("tasks", help="List durable Codex proposal tasks.")
     factory_tasks.add_argument("--project-root", default=".")
     factory_tasks.add_argument("--limit", type=int, default=100)
@@ -975,6 +987,68 @@ def _factory_status(args: argparse.Namespace) -> int:
     else:
         _print_mapping(payload)
     return 0
+
+
+def _factory_development_status(args: argparse.Namespace) -> int:
+    from alphaquest.research.development_status import load_development_status, select_development_unit
+
+    report = load_development_status(args.project_root, args.roadmap)
+    if args.check_unit is not None:
+        unit = select_development_unit(report, args.check_unit)
+        payload = {
+            "schema": report["schema"],
+            "scope_eligibility_only": True,
+            "readiness_or_approval_claimed": False,
+            "requested_unit_id": args.check_unit,
+            "unit": unit,
+            "scope_eligible": bool(unit and unit["scope_eligible"]),
+        }
+        exit_code = 0 if payload["scope_eligible"] else 1
+    else:
+        payload = report
+        exit_code = 0
+
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    elif args.check_unit is not None:
+        if payload["unit"] is None:
+            print(f"UNKNOWN {args.check_unit!r}: outside the declared development scope")
+        else:
+            selected = payload["unit"]
+            print(
+                f"{selected['id']}: declared={selected['declared_status']} "
+                f"effective={selected['effective_status']} scope_eligible={str(selected['scope_eligible']).lower()}"
+            )
+            print(f"  evidence: {json.dumps(selected['evidence'], sort_keys=True)}")
+            for root_id, trigger in selected["skip_root_triggers"].items():
+                print(
+                    f"  blocking-root evidence {root_id}: "
+                    f"{trigger['evidence_ref']} ({trigger['reason']})"
+                )
+            for chain in selected["skip_dependency_chains"]:
+                print(f"  skip-chain: {' -> '.join(chain)}")
+            for repercussion in selected["repercussions"]:
+                print(f"  repercussion: {repercussion}")
+    else:
+        print(f"Development scope: {json.dumps(report['scope'], sort_keys=True)}")
+        print("Scope eligibility only; this report makes no readiness or approval claim.")
+        for unit in report["units"]:
+            roots = ",".join(unit["skip_root_ids"]) or "-"
+            print(
+                f"{unit['id']}: declared={unit['declared_status']} "
+                f"effective={unit['effective_status']} skip_roots={roots}"
+            )
+            print(f"  evidence: {json.dumps(unit['evidence'], sort_keys=True)}")
+            for root_id, trigger in unit["skip_root_triggers"].items():
+                print(
+                    f"  blocking-root evidence {root_id}: "
+                    f"{trigger['evidence_ref']} ({trigger['reason']})"
+                )
+            for chain in unit["skip_dependency_chains"]:
+                print(f"  skip-chain: {' -> '.join(chain)}")
+            for repercussion in unit["repercussions"]:
+                print(f"  repercussion: {repercussion}")
+    return exit_code
 
 
 def _factory_tasks(args: argparse.Namespace) -> int:

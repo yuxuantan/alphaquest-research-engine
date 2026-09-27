@@ -1,0 +1,245 @@
+# Codex research MVP and development skips
+
+The owner changed development scope on 2026-09-27: skip any development stopped
+by the platform vulnerability-research safeguard, skip its dependent developments,
+record the repercussions, and prioritize end-to-end research through Codex with
+minimal human input. This is a scope reduction, not an audit waiver.
+
+The machine-readable development record is
+[`config/development_roadmap.json`](../../config/development_roadmap.json).
+It is separate from scientific campaign results and `research_ledger.csv`.
+Historical P3–P17 phase records remain preserved. The new scope does not complete
+those phases or promote their qualification state.
+
+## What is skipped
+
+| Development | Why it is skipped | Repercussion |
+| --- | --- | --- |
+| Independent review of frozen recorder attempt004, including the static follow-up | Both review attempts terminated with the platform cybersecurity-risk flag and produced no final report | The recorder remains unaccepted; no conclusion about its correctness is established |
+| Root acceptance of that recorder | Requires the missing independent report | No accepted recorder source |
+| Executor release and actual bounded owner attempt through that recorder | Require accepted recorder source | No recorder-mediated owner execution or current-gate evidence |
+| Four final evidence reviews and their consolidation | Require actual execution evidence | No execution-evidence acceptance |
+| Recorder-mediated final package and P3 qualification | Require the preceding acceptance chain | Zero gate credit; no P3 completion claim |
+| Original P4–P15 and P17 qualification milestones that transitively require P3 completion | Their original sequencing requires that qualification | Full master-roadmap qualification is outside the current MVP completion claim |
+
+The JSON record lists each original downstream qualification milestone separately
+with its dependencies and repercussions. Existing product capabilities with no
+dependency on the recorder remain eligible for MVP development. The previously
+accepted five corrections and completed PR10 equivalence qualification remain
+accepted within their original scope. PR10 is a pull request, not roadmap phase P10.
+
+P16 data governance is cross-cutting and has no recorder dependency; it remains
+eligible for development. Its original phase status is still `NOT_STARTED`.
+
+The original interruption, candidates, failed reviews, and prepared support request
+remain historical evidence. No support request is needed to continue independent
+MVP work. Do not retry the flagged work under a different name or approve it by
+omitting the blocked review.
+
+## Existing usable workflow
+
+The current product already provides a local Codex proposal worker, typed source
+and hypothesis reviews, Studio campaign authoring and publication, mechanics
+validation and approval, staged research runs, and finalized reports. See the
+[Studio guide](../getting-started/research-studio.md).
+
+The local Codex worker uses subscription authentication. The paid API provider is
+outside this work's authorization. Proposal output is `VALIDATED_NOT_APPLIED`;
+receiving a proposal does not publish a campaign or grant scientific approval.
+
+An independently verified source supplied through the existing human review path
+can support real research under that path's own rules. It is not a recorder-qualified
+P3 dossier. Synthetic fixtures may demonstrate engineering behavior but cannot
+establish a real scientific result or qualify an upstream source.
+
+## Twelve-hour delivery contract
+
+The owner's subsequent deadline is 2026-09-27 19:04 UTC / 2026-09-28 03:04
+Singapore. The target is one supervised end-to-end research workflow operated by
+Codex, ending in a **diagnostic pre-acceptance** research report. It is not a fully
+autonomous factory or a qualified trading candidate.
+
+Include exactly one instrument, one compatible existing local dataset, one suitable
+existing certified strategy lane, and one predeclared variant. Prefer ES if the
+approved hypothesis, available data and certified implementation fit it; do not
+change the economic hypothesis merely to fit a convenient package. Fixed default
+parameters are valid when declared before testing. Never choose the case from PnL.
+
+Codex prepares the research and authoring inputs, presents compact owner review
+packs, calls existing services after actual authorization, runs the approved stages,
+and explains the diagnostic report. Source verification, implementation admission,
+mechanics scope and sampled mechanics approval remain explicit decisions. Group
+related questions into a review pack without merging their distinct approvals.
+
+Use the existing campaign CLI's `--no-acceptance` route. Do not use a worker route
+that unconditionally schedules acceptance. Locked acceptance data, its missing
+canonical authorization bridge, candidate promotion and trading readiness are
+outside this timebox. This no-acceptance route always has overall verdict
+`NEEDS MANUAL REVIEW`, including when a stage fails. Preserve those failed-stage
+outcomes without promoting them to a terminal scientific `FAIL` or `PASS`.
+A profitable strategy is not a condition for a successful workflow demonstration.
+
+The campaign CLI writes a stage summary and stage reports; it does not finalize a
+`ResultBundleV2`. Codex will produce a separate diagnostic report/index referencing
+those exact outputs and their input identities. This report is the MVP deliverable,
+not a canonical finalized bundle. Canonical finalization is deferred.
+
+| Elapsed time | Deliverable |
+| --- | --- |
+| 0–1 hour | Resolve the authoritative integration base; confirm certified lane, local data and owner review path; freeze the exact slice |
+| 1–4 hours | Codex-operated runbook and review packs using existing CLI/API/Studio services; only fixes essential to this slice |
+| 4–7 hours | Isolated end-to-end fixture demonstration, including approval stops, stale-input rejection and the diagnostic report/index |
+| 7–10 hours | Demonstrate the real case if the sources, data and actual owner approvals are available; otherwise disclose the unmet prerequisite and retain the synthetic engineering demonstration |
+| 10–12 hours | Fresh independent review, essential fixes, final rerun and concise handoff |
+
+Definition of done: the chosen input reaches an evidence-bound report through
+existing governed stages; Codex can explain every step and stop at each human gate;
+failures and skips remain visible; rerunning cannot silently overwrite the prior
+attempt. Synthetic results are always labelled synthetic and confer no scientific
+approval. A real-data demonstration is conditional on actual source/data readiness
+and owner decisions, not the clock.
+
+Deferred by the timebox, **not** by a safeguard:
+
+- Automatic reviewed-research-to-draft/admission and certified-mechanics compilers.
+- General frequency/data routing, downloading new data, and paid integrations.
+- A persistent automatic transition driver or new UI/dashboard.
+- Canonical locked-holdout authorization, acceptance continuation and ResultBundleV2 finalization.
+- New custom strategy packages, more variants, and wider instrument coverage.
+
+These cuts reuse the already implemented supervised path. They do not waive any
+scientific gate or grant an old proposal the status of an implementation admission.
+If an essential development actually triggers the platform safeguard, apply the
+skip policy and stop that dependent route; do not rename it into the MVP.
+
+## Human decisions
+
+Codex can prepare compact review packs and execute already authorized mechanical
+steps. The owner still supplies or confirms the objective, verifies source content
+and claims, admits the hypothesis, resolves substantive duplicate ambiguity,
+confirms the mechanics scope, reviews the deterministic mechanics sample, and
+authorizes use of locked acceptance data. Missing data and unsupported mechanics
+can introduce additional decisions. Never combine these decisions into an implied
+blanket approval.
+
+## Recording another safeguard skip
+
+Add or update the exact development unit with its actual trigger and evidence
+reference. Include all real dependency edges and explain the effect of losing that
+unit. The report must propagate the skip through every descendant, including a
+previously implemented descendant whose new qualification needs the skipped work.
+Preserve its historical implementation status separately.
+
+Inspect the resolved development graph before choosing the next unit:
+
+```bash
+alphaquest factory development-status --project-root . --json
+alphaquest factory development-status --project-root . --check-unit mvp_research_admission_bridge
+```
+
+The second command checks whether a unit is in scope. It does not certify that its
+prerequisites are complete or authorize research execution. Skipped, deferred,
+unknown, or invalid units produce a nonzero exit status. The command reads only the
+roadmap; it does not open its evidence references or start a worker.
+The v1 roadmap supports up to 256 units, dependency chains of up to 64 units, and
+4096 resolved skip chains per unit. Larger inputs fail explicitly.
+
+Work that is merely incomplete stays planned; deliberately postponed scope stays
+deferred. Neither is a platform safeguard event. A newly proposed alternative is
+eligible only if it is actually independent and does not reuse the unaccepted
+artifact or claim its missing assurances.
+
+MVP readiness remains **NEEDS MANUAL REVIEW** until the complete path and its
+required evidence are demonstrated. Engineering checks are not trading readiness.
+
+## Supervised diagnostic runbook
+
+Use this sequence for one already admitted, published campaign. The commands do
+not replace source verification, typed hypothesis review, duplicate review, or
+implementation admission. Those decisions must already have been made through
+the governed human workflow and remain separately reviewable.
+
+1. Freeze the exact campaign, variant, dataset manifest, source config, and
+   attempt identity. Work from the selected project's root directory. Published
+   `raw_csv`, `raw_parquet`, output, and evidence paths may be relative to that
+   root, so launching the runner from the code checkout can point at the wrong
+   data even when preflight passed for the project.
+2. Run the separate campaign preflight and require a real `PASS`. Do not use
+   `--skip-tests` for this delivery gate:
+
+   ```bash
+   alphaquest campaign validate CAMPAIGN_ID \
+     --campaign-root research/campaigns/active --json
+   ```
+
+3. Generate the deterministic mechanics evidence for the frozen variant:
+
+   ```bash
+   alphaquest campaign validate-mechanics CAMPAIGN_ID --variant VARIANT_ID \
+     --campaign-root research/campaigns/active
+   ```
+
+   A human reviewer must inspect the five deterministic chart samples and all
+   required risk cases, record the review annotations, and use the existing
+   `MechanicsApprovalService` workflow in Studio. Before any PnL-bearing stage,
+   its inspection must report exactly `APPROVED_FOR_TESTING`, with hashes matching
+   the frozen source config and input data. Codex may prepare the review pack; it
+   cannot make or simulate this decision on a real run.
+4. From that same project root, run the existing stage module with acceptance
+   omitted. Use an absent result-copy path for this attempt:
+
+   ```bash
+   PYTHONPATH=/ABSOLUTE/PATH/TO/ALPHAQUEST/src \
+   python -m alphaquest.run_campaign_stages \
+     --config research/campaigns/active/CAMPAIGN_ID/variants/VARIANT_ID/config.yaml \
+     --no-acceptance \
+     --result-json research_artifacts/mvp_diagnostics/ATTEMPT-stage-summary.json
+   ```
+
+   Do not pass `--skip-validation` or `--fast-runtime-defaults`. The diagnostic
+   reason intentionally lets later pre-acceptance stages run after an earlier
+   failure when their own dependencies permit it. Preserve every actual `passed`,
+   `failed`, `error`, and `skipped` outcome. The module returns process status 0
+   after writing a valid diagnostic summary whose research verdict is
+   `NEEDS MANUAL REVIEW`; the `alphaquest campaign run --no-acceptance` wrapper
+   instead returns status 1 because its summary's `passed` field is necessarily
+   false. Neither status is a scientific verdict.
+5. Build the separate, immutable diagnostic index after the run completes:
+
+   ```bash
+   PYTHONPATH=/ABSOLUTE/PATH/TO/ALPHAQUEST/src \
+   python -m alphaquest.run_mvp_diagnostic \
+     --project-root /ABSOLUTE/PATH/TO/PROJECT \
+     --run-dir research/evidence/runs/CAMPAIGN_ID/VARIANT_ID/SYMBOL/RUN_ID \
+     --output research_artifacts/mvp_diagnostics/ATTEMPT-index.json \
+     --mode real
+   ```
+
+   The generator only reads completed evidence and creates the one standalone
+   index with exclusive-create semantics. It refuses an output inside the run
+   directory. It requires the full pre-acceptance stage order, successful
+   submission preflight, the recorded approved mechanics gate and its current
+   approval/config/data hash bindings, one local CSV or Parquet bar dataset, and
+   the sole diagnostic reason that acceptance was omitted. This first version
+   inventories mechanics evidence but does not independently rerun the complete
+   mechanics-gate inspector; that remains an explicit limitation in the index.
+   Event and multifile sources require a separate binding design and fail closed.
+   The index retains raw
+   stage failures and always reports `NEEDS MANUAL REVIEW`. It does not run stages,
+   grant admission or approval, write a `ResultBundleV2`, promote a candidate, or
+   establish source-review assurance.
+
+If a run reserves its attempt or writes partial/failure evidence, keep it. Do not
+delete, repair, or silently replay the same attempt. Create a fresh governed
+follow-up attempt with a new identity after resolving the cause. The report index
+also refuses to overwrite a previous index.
+
+For an isolated synthetic demonstration, use `--mode synthetic` and retain the
+explicit fixture labels: the source is unverified, duplicate and admission
+decisions are scripted, and mechanics approval is simulated without owner
+authority. Synthetic evidence can demonstrate stops, stale-input rejection,
+attempt immutability, stage rejection, and report binding. It cannot substitute
+for the real human decisions or support a scientific, trading-readiness, P3, or
+promotion claim. `--mode real` rejects evident tutorial, fixture, synthetic, and
+simulated identifiers, but still records source-review and implementation-admission
+verification as false because this bounded report does not audit those chains.

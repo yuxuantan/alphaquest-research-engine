@@ -14,6 +14,15 @@ For repository cleanup, documentation, navigation, tooling, provenance audits, a
 
 Core principles:
 
+Development scope (owner instruction, 2026-09-27):
+- Prioritize a Codex-driven end-to-end research MVP with minimal human input.
+- The owner subsequently set a 12-hour MVP timebox, ending 2026-09-27 19:04 UTC (2026-09-28 03:04 Singapore). Deliver one supervised instrument/dataset/certified-lane/variant workflow through a pre-acceptance report. Reuse existing services; defer automatic bridges, custom strategies, broader coverage and locked acceptance. This no-acceptance route is diagnostic-only: overall NEEDS MANUAL REVIEW, with any failed-stage evidence retained.
+- If a development or its required review is stopped by the platform vulnerability-research safeguard, stop that development and skip every development that depends on it. Do not retry, rephrase, or remove the review to obtain acceptance.
+- Record the actual trigger, evidence reference, dependencies, skipped descendants, and repercussions in `config/development_roadmap.json`; explain the current scope in `docs/operations/codex-mvp.md`. Do not label ordinary missing data, unfinished work, or unsupported strategy logic as safeguard-triggered.
+- Before selecting development work, check this roadmap and its transitive dependencies. Skipped work is not completed, accepted, or qualified. Preserve previous failures and accepted work, including completed PR10 equivalence qualification.
+- Continue independent MVP work using existing governed services. A separate path must not consume unaccepted artifacts or claim the assurances of the skipped path.
+- Automate preparation and mechanical transitions; never fabricate source verification, hypothesis admission, mechanics approval, holdout authorization, or trading approval. Preserve owner holds, audit independence, and the no-paid-API restriction.
+
 1. Scientific integrity
 - Never overfit to pass criteria.
 - Never change strategy mechanics after seeing failed results unless the user explicitly allows one rescue attempt.
