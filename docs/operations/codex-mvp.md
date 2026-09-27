@@ -89,14 +89,14 @@ not a canonical finalized bundle. Canonical finalization is deferred.
 | 0–1 hour | Resolve the authoritative integration base; confirm certified lane, local data and owner review path; freeze the exact slice |
 | 1–4 hours | Codex-operated runbook and review packs using existing CLI/API/Studio services; only fixes essential to this slice |
 | 4–7 hours | Isolated end-to-end fixture demonstration, including approval stops, stale-input rejection and the diagnostic report/index |
-| 7–10 hours | Demonstrate the real case if the sources, data and actual owner approvals are available; otherwise disclose the unmet prerequisite and retain the synthetic engineering demonstration |
+| 7–10 hours | Demonstrate the unverified user-supplied case if the inputs and actual owner decisions are available; otherwise disclose the unmet prerequisite and retain the synthetic engineering demonstration |
 | 10–12 hours | Fresh independent review, essential fixes, final rerun and concise handoff |
 
 Definition of done: the chosen input reaches an evidence-bound report through
 existing governed stages; Codex can explain every step and stop at each human gate;
 failures and skips remain visible; rerunning cannot silently overwrite the prior
 attempt. Synthetic results are always labelled synthetic and confer no scientific
-approval. A real-data demonstration is conditional on actual source/data readiness
+approval. An unverified user-supplied demonstration is conditional on actual source/data readiness
 and owner decisions, not the clock.
 
 Deferred by the timebox, **not** by a safeguard:
@@ -164,13 +164,21 @@ the governed human workflow and remain separately reviewable.
    `raw_csv`, `raw_parquet`, output, and evidence paths may be relative to that
    root, so launching the runner from the code checkout can point at the wrong
    data even when preflight passed for the project.
-2. Run the separate campaign preflight and require a real `PASS`. Do not use
-   `--skip-tests` for this delivery gate:
+2. Run the separate configuration/data preflight and save its JSON receipt.
+   Require `passed: true`, no failures, and the exact frozen config path. The
+   `--skip-tests` flag is intentional: repository engineering tests are a
+   separate integration/CI gate and should not be recursively launched from
+   every disposable research project.
 
    ```bash
    alphaquest campaign validate CAMPAIGN_ID \
-     --campaign-root research/campaigns/active --json
+     --campaign-root research/campaigns/active --skip-tests --json \
+     > research_artifacts/mvp_diagnostics/ATTEMPT-preflight.json
    ```
+
+   The receipt must say `tests_ran: false`. Run and record the repository's
+   applicable engineering checks before integrating code changes; never rewrite
+   this receipt to imply those tests ran inside the project preflight.
 
 3. Generate the deterministic mechanics evidence for the frozen variant:
 
@@ -184,7 +192,7 @@ the governed human workflow and remain separately reviewable.
    `MechanicsApprovalService` workflow in Studio. Before any PnL-bearing stage,
    its inspection must report exactly `APPROVED_FOR_TESTING`, with hashes matching
    the frozen source config and input data. Codex may prepare the review pack; it
-   cannot make or simulate this decision on a real run.
+   cannot make or simulate this decision on an owner-authorized run.
 4. From that same project root, run the existing stage module with acceptance
    omitted. Use an absent result-copy path for this attempt:
 
@@ -211,16 +219,20 @@ the governed human workflow and remain separately reviewable.
    python -m alphaquest.run_mvp_diagnostic \
      --project-root /ABSOLUTE/PATH/TO/PROJECT \
      --run-dir research/evidence/runs/CAMPAIGN_ID/VARIANT_ID/SYMBOL/RUN_ID \
+     --preflight-receipt research_artifacts/mvp_diagnostics/ATTEMPT-preflight.json \
      --output research_artifacts/mvp_diagnostics/ATTEMPT-index.json \
-     --mode real
+     --mode unverified
    ```
 
    The generator only reads completed evidence and creates the one standalone
    index with exclusive-create semantics. It refuses an output inside the run
-   directory. It requires the full pre-acceptance stage order, successful
-   submission preflight, the recorded approved mechanics gate and its current
-   approval/config/data hash bindings, one local CSV or Parquet bar dataset, and
-   the sole diagnostic reason that acceptance was omitted. This first version
+   directory. It requires the full pre-acceptance stage order; the separate and
+   embedded successful configuration/data preflight receipts; the canonical
+   effective config derived from the exact published source; the certified-recipe
+   authoring hashes; the recorded approved mechanics gate and its current
+   approval/config/data identity; one local CSV or Parquet bar dataset with a
+   `PASS` quality manifest; and the sole diagnostic reason that acceptance was
+   omitted. It validates and hashes every stage-referenced artifact. This version
    inventories mechanics evidence but does not independently rerun the complete
    mechanics-gate inspector; that remains an explicit limitation in the index.
    Event and multifile sources require a separate binding design and fail closed.
@@ -240,6 +252,8 @@ decisions are scripted, and mechanics approval is simulated without owner
 authority. Synthetic evidence can demonstrate stops, stale-input rejection,
 attempt immutability, stage rejection, and report binding. It cannot substitute
 for the real human decisions or support a scientific, trading-readiness, P3, or
-promotion claim. `--mode real` rejects evident tutorial, fixture, synthetic, and
-simulated identifiers, but still records source-review and implementation-admission
-verification as false because this bounded report does not audit those chains.
+promotion claim. For any user-supplied case whose origin is not established by a
+separately audited provenance chain, use `--mode unverified`. That mode never calls
+the data real and records data-origin, source-review, implementation-admission,
+current mechanics-gate and human-authority verification as false. Positive
+real-origin classification is outside this bounded report.

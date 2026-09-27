@@ -9,17 +9,32 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from alphaquest.authoring.models import CERTIFIED_RECIPE_BINDINGS, DatasetManifestV1
 from alphaquest.research.campaign_stages import (
     ACCEPTANCE_STAGE,
     PRE_ACCEPTANCE_STAGE_ORDER,
+    apply_authoritative_parallel_defaults,
+    canonicalize_campaign_config,
 )
-from alphaquest.research.storage import load_storage_layout, resolve_recorded_path
+from alphaquest.research.preflight import run_preflight
+from alphaquest.research.schemas import (
+    validate_campaign_config_contract,
+    validate_run_summary_contract,
+    validate_stage_result_contract,
+)
+from alphaquest.research.storage import (
+    load_storage_layout,
+    resolve_campaign_context,
+    resolve_recorded_path,
+)
+from alphaquest.utils.config import strategy_mechanic, validate_campaign_run_root
 from alphaquest.utils.hashing import file_sha256
 
 
@@ -37,7 +52,7 @@ _IDENTITY_FIELDS = (
     "symbol",
     "dataset_id",
 )
-_SYNTHETIC_MARKERS = ("synthetic", "simulated", "fixture", "tutorial")
+_REQUIRED_IDENTITY_FIELDS = tuple(field for field in _IDENTITY_FIELDS if field != "parent_attempt_id")
 
 
 def _read_json(path: Path, label: str) -> dict[str, Any]:
@@ -79,6 +94,13 @@ def _require_equal(actual: Any, expected: Any, label: str) -> None:
         raise ValueError(f"{label} mismatch: expected {expected!r}, found {actual!r}")
 
 
+def _compiled_object_sha256(value: Any) -> str:
+    """Match CampaignCompiler's canonical object hash for published documents."""
+
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _resolve_reference(value: Any, project_root: Path, label: str) -> Path:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"missing required {label} path")
@@ -90,6 +112,177 @@ def _inventory_run(run_dir: Path, project_root: Path) -> list[dict[str, Any]]:
     if not files:
         raise ValueError(f"run directory contains no artifacts: {run_dir}")
     return [_artifact(path, project_root=project_root) for path in files]
+
+
+def _require_nonempty_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} must be a non-empty string")
+    return value
+
+
+def _require_run_location(
+    run_dir: Path,
+    *,
+    project_root: Path,
+    effective_config: dict[str, Any],
+    effective_path: Path,
+) -> None:
+    layout = load_storage_layout(project_root)
+    if not any(_is_relative_to(run_dir, evidence_root.resolve()) for evidence_root in layout.evidence_roots):
+        raise ValueError("run directory must be below a configured evidence root")
+    validate_campaign_run_root(run_dir, effective_config, config_path=effective_path)
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _config_identity(config: dict[str, Any]) -> dict[str, Any]:
+    data = config.get("data") if isinstance(config.get("data"), dict) else {}
+    return {
+        "campaign_id": config.get("campaign_id"),
+        "variant_id": config.get("variant_id"),
+        "test_run_id": config.get("test_run_id"),
+        "attempt_id": config.get("attempt_id"),
+        "attempt_kind": config.get("attempt_kind"),
+        "attempt_provenance": config.get("attempt_provenance"),
+        "parent_attempt_id": config.get("parent_attempt_id"),
+        "symbol": config.get("symbol") or data.get("symbol"),
+        "dataset_id": config.get("dataset_id") or data.get("dataset_id"),
+        "timeframe": config.get("timeframe") or data.get("timeframe") or data.get("source_timeframe"),
+    }
+
+
+def _bind_identities(
+    source_config: dict[str, Any],
+    effective_config: dict[str, Any],
+    summary: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
+    source_identity = _config_identity(source_config)
+    effective_identity = _config_identity(effective_config)
+    for field in _REQUIRED_IDENTITY_FIELDS:
+        _require_nonempty_string(summary.get(field), f"summary.{field}")
+        _require_equal(manifest.get(field), summary.get(field), f"manifest {field}")
+    _require_nonempty_string(summary.get("timeframe"), "summary.timeframe")
+    _require_equal(manifest.get("timeframe"), summary.get("timeframe"), "manifest timeframe")
+    for field in (*_REQUIRED_IDENTITY_FIELDS[1:], "parent_attempt_id", "timeframe"):
+        _require_equal(source_identity.get(field), summary.get(field), f"source config {field}")
+        _require_equal(effective_identity.get(field), summary.get(field), f"effective config {field}")
+    _require_equal(manifest.get("parent_attempt_id"), summary.get("parent_attempt_id"), "manifest parent_attempt_id")
+    _require_equal(summary.get("attempt_provenance"), "authored", "attempt provenance")
+    if summary.get("attempt_kind") == "original":
+        _require_equal(summary.get("parent_attempt_id"), None, "original attempt parent")
+    elif not isinstance(summary.get("parent_attempt_id"), str) or not summary["parent_attempt_id"].strip():
+        raise ValueError("non-original attempt requires a non-empty parent_attempt_id")
+
+
+def _expected_effective_config(
+    source_config: dict[str, Any], summary: dict[str, Any]
+) -> dict[str, Any]:
+    expected = canonicalize_campaign_config(source_config, include_acceptance=False)
+    workers = summary.get("authoritative_parallel_workers")
+    core_workers = summary.get("authoritative_core_grid_workers")
+    if workers is None and core_workers is not None:
+        raise ValueError("authoritative_core_grid_workers requires authoritative_parallel_workers")
+    if workers is not None:
+        if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
+            raise ValueError("authoritative_parallel_workers must be a positive integer or null")
+        if core_workers is not None and (
+            isinstance(core_workers, bool) or not isinstance(core_workers, int) or core_workers < 1
+        ):
+            raise ValueError("authoritative_core_grid_workers must be a positive integer or null")
+        expected = apply_authoritative_parallel_defaults(
+            expected,
+            workers=workers,
+            core_grid_workers=core_workers,
+        )
+    return expected
+
+
+def _authoring_binding(
+    source_path: Path,
+    source_config: dict[str, Any],
+    project_root: Path,
+) -> dict[str, Any]:
+    context = resolve_campaign_context(source_path, project_root=project_root)
+    if context is None or context.lifecycle != "active":
+        raise ValueError("source config must belong to a published active campaign")
+    manifest_path = context.campaign_root / "authoring_manifest.json"
+    authoring = _read_json(manifest_path, "authoring manifest")
+    _require_equal(authoring.get("schema"), "alphaquest.authoring-manifest/v1", "authoring manifest schema")
+    _require_equal(authoring.get("campaign_id"), source_config.get("campaign_id"), "authoring campaign")
+    _require_equal(authoring.get("authoring_lane"), "certified_recipe", "authoring lane")
+    recipe = _require_nonempty_string(authoring.get("certified_recipe"), "authoring certified_recipe")
+    if recipe not in CERTIFIED_RECIPE_BINDINGS:
+        raise ValueError(f"unsupported certified recipe: {recipe}")
+    expected_entry, expected_setup = CERTIFIED_RECIPE_BINDINGS[recipe]
+    entry = ((source_config.get("strategy") or {}).get("entry") or {})
+    _require_equal(entry.get("module"), expected_entry, "certified recipe entry module")
+    if expected_setup is not None:
+        _require_equal((entry.get("params") or {}).get("setup_mode"), expected_setup, "certified recipe setup mode")
+    _require_equal(authoring.get("dataset_id"), _config_identity(source_config)["dataset_id"], "authoring dataset")
+    compiled = authoring.get("compiled_document_sha256")
+    if not isinstance(compiled, dict):
+        raise ValueError("authoring manifest lacks compiled document hashes")
+    config_relative = source_path.relative_to(context.campaign_root).as_posix()
+    _require_equal(
+        compiled.get(config_relative),
+        _compiled_object_sha256(source_config),
+        "published source config hash",
+    )
+    documents: list[dict[str, Any]] = []
+    for relative, expected_hash in sorted(compiled.items()):
+        document_path = context.campaign_root / str(relative)
+        artifact = _artifact(document_path, project_root=project_root)
+        document = _read_yaml(document_path, f"published document {relative}")
+        compiled_object_sha256 = _compiled_object_sha256(document)
+        _require_equal(
+            compiled_object_sha256,
+            expected_hash,
+            f"published document {relative} hash",
+        )
+        documents.append(
+            {
+                "path": artifact["path"],
+                "file_sha256": artifact["sha256"],
+                "bytes": artifact["bytes"],
+                "compiled_object_sha256": compiled_object_sha256,
+            }
+        )
+    return {
+        "manifest": _artifact(manifest_path, project_root=project_root),
+        "authoring_lane": "certified_recipe",
+        "certified_recipe": recipe,
+        "documents": documents,
+    }
+
+
+def _preflight_binding(
+    receipt_path: Path,
+    source_path: Path,
+    embedded: dict[str, Any],
+    project_root: Path,
+) -> dict[str, Any]:
+    receipt = _read_json(receipt_path, "pre-run preflight receipt")
+    _require_equal(receipt, embedded, "separate pre-run preflight receipt")
+    if receipt.get("passed") is not True or receipt.get("failures"):
+        raise ValueError("pre-run configuration/data preflight must pass without failures")
+    _require_equal(receipt.get("tests_ran"), False, "pre-run preflight tests_ran")
+    current = run_preflight(config_paths=[source_path], run_tests=False, project_root=project_root)
+    if current.get("passed") is not True or current.get("failures"):
+        raise ValueError("current authored config/data preflight failed")
+    _require_equal(current.get("tests_ran"), False, "current config validation tests_ran")
+    return {
+        "recorded_receipt": _artifact(receipt_path, project_root=project_root),
+        "recorded": receipt,
+        "current_config_validation": current,
+        "repository_engineering_tests_verified": False,
+    }
 
 
 def _mechanics_bindings(
@@ -133,10 +326,55 @@ def _mechanics_bindings(
     _require_equal(approval.get("status"), "approved_for_testing", "mechanics approval document status")
     _require_equal(approval.get("config_hash"), summary.get("source_config_hash"), "mechanics approval config hash")
     _require_equal(approval.get("input_data_hash"), summary_gate.get("input_data_hash"), "mechanics approval input hash")
+    for approval_field, gate_field in (
+        ("status", "approval_status"),
+        ("reviewer", "reviewer"),
+        ("reviewed_at", "reviewed_at"),
+        ("lane", "lane"),
+        ("validation_schema_version", "validation_schema_version"),
+        ("strategy_implementation_version", "strategy_implementation_version"),
+        ("strategy_implementation_sha256", "strategy_implementation_sha256"),
+        ("strategy_certification_manifest_sha256", "strategy_certification_manifest_sha256"),
+    ):
+        if approval_field in approval or summary_gate.get(gate_field) is not None:
+            _require_equal(
+                approval.get(approval_field),
+                summary_gate.get(gate_field),
+                f"mechanics approval {approval_field}",
+            )
+    _require_nonempty_string(approval.get("reviewer"), "mechanics approval reviewer")
+    _require_nonempty_string(approval.get("reviewed_at"), "mechanics approval reviewed_at")
+    for approval_field, gate_field in (
+        ("fixed_random_sample_size", "manual_review_random_sample_size"),
+        ("fixed_random_seed", "manual_review_seed"),
+        ("parameter_mode", "parameter_mode"),
+    ):
+        if gate.get(gate_field) is not None:
+            _require_equal(
+                approval.get(approval_field), gate.get(gate_field), f"mechanics approval {approval_field}"
+            )
     return {
         "recorded_gate": deepcopy(summary_gate),
         "gate_currently_revalidated": False,
+        "human_authority_verified": False,
         "evidence_inventory_only": True,
+        "approval_record": {
+            key: approval.get(key)
+            for key in (
+                "schema",
+                "status",
+                "reviewer",
+                "reviewed_at",
+                "notes",
+                "config_hash",
+                "input_data_hash",
+                "lane",
+                "validation_schema_version",
+                "fixed_random_sample_size",
+                "fixed_random_seed",
+                "parameter_mode",
+            )
+        },
         "approval": _artifact(approval_path, project_root=project_root),
         "evidence": [_artifact(path, project_root=project_root) for path in evidence_files],
     }
@@ -153,7 +391,12 @@ def _dataset_binding(
     layout = load_storage_layout(project_root)
     manifest_path = layout.dataset_root / dataset_id / "dataset_manifest.json"
     dataset_manifest = _read_json(manifest_path, "dataset manifest")
+    try:
+        DatasetManifestV1.model_validate(dataset_manifest)
+    except ValueError as exc:
+        raise ValueError(f"dataset manifest contract failed: {exc}") from exc
     _require_equal(dataset_manifest.get("dataset_id"), dataset_id, "dataset manifest identity")
+    _require_equal(dataset_manifest.get("quality_verdict"), "PASS", "dataset quality verdict")
     source = str(data.get("source") or "").strip().lower()
     if source not in {"csv", "parquet"}:
         raise ValueError(
@@ -193,15 +436,49 @@ def _stage_bindings(
     bindings: list[dict[str, Any]] = []
     for item in stages:
         stage = str(item["stage"])
+        validate_stage_result_contract(item, context=f"campaign summary stage {stage}")
+        status = str(item.get("status"))
+        if (status == "passed") != (item.get("passed") is True):
+            raise ValueError(f"{stage} status and passed flag are inconsistent")
+        if status == "error" and not str(item.get("error") or "").strip():
+            raise ValueError(f"{stage} error status requires a non-empty error")
+        if status == "skipped" and not str(item.get("skip_reason") or "").strip():
+            raise ValueError(f"{stage} skipped status requires a non-empty skip_reason")
         result_path = run_dir / stage / "stage_result.json"
         if result_path.is_file():
             result = _read_json(result_path, f"{stage} stage result")
+            validate_stage_result_contract(result, context=f"{stage}/stage_result.json")
             _require_equal(result, item, f"{stage} stage result")
+            artifacts_value = result.get("artifacts")
+            if status in {"passed", "failed"} and (
+                not isinstance(artifacts_value, list) or not artifacts_value
+            ):
+                raise ValueError(f"{stage} completed result requires a non-empty artifacts list")
+            artifact_bindings: list[dict[str, Any]] = []
+            if artifacts_value is not None:
+                if not isinstance(artifacts_value, list):
+                    raise ValueError(f"{stage}.artifacts must be a list when present")
+                for index, value in enumerate(artifacts_value):
+                    artifact_path = _resolve_reference(
+                        value, project_root, f"{stage}.artifacts[{index}]"
+                    )
+                    if not _is_relative_to(artifact_path, (run_dir / stage).resolve()):
+                        raise ValueError(f"{stage} artifact is outside its stage directory: {value}")
+                    artifact_bindings.append(_artifact(artifact_path, project_root=project_root))
+            if status in {"passed", "failed"}:
+                recorded = {item["path"] for item in artifact_bindings}
+                actual = {
+                    _artifact(path, project_root=project_root)["path"]
+                    for path in (run_dir / stage).rglob("*")
+                    if path.is_file() and path.name != "stage_result.json"
+                }
+                _require_equal(recorded, actual, f"{stage} referenced artifact inventory")
             bindings.append(
                 {
                     "summary": deepcopy(item),
                     "stage_result": deepcopy(result),
                     "artifact": _artifact(result_path, project_root=project_root),
+                    "referenced_artifacts": artifact_bindings,
                     "missing_stage_result_reason": None,
                 }
             )
@@ -213,6 +490,7 @@ def _stage_bindings(
                 "summary": deepcopy(item),
                 "stage_result": None,
                 "artifact": None,
+                "referenced_artifacts": [],
                 "missing_stage_result_reason": str(item["skip_reason"]),
             }
         )
@@ -220,13 +498,17 @@ def _stage_bindings(
 
 
 def build_diagnostic_index(
-    *, project_root: str | Path, run_dir: str | Path, mode: str
+    *,
+    project_root: str | Path,
+    run_dir: str | Path,
+    preflight_receipt: str | Path,
+    mode: str,
 ) -> dict[str, Any]:
     root = Path(project_root).resolve()
     run = Path(run_dir)
     run = run.resolve() if run.is_absolute() else (root / run).resolve()
-    if mode not in {"synthetic", "real"}:
-        raise ValueError("mode must be 'synthetic' or 'real'")
+    if mode not in {"synthetic", "unverified"}:
+        raise ValueError("mode must be 'synthetic' or 'unverified'; positive real-origin classification is unsupported")
     if not run.is_dir():
         raise ValueError(f"run directory does not exist: {run}")
 
@@ -237,26 +519,42 @@ def build_diagnostic_index(
     variant_summary = _read_json(variant_summary_path, "variant summary")
     manifest = _read_json(manifest_path, "run manifest")
     _require_equal(variant_summary, summary, "variant summary")
-    for field in _IDENTITY_FIELDS:
-        _require_equal(manifest.get(field), summary.get(field), f"run identity {field}")
+    validate_run_summary_contract(summary, context="campaign_test_summary.json")
 
+    for key in ("diagnostic_only", "skip_validation", "fast_runtime_defaults", "passed", "halted"):
+        if not isinstance(summary.get(key), bool):
+            raise ValueError(f"summary.{key} must be boolean")
     _require_equal(summary.get("diagnostic_only"), True, "diagnostic_only")
     _require_equal(summary.get("skip_validation"), False, "skip_validation")
     _require_equal(summary.get("fast_runtime_defaults"), False, "fast_runtime_defaults")
     _require_equal(summary.get("diagnostic_reasons"), [DIAGNOSTIC_REASON], "diagnostic reasons")
     _require_equal(summary.get("research_verdict"), "NEEDS MANUAL REVIEW", "research verdict")
+    _require_equal(summary.get("generic_objective_verdict"), "NEEDS MANUAL REVIEW", "generic objective verdict")
+    _require_equal(summary.get("scientific_validity_verdict"), "NEEDS MANUAL REVIEW", "scientific validity verdict")
     _require_equal(summary.get("passed"), False, "run passed flag")
     preflight = summary.get("submission_preflight")
     if not isinstance(preflight, dict) or preflight.get("passed") is not True or preflight.get("failures"):
         raise ValueError("submission preflight must be successful and record no failures")
     _require_equal(manifest.get("submission_preflight"), preflight, "manifest submission preflight")
-    for key in ("diagnostic_only", "diagnostic_reasons", "research_verdict"):
+    for key in (
+        "diagnostic_only",
+        "diagnostic_reasons",
+        "research_verdict",
+        "generic_objective_verdict",
+        "scientific_validity_verdict",
+        "authoritative_parallel_workers",
+        "authoritative_core_grid_workers",
+    ):
         _require_equal(manifest.get(key), summary.get(key), f"manifest {key}")
+    if not isinstance(manifest.get("diagnostic_only"), bool):
+        raise ValueError("manifest.diagnostic_only must be boolean")
 
     effective_path = run / "effective_config.yaml"
     snapshot_path = run / "source_config.yaml"
     effective_config = _read_yaml(effective_path, "effective config")
     source_config = _read_yaml(snapshot_path, "source config snapshot")
+    validate_campaign_config_contract(source_config, context="source_config.yaml")
+    validate_campaign_config_contract(effective_config, context="effective_config.yaml")
     _require_equal(file_sha256(effective_path), summary.get("config_hash"), "effective config hash")
     _require_equal(file_sha256(snapshot_path), summary.get("source_config_hash"), "source config snapshot hash")
     for key, expected in (
@@ -284,28 +582,31 @@ def build_diagnostic_index(
         source_path,
         "manifest source config path",
     )
-    for field, source in (
-        ("campaign_id", source_config.get("campaign_id")),
-        ("variant_id", source_config.get("variant_id")),
-        ("symbol", source_config.get("symbol") or (source_config.get("data") or {}).get("symbol")),
-    ):
-        _require_equal(source, summary.get(field), f"source config {field}")
+    _bind_identities(source_config, effective_config, summary, manifest)
+    _require_equal(
+        effective_config,
+        _expected_effective_config(source_config, summary),
+        "effective config canonicalization",
+    )
+    _require_run_location(
+        run,
+        project_root=root,
+        effective_config=effective_config,
+        effective_path=effective_path,
+    )
+    _require_equal(_resolve_reference(summary.get("output_dir"), root, "summary output_dir"), run, "summary output_dir")
+    run_uid_path = run / "run_uid.txt"
+    _artifact(run_uid_path, project_root=root)
+    run_uid = _require_nonempty_string(run_uid_path.read_text(encoding="utf-8").strip(), "run_uid.txt")
+    _require_equal(run_uid, summary.get("run_uid"), "run UID marker")
 
+    authoring = _authoring_binding(source_path, source_config, root)
     mechanics = _mechanics_bindings(source_config, summary, manifest, root)
     dataset = _dataset_binding(source_config, summary, root)
     stages = _stage_bindings(run, summary, manifest, root)
-
-    marker_values = {
-        "campaign_id": summary.get("campaign_id"),
-        "dataset_id": summary.get("dataset_id"),
-        "mechanics_reviewer": mechanics["recorded_gate"].get("reviewer"),
-        "dataset_source": dataset["manifest_document"].get("source"),
-    }
-    detected_markers = sorted(
-        {marker for value in marker_values.values() for marker in _SYNTHETIC_MARKERS if marker in str(value).lower()}
-    )
-    if mode == "real" and detected_markers:
-        raise ValueError(f"real mode rejects evident synthetic fixture markers: {', '.join(detected_markers)}")
+    receipt = Path(preflight_receipt)
+    receipt = receipt.resolve() if receipt.is_absolute() else (root / receipt).resolve()
+    preflight_binding = _preflight_binding(receipt, source_path, preflight, root)
 
     labels = (
         [
@@ -316,7 +617,8 @@ def build_diagnostic_index(
         ]
         if mode == "synthetic"
         else [
-            "Real-data diagnostic evidence; source review and implementation admission are not verified by this index.",
+            "User-supplied diagnostic evidence of unverified data origin.",
+            "No real-data provenance classification is made by this index.",
             "Recorded mechanics approval is reported, not independently re-audited by this index.",
         ]
     )
@@ -330,6 +632,10 @@ def build_diagnostic_index(
         "assurance": {
             "source_review_verified": False,
             "implementation_admission_verified": False,
+            "data_origin_verified": False,
+            "mechanics_gate_currently_revalidated": False,
+            "human_mechanics_authority_verified": False,
+            "repository_engineering_tests_verified": False,
             "canonical_result_bundle_finalized": False,
             "scientific_pass_or_fail_claimed": False,
             "candidate_promoted": False,
@@ -344,11 +650,19 @@ def build_diagnostic_index(
             "fast_runtime_defaults": False,
             "submission_preflight": deepcopy(preflight),
         },
+        "preflight": preflight_binding,
         "source_config": {
             "authored": _artifact(source_path, project_root=root),
             "snapshot": _artifact(snapshot_path, project_root=root),
             "effective": _artifact(effective_path, project_root=root),
         },
+        "execution_contract": {
+            "mechanic": strategy_mechanic(effective_config),
+            "strategy": deepcopy(effective_config["strategy"]),
+            "core_grid_parameters": deepcopy((effective_config.get("core_grid") or {}).get("parameters") or {}),
+            "wfa_parameters": deepcopy((effective_config.get("wfa") or {}).get("parameters") or {}),
+        },
+        "authoring": authoring,
         "dataset": dataset,
         "mechanics": mechanics,
         "stages": stages,
@@ -364,8 +678,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--run-dir", required=True)
+    parser.add_argument("--preflight-receipt", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--mode", required=True, choices=("synthetic", "real"))
+    parser.add_argument("--mode", required=True, choices=("synthetic", "unverified"))
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
     run = Path(args.run_dir)
@@ -379,7 +694,12 @@ def main() -> None:
     else:
         raise ValueError("diagnostic index output must be outside the run directory")
     output.parent.mkdir(parents=True, exist_ok=True)
-    document = build_diagnostic_index(project_root=root, run_dir=run, mode=args.mode)
+    document = build_diagnostic_index(
+        project_root=root,
+        run_dir=run,
+        preflight_receipt=args.preflight_receipt,
+        mode=args.mode,
+    )
     with output.open("x", encoding="utf-8") as handle:
         json.dump(document, handle, indent=2, sort_keys=True)
         handle.write("\n")
