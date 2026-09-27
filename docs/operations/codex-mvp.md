@@ -227,14 +227,22 @@ the governed human workflow and remain separately reviewable.
    The generator only reads completed evidence and creates the one standalone
    index with exclusive-create semantics. It refuses an output inside the run
    directory. It requires the full pre-acceptance stage order; the separate and
-   embedded successful configuration/data preflight receipts; the canonical
-   effective config derived from the exact published source; the certified-recipe
-   authoring hashes; the recorded approved mechanics gate and its current
-   approval/config/data identity; one local CSV or Parquet bar dataset with a
-   `PASS` quality manifest; and the sole diagnostic reason that acceptance was
-   omitted. It validates and hashes every stage-referenced artifact. This version
-   inventories mechanics evidence but does not independently rerun the complete
-   mechanics-gate inspector; that remains an explicit limitation in the index.
+   embedded successful configuration/data preflight receipts for exactly that one
+   config and data source; the canonical effective config derived from the exact
+   published source; the complete one-variant certified-recipe publication and its
+   semantic identities; the producer's complete run/manifest fields and
+   criteria-derived stage decisions; the recorded approved mechanics gate and the
+   governed structure, scope, sampling policy, config, data, reviewer and timestamp
+   of its approval record; one local CSV or Parquet bar dataset with a `PASS`
+   quality manifest whose execution metadata matches the frozen config and strategy
+   specification; and the sole diagnostic reason that acceptance was omitted. It
+   validates and hashes every stage-referenced artifact. The staged run did not
+   record a historical dataset-manifest file hash, so the index says that explicitly:
+   it validates the current manifest against the frozen config and published
+   strategy-spec metadata without claiming those manifest bytes existed at run time.
+   This version inventories mechanics evidence and validates its recorded contract,
+   but does not independently rerun the complete mechanics-gate inspector; that
+   remains an explicit limitation in the index.
    Event and multifile sources require a separate binding design and fail closed.
    The index retains raw
    stage failures and always reports `NEEDS MANUAL REVIEW`. It does not run stages,
@@ -256,4 +264,7 @@ promotion claim. For any user-supplied case whose origin is not established by a
 separately audited provenance chain, use `--mode unverified`. That mode never calls
 the data real and records data-origin, source-review, implementation-admission,
 current mechanics-gate and human-authority verification as false. Positive
-real-origin classification is outside this bounded report.
+real-origin classification is outside this bounded report. A run carrying the exact
+simulated-fixture reviewer classification cannot be relabelled `unverified`; the
+index requires `synthetic` and retains all synthetic/simulated warnings. Conversely,
+`synthetic` is rejected when that explicit governed classification is absent.

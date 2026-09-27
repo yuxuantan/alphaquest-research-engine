@@ -16,10 +16,21 @@ from typing import Any
 
 import yaml
 
-from alphaquest.authoring.models import CERTIFIED_RECIPE_BINDINGS, DatasetManifestV1
+from alphaquest.authoring.models import (
+    CERTIFIED_RECIPE_BINDINGS,
+    DatasetManifestV1,
+    ModuleBindingV1,
+    _binding_structure,
+)
 from alphaquest.research.campaign_stages import (
     ACCEPTANCE_STAGE,
     PRE_ACCEPTANCE_STAGE_ORDER,
+    STAGE_LABELS,
+    _annotate_stage_decisions,
+    _criteria_for_stage,
+    _error_stage,
+    _research_verdict,
+    _scientific_validity_verdict,
     apply_authoritative_parallel_defaults,
     canonicalize_campaign_config,
 )
@@ -36,6 +47,11 @@ from alphaquest.research.storage import (
 )
 from alphaquest.utils.config import strategy_mechanic, validate_campaign_run_root
 from alphaquest.utils.hashing import file_sha256
+from alphaquest.validation.promotion_gate import (
+    APPROVAL_SCHEMA,
+    _validate_approval,
+)
+from alphaquest.version import ENGINE_CONTRACT_VERSION
 
 
 SCHEMA = "alphaquest.mvp-diagnostic-index/v1"
@@ -99,6 +115,12 @@ def _compiled_object_sha256(value: Any) -> str:
 
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _normalized_paths(values: Any, project_root: Path, label: str) -> list[Path]:
+    if not isinstance(values, list):
+        raise ValueError(f"{label} must be a list")
+    return [_resolve_reference(value, project_root, f"{label}[{index}]") for index, value in enumerate(values)]
 
 
 def _resolve_reference(value: Any, project_root: Path, label: str) -> Path:
@@ -207,6 +229,7 @@ def _expected_effective_config(
 def _authoring_binding(
     source_path: Path,
     source_config: dict[str, Any],
+    dataset_manifest: dict[str, Any],
     project_root: Path,
 ) -> dict[str, Any]:
     context = resolve_campaign_context(source_path, project_root=project_root)
@@ -215,6 +238,9 @@ def _authoring_binding(
     manifest_path = context.campaign_root / "authoring_manifest.json"
     authoring = _read_json(manifest_path, "authoring manifest")
     _require_equal(authoring.get("schema"), "alphaquest.authoring-manifest/v1", "authoring manifest schema")
+    _require_equal(authoring.get("compiler"), "alphaquest.authoring.CampaignCompiler/v1", "authoring compiler")
+    _require_equal(authoring.get("generated_python_stubs"), False, "authoring generated Python stubs")
+    _require_equal(authoring.get("draft_schema"), "alphaquest.campaign-draft/v1", "authoring draft schema")
     _require_equal(authoring.get("campaign_id"), source_config.get("campaign_id"), "authoring campaign")
     _require_equal(authoring.get("authoring_lane"), "certified_recipe", "authoring lane")
     recipe = _require_nonempty_string(authoring.get("certified_recipe"), "authoring certified_recipe")
@@ -226,9 +252,27 @@ def _authoring_binding(
     if expected_setup is not None:
         _require_equal((entry.get("params") or {}).get("setup_mode"), expected_setup, "certified recipe setup mode")
     _require_equal(authoring.get("dataset_id"), _config_identity(source_config)["dataset_id"], "authoring dataset")
+    _require_equal(
+        authoring.get("dataset_canonical_sha256"),
+        dataset_manifest.get("canonical_sha256"),
+        "authoring dataset canonical hash",
+    )
+    variant_id = _require_nonempty_string(source_config.get("variant_id"), "source config variant_id")
+    expected_compiled = {
+        "campaign.yaml",
+        "strategy_spec.yaml",
+        f"variants/{variant_id}/config.yaml",
+    }
+    _require_equal(authoring.get("variant_count"), 1, "authoring variant count")
+    _require_equal(
+        authoring.get("planned_files"),
+        ["campaign.yaml", "strategy_spec.yaml", "authoring_manifest.json", f"variants/{variant_id}/config.yaml"],
+        "authoring planned files",
+    )
     compiled = authoring.get("compiled_document_sha256")
     if not isinstance(compiled, dict):
         raise ValueError("authoring manifest lacks compiled document hashes")
+    _require_equal(set(compiled), expected_compiled, "authoring compiled document topology")
     config_relative = source_path.relative_to(context.campaign_root).as_posix()
     _require_equal(
         compiled.get(config_relative),
@@ -236,10 +280,12 @@ def _authoring_binding(
         "published source config hash",
     )
     documents: list[dict[str, Any]] = []
+    parsed_documents: dict[str, dict[str, Any]] = {}
     for relative, expected_hash in sorted(compiled.items()):
         document_path = context.campaign_root / str(relative)
         artifact = _artifact(document_path, project_root=project_root)
         document = _read_yaml(document_path, f"published document {relative}")
+        parsed_documents[relative] = document
         compiled_object_sha256 = _compiled_object_sha256(document)
         _require_equal(
             compiled_object_sha256,
@@ -254,10 +300,97 @@ def _authoring_binding(
                 "compiled_object_sha256": compiled_object_sha256,
             }
         )
+    campaign = parsed_documents["campaign.yaml"]
+    strategy_spec = parsed_documents["strategy_spec.yaml"]
+    _require_equal(campaign.get("campaign_id"), source_config.get("campaign_id"), "campaign document identity")
+    _require_equal(campaign.get("authoring_lane"), "certified_recipe", "campaign authoring lane")
+    _require_equal(campaign.get("certified_recipe"), recipe, "campaign certified recipe")
+    _require_equal(campaign.get("instrument") or campaign.get("symbol"), source_config.get("symbol"), "campaign instrument")
+    _require_equal(campaign.get("timeframe"), source_config.get("timeframe"), "campaign timeframe")
+    _require_equal(campaign.get("variants"), [variant_id], "campaign variant list")
+    _require_equal(strategy_spec.get("schema"), "alphaquest.strategy-spec/v1", "strategy spec schema")
+    _require_equal(strategy_spec.get("frozen"), True, "strategy spec frozen flag")
+    _require_equal(strategy_spec.get("campaign_id"), source_config.get("campaign_id"), "strategy spec identity")
+    _require_equal(strategy_spec.get("authoring_lane"), "certified_recipe", "strategy spec authoring lane")
+    _require_equal(strategy_spec.get("certified_recipe"), recipe, "strategy spec certified recipe")
+    _require_equal(strategy_spec.get("dataset"), dataset_manifest, "strategy spec dataset")
+    for field in ("research_objectives", "research_objectives_sha256", "event_strategy"):
+        _require_equal(campaign.get(field), source_config.get(field), f"campaign {field}")
+        _require_equal(strategy_spec.get(field), source_config.get(field), f"strategy spec {field}")
+    for field in ("research_objectives_sha256", "event_strategy"):
+        _require_equal(authoring.get(field), source_config.get(field), f"authoring {field}")
+    _require_equal(authoring.get("draft_sha256"), strategy_spec.get("draft_sha256"), "authoring draft hash")
+    _require_nonempty_string(authoring.get("draft_sha256"), "authoring draft_sha256")
+    _require_equal(authoring.get("created_at"), campaign.get("created_at"), "authoring created_at")
+    _require_equal(authoring.get("variant_protocol"), campaign.get("variant_protocol"), "authoring variant protocol")
+    _require_equal(
+        authoring.get("max_variants"),
+        (source_config.get("research_objectives") or {}).get("maximum_variants"),
+        "authoring maximum variants",
+    )
+    for field in ("strategy_certification", "variant_strategy_certifications"):
+        _require_equal(authoring.get(field), strategy_spec.get(field), f"authoring {field}")
+    for container_name, container in (
+        ("campaign", campaign),
+        ("strategy spec", strategy_spec),
+        ("authoring manifest", authoring),
+    ):
+        _require_equal(
+            container.get("research_factory"),
+            source_config.get("research_factory"),
+            f"{container_name} research factory",
+        )
+    spec_variants = strategy_spec.get("variants")
+    if not isinstance(spec_variants, list) or len(spec_variants) != 1 or not isinstance(spec_variants[0], dict):
+        raise ValueError("strategy spec must contain exactly one variant mapping")
+    spec_variant = spec_variants[0]
+    _require_equal(spec_variant.get("variant_id"), variant_id, "strategy spec variant identity")
+    signature = _require_nonempty_string(spec_variant.get("mechanic_signature"), "strategy spec mechanic signature")
+    structural = {
+        spec_key: _binding_structure(ModuleBindingV1.model_validate(spec_variant[spec_key]), spec_key)
+        for spec_key in ("entry", "stop", "target")
+    }
+    expected_signature = hashlib.sha256(
+        json.dumps(structural, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    _require_equal(signature, expected_signature, "strategy spec mechanic signature")
+    _require_equal(
+        authoring.get("variant_mechanic_signatures"),
+        {variant_id: signature},
+        "authoring variant mechanic signatures",
+    )
+    distinctions = campaign.get("variant_distinctions")
+    if not isinstance(distinctions, dict) or not isinstance(distinctions.get(variant_id), dict):
+        raise ValueError("campaign variant distinctions are missing")
+    _require_equal(
+        distinctions[variant_id].get("mechanic_signature"),
+        signature,
+        "campaign variant mechanic signature",
+    )
+    strategy = source_config.get("strategy") or {}
+    for spec_key, config_key in (("entry", "entry"), ("stop", "sl"), ("target", "tp")):
+        binding = spec_variant.get(spec_key)
+        if not isinstance(binding, dict):
+            raise ValueError(f"strategy spec variant {spec_key} must be a mapping")
+        _require_equal(
+            {key: binding.get(key) for key in ("module", "params")},
+            {key: (strategy.get(config_key) or {}).get(key) for key in ("module", "params")},
+            f"strategy spec {spec_key} binding",
+        )
+    declared_grid: dict[str, Any] = {}
+    for spec_key, prefix in (("entry", "entry"), ("stop", "sl"), ("target", "tp")):
+        grid = spec_variant[spec_key].get("parameter_grid") or {}
+        if not isinstance(grid, dict):
+            raise ValueError(f"strategy spec variant {spec_key} parameter_grid must be a mapping")
+        declared_grid.update({f"{prefix}.params.{name}": value for name, value in grid.items()})
+    _require_equal((source_config.get("core_grid") or {}).get("parameters") or {}, declared_grid, "authoring core grid")
+    _require_equal((source_config.get("wfa") or {}).get("parameters") or {}, declared_grid, "authoring WFA grid")
     return {
         "manifest": _artifact(manifest_path, project_root=project_root),
         "authoring_lane": "certified_recipe",
         "certified_recipe": recipe,
+        "variant_id": variant_id,
+        "mechanic_signature": signature,
         "documents": documents,
     }
 
@@ -273,10 +406,35 @@ def _preflight_binding(
     if receipt.get("passed") is not True or receipt.get("failures"):
         raise ValueError("pre-run configuration/data preflight must pass without failures")
     _require_equal(receipt.get("tests_ran"), False, "pre-run preflight tests_ran")
+    _require_equal(receipt.get("include_generated_results"), False, "pre-run preflight generated-results flag")
+    _require_equal(receipt.get("data_sources_checked"), 1, "pre-run preflight data source count")
+    _require_equal(receipt.get("data_cache_hits"), 0, "pre-run preflight data cache hits")
+    _require_equal(receipt.get("terminal_configs_not_executed"), 0, "pre-run preflight terminal config count")
+    _require_equal(
+        _normalized_paths(receipt.get("configs_checked"), project_root, "pre-run preflight configs_checked"),
+        [source_path.resolve()],
+        "pre-run preflight config identity",
+    )
     current = run_preflight(config_paths=[source_path], run_tests=False, project_root=project_root)
     if current.get("passed") is not True or current.get("failures"):
         raise ValueError("current authored config/data preflight failed")
     _require_equal(current.get("tests_ran"), False, "current config validation tests_ran")
+    _require_equal(
+        _normalized_paths(current.get("configs_checked"), project_root, "current preflight configs_checked"),
+        [source_path.resolve()],
+        "current preflight config identity",
+    )
+    for field in (
+        "passed",
+        "failures",
+        "warnings",
+        "tests_ran",
+        "include_generated_results",
+        "data_sources_checked",
+        "data_cache_hits",
+        "terminal_configs_not_executed",
+    ):
+        _require_equal(current.get(field), receipt.get(field), f"current/recorded preflight {field}")
     return {
         "recorded_receipt": _artifact(receipt_path, project_root=project_root),
         "recorded": receipt,
@@ -287,6 +445,7 @@ def _preflight_binding(
 
 def _mechanics_bindings(
     source_config: dict[str, Any],
+    source_path: Path,
     summary: dict[str, Any],
     manifest: dict[str, Any],
     project_root: Path,
@@ -297,6 +456,8 @@ def _mechanics_bindings(
         raise ValueError("run does not record a mechanics validation gate")
     _require_equal(manifest_gate, summary_gate, "manifest mechanics gate")
     _require_equal(summary_gate.get("status"), "APPROVED_FOR_TESTING", "mechanics gate status")
+    _require_equal(summary_gate.get("verdict"), "PASS", "mechanics gate verdict")
+    _require_equal(summary_gate.get("required"), True, "mechanics gate required flag")
     _require_equal(summary_gate.get("approval_status"), "approved_for_testing", "mechanics approval status")
     if summary_gate.get("errors"):
         raise ValueError("mechanics gate records errors")
@@ -305,6 +466,14 @@ def _mechanics_bindings(
     gate = research.get("validation_gate") if isinstance(research, dict) else None
     if not isinstance(gate, dict) or gate.get("required") is not True:
         raise ValueError("source config lacks a required mechanics validation gate")
+    lane = _require_nonempty_string(gate.get("lane"), "source mechanics validation lane").lower()
+    _require_equal(summary_gate.get("lane"), lane, "mechanics gate lane")
+    _require_equal(
+        _resolve_reference(summary_gate.get("config_path"), project_root, "recorded mechanics config_path"),
+        source_path.resolve(),
+        "mechanics gate config path",
+    )
+    _require_equal(summary_gate.get("config_hash"), summary.get("source_config_hash"), "mechanics gate config hash")
     evidence_dir = _resolve_reference(gate.get("evidence_dir"), project_root, "mechanics evidence_dir")
     approval_path = _resolve_reference(gate.get("approval_path"), project_root, "mechanics approval_path")
     _require_equal(
@@ -323,7 +492,25 @@ def _mechanics_bindings(
     if not evidence_files:
         raise ValueError(f"mechanics evidence directory contains no files: {evidence_dir}")
     approval = _read_json(approval_path, "mechanics approval")
-    _require_equal(approval.get("status"), "approved_for_testing", "mechanics approval document status")
+    approval_errors: list[str] = []
+    _validate_approval(
+        approval,
+        lane,
+        str(summary.get("source_config_hash") or ""),
+        str(summary_gate.get("input_data_hash") or ""),
+        {"schema_version": summary_gate.get("validation_schema_version")},
+        None,
+        approval_errors,
+    )
+    if approval_errors:
+        raise ValueError("mechanics approval contract failed: " + "; ".join(approval_errors))
+    _require_equal(approval.get("schema"), APPROVAL_SCHEMA, "mechanics approval schema")
+    _require_equal(
+        approval.get("review_scope"),
+        "implementation_matches_frozen_specification",
+        "mechanics approval review scope",
+    )
+    _require_equal(approval.get("profitability_approval"), False, "mechanics profitability approval")
     _require_equal(approval.get("config_hash"), summary.get("source_config_hash"), "mechanics approval config hash")
     _require_equal(approval.get("input_data_hash"), summary_gate.get("input_data_hash"), "mechanics approval input hash")
     for approval_field, gate_field in (
@@ -373,6 +560,12 @@ def _mechanics_bindings(
                 "fixed_random_sample_size",
                 "fixed_random_seed",
                 "parameter_mode",
+                "review_scope",
+                "profitability_approval",
+                "sampled_trade_ids",
+                "sampling_categories",
+                "sampling_policy_version",
+                "sampling_policy_sha256",
             )
         },
         "approval": _artifact(approval_path, project_root=project_root),
@@ -404,6 +597,49 @@ def _dataset_binding(
             f"unsupported source {source!r} requires a separate binding design"
         )
     _require_equal(str(dataset_manifest.get("source") or "").strip().lower(), source, "dataset source")
+    execution_fields = {
+        "symbol": source_config.get("symbol") or data.get("symbol"),
+        "timeframe": source_config.get("timeframe") or data.get("source_timeframe"),
+        "timezone": data.get("timezone"),
+        "exchange_timezone": data.get("exchange_timezone"),
+        "timestamp_semantics": data.get("timestamp_semantics"),
+        "source_timestamp_semantics": data.get("source_timestamp_semantics"),
+        "source_sha256": data.get("source_sha256"),
+        "canonical_sha256": data.get("canonical_sha256"),
+        "coverage_start": data.get("coverage_start"),
+        "coverage_end": data.get("coverage_end"),
+        "roll_policy": data.get("roll_policy"),
+        "continuous_contract": data.get("continuous_contract"),
+        "contract_column": data.get("contract_column"),
+        "contract_count": data.get("contract_count"),
+        "roll_calendar": data.get("roll_calendar"),
+        "roll_calendar_sha256": data.get("roll_calendar_sha256"),
+        "certified_features": data.get("certified_features"),
+    }
+    required_execution_fields = {
+        "symbol",
+        "timeframe",
+        "timezone",
+        "exchange_timezone",
+        "timestamp_semantics",
+        "source_timestamp_semantics",
+        "source_sha256",
+        "canonical_sha256",
+        "coverage_start",
+        "coverage_end",
+        "roll_policy",
+        "continuous_contract",
+        "contract_count",
+        "certified_features",
+    }
+    missing = sorted(field for field in required_execution_fields if execution_fields[field] is None)
+    if missing:
+        raise ValueError(f"source config lacks dataset execution metadata: {', '.join(missing)}")
+    for field, expected in execution_fields.items():
+        if expected is not None or field in required_execution_fields:
+            _require_equal(dataset_manifest.get(field), expected, f"dataset manifest {field}")
+    _require_equal(dataset_manifest.get("symbol"), summary.get("symbol"), "dataset/run symbol")
+    _require_equal(dataset_manifest.get("timeframe"), summary.get("timeframe"), "dataset/run timeframe")
     canonical_path = _resolve_reference(dataset_manifest.get("path"), project_root, "canonical dataset")
     configured_path = _resolve_reference(
         data.get("raw_csv" if source == "csv" else "raw_parquet"),
@@ -420,12 +656,123 @@ def _dataset_binding(
         "dataset_id": dataset_id,
         "manifest": _artifact(manifest_path, project_root=project_root),
         "manifest_document": dataset_manifest,
+        "manifest_historical_run_hash_recorded": False,
+        "binding_scope": (
+            "Current manifest bytes are validated against frozen config and published strategy-spec metadata; "
+            "the staged run did not record a historical dataset-manifest file hash."
+        ),
         "canonical_file": canonical,
     }
 
 
+def _bind_run_manifest(
+    run_dir: Path,
+    source_config: dict[str, Any],
+    effective_config: dict[str, Any],
+    summary: dict[str, Any],
+    manifest: dict[str, Any],
+    project_root: Path,
+) -> dict[str, Any]:
+    _require_equal(summary.get("halted"), False, "diagnostic halted flag")
+    data = effective_config.get("data") or {}
+    expected_source = str(data.get("source") or "").strip() or (
+        "databento_dbn"
+        if data.get("raw_dir")
+        else "parquet"
+        if data.get("raw_parquet")
+        else "csv"
+        if data.get("raw_csv")
+        else None
+    )
+    expected_data = {
+        "data_source": expected_source,
+        "raw_csv": str(data.get("raw_csv")) if data.get("raw_csv") else None,
+        "raw_parquet": str(data.get("raw_parquet")) if data.get("raw_parquet") else None,
+        "raw_dir": str(data.get("raw_dir")) if data.get("raw_dir") else None,
+    }
+    for field, expected in expected_data.items():
+        _require_equal(summary.get(field), expected, f"summary {field}")
+    _require_equal(summary.get("research_policy"), effective_config.get("research_policy"), "summary research policy")
+    _require_equal(summary.get("engine_contract_version"), ENGINE_CONTRACT_VERSION, "summary engine contract")
+    created_at = _require_nonempty_string(summary.get("created_at"), "summary created_at")
+    _require_equal(summary.get("updated_at"), created_at, "summary producer timestamp")
+    try:
+        datetime.fromisoformat(created_at)
+    except ValueError as exc:
+        raise ValueError("summary created_at must be an ISO timestamp") from exc
+    for field in (
+        *_IDENTITY_FIELDS,
+        "timeframe",
+        "data_source",
+        "raw_csv",
+        "raw_parquet",
+        "raw_dir",
+        "campaign_metadata",
+        "variant_metadata",
+        "research_policy",
+        "engine_contract_version",
+        "config_hash",
+        "source_config_hash",
+        "created_at",
+        "updated_at",
+        "mechanics_validation_gate",
+        "submission_preflight",
+        "diagnostic_only",
+        "diagnostic_reasons",
+        "authoritative_parallel_workers",
+        "authoritative_core_grid_workers",
+        "research_verdict",
+        "generic_objective_verdict",
+        "scientific_validity_verdict",
+    ):
+        _require_equal(manifest.get(field), summary.get(field), f"manifest {field}")
+    _require_equal(manifest.get("layout"), "campaign_variant_symbol_run", "manifest layout")
+    _require_equal(manifest.get("stage_order"), PRE_ACCEPTANCE_STAGE_ORDER, "manifest stage order")
+    variant_metadata = summary.get("variant_metadata")
+    if not isinstance(variant_metadata, dict):
+        raise ValueError("summary variant_metadata must be a mapping")
+    variant_path = _resolve_reference(variant_metadata.get("path"), project_root, "variant metadata")
+    variant_artifact = _artifact(variant_path, project_root=project_root)
+    _require_equal(variant_artifact["sha256"], variant_metadata.get("hash"), "variant metadata hash")
+    variant_document = _read_yaml(variant_path, "variant metadata")
+    _require_equal(variant_document.get("campaign_id"), source_config.get("campaign_id"), "variant metadata campaign")
+    _require_equal(variant_document.get("variant_id"), source_config.get("variant_id"), "variant metadata variant")
+    mechanic = strategy_mechanic(effective_config)
+    _require_equal(variant_metadata.get("mechanic"), mechanic, "summary variant mechanic")
+    _require_equal(variant_document.get("mechanic"), mechanic, "variant metadata mechanic")
+    campaign_artifact = None
+    campaign_metadata = summary.get("campaign_metadata")
+    if campaign_metadata is not None:
+        if not isinstance(campaign_metadata, dict):
+            raise ValueError("summary campaign_metadata must be null or a mapping")
+        campaign_path = _resolve_reference(campaign_metadata.get("path"), project_root, "campaign metadata")
+        campaign_artifact = _artifact(campaign_path, project_root=project_root)
+        _require_equal(campaign_artifact["sha256"], campaign_metadata.get("hash"), "campaign metadata hash")
+        campaign_document = _read_yaml(campaign_path, "campaign metadata")
+        _require_equal(campaign_document.get("campaign_id"), source_config.get("campaign_id"), "campaign metadata identity")
+    results_value = summary.get("source_results_index_path")
+    manifest_results = manifest.get("source_results_index")
+    if results_value is None or manifest_results is None:
+        raise ValueError("run producer did not record the source results index")
+    results_path = _resolve_reference(results_value, project_root, "summary source results index")
+    _require_equal(
+        _resolve_reference(manifest_results, project_root, "manifest source results index"),
+        results_path,
+        "source results index path",
+    )
+    return {
+        "campaign_metadata": campaign_artifact,
+        "variant_metadata": variant_artifact,
+        "source_results_index": _artifact(results_path, project_root=project_root),
+    }
+
+
 def _stage_bindings(
-    run_dir: Path, summary: dict[str, Any], manifest: dict[str, Any], project_root: Path
+    run_dir: Path,
+    effective_config: dict[str, Any],
+    summary: dict[str, Any],
+    manifest: dict[str, Any],
+    project_root: Path,
 ) -> list[dict[str, Any]]:
     stages = summary.get("stages")
     if not isinstance(stages, list) or not all(isinstance(item, dict) for item in stages):
@@ -438,12 +785,54 @@ def _stage_bindings(
         stage = str(item["stage"])
         validate_stage_result_contract(item, context=f"campaign summary stage {stage}")
         status = str(item.get("status"))
+        _require_equal(item.get("label"), STAGE_LABELS.get(stage, stage), f"{stage} label")
         if (status == "passed") != (item.get("passed") is True):
             raise ValueError(f"{stage} status and passed flag are inconsistent")
+        criteria = item.get("criteria") or []
+        stage_cfg = ((effective_config.get("campaign_tests") or {}).get(stage) or {})
+        criteria_contract = _criteria_for_stage(stage, stage_cfg)
+        _require_equal(len(criteria), len(criteria_contract), f"{stage} criteria count")
+        for index, (observed, declared) in enumerate(zip(criteria, criteria_contract, strict=True)):
+            _require_equal(observed.get("metric"), declared.get("metric"), f"{stage} criterion {index} metric")
+            _require_equal(
+                observed.get("decision_role"),
+                declared.get("decision_role"),
+                f"{stage} criterion {index} decision role",
+            )
+        annotated = _annotate_stage_decisions(deepcopy(item))
+        for field in (
+            "scientific_validity_verdict",
+            "scientific_validity_passed",
+            "generic_objective_verdict",
+            "generic_objective_passed",
+        ):
+            _require_equal(item.get(field), annotated.get(field), f"{stage} {field}")
+        if status in {"passed", "failed"}:
+            if not criteria:
+                raise ValueError(f"{stage} completed result requires non-empty criteria")
+            expected_passed = all(criterion.get("passed") is True for criterion in criteria)
+            _require_equal(item.get("passed"), expected_passed, f"{stage} criteria aggregate")
+            _require_equal(status, "passed" if expected_passed else "failed", f"{stage} criteria status")
+            for field in ("started_at", "completed_at"):
+                _require_nonempty_string(item.get(field), f"{stage} {field}")
+            duration = item.get("duration_seconds")
+            if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
+                raise ValueError(f"{stage} duration_seconds must be non-negative")
+            if item.get("error") is not None or item.get("skip_reason") is not None:
+                raise ValueError(f"{stage} completed result cannot record error or skip_reason")
         if status == "error" and not str(item.get("error") or "").strip():
             raise ValueError(f"{stage} error status requires a non-empty error")
+        if status == "error":
+            if not criteria or any(criterion.get("passed") is not False for criterion in criteria):
+                raise ValueError(f"{stage} error result must retain failed producer criteria")
+            expected_error = _error_stage(stage, RuntimeError(str(item["error"])))
+            _require_equal(criteria, expected_error["criteria"], f"{stage} error criteria")
+            if item.get("artifacts") is not None or item.get("skip_reason") is not None:
+                raise ValueError(f"{stage} error result cannot record artifacts or skip_reason")
         if status == "skipped" and not str(item.get("skip_reason") or "").strip():
             raise ValueError(f"{stage} skipped status requires a non-empty skip_reason")
+        if status == "skipped" and (criteria or item.get("artifacts") is not None or item.get("error") is not None):
+            raise ValueError(f"{stage} skipped result cannot record criteria, artifacts, or error")
         result_path = run_dir / stage / "stage_result.json"
         if result_path.is_file():
             result = _read_json(result_path, f"{stage} stage result")
@@ -532,6 +921,7 @@ def build_diagnostic_index(
     _require_equal(summary.get("generic_objective_verdict"), "NEEDS MANUAL REVIEW", "generic objective verdict")
     _require_equal(summary.get("scientific_validity_verdict"), "NEEDS MANUAL REVIEW", "scientific validity verdict")
     _require_equal(summary.get("passed"), False, "run passed flag")
+    _require_equal(summary.get("halted"), False, "run halted flag")
     preflight = summary.get("submission_preflight")
     if not isinstance(preflight, dict) or preflight.get("passed") is not True or preflight.get("failures"):
         raise ValueError("submission preflight must be successful and record no failures")
@@ -600,13 +990,38 @@ def build_diagnostic_index(
     run_uid = _require_nonempty_string(run_uid_path.read_text(encoding="utf-8").strip(), "run_uid.txt")
     _require_equal(run_uid, summary.get("run_uid"), "run UID marker")
 
-    authoring = _authoring_binding(source_path, source_config, root)
-    mechanics = _mechanics_bindings(source_config, summary, manifest, root)
     dataset = _dataset_binding(source_config, summary, root)
-    stages = _stage_bindings(run, summary, manifest, root)
+    authoring = _authoring_binding(source_path, source_config, dataset["manifest_document"], root)
+    mechanics = _mechanics_bindings(source_config, source_path, summary, manifest, root)
+    producer_bindings = _bind_run_manifest(run, source_config, effective_config, summary, manifest, root)
+    stages = _stage_bindings(run, effective_config, summary, manifest, root)
+    _require_equal(
+        summary.get("research_verdict"),
+        _research_verdict(summary["stages"], summary["diagnostic_reasons"]),
+        "producer research verdict",
+    )
+    _require_equal(
+        summary.get("scientific_validity_verdict"),
+        _scientific_validity_verdict(summary["stages"], summary["diagnostic_reasons"]),
+        "producer scientific-validity verdict",
+    )
     receipt = Path(preflight_receipt)
     receipt = receipt.resolve() if receipt.is_absolute() else (root / receipt).resolve()
     preflight_binding = _preflight_binding(receipt, source_path, preflight, root)
+
+    synthetic_basis = None
+    if mechanics["approval_record"].get("reviewer") == "SIMULATED_MVP_FIXTURE_ONLY":
+        synthetic_basis = "exact simulated mechanics-reviewer sentinel"
+    elif (summary.get("campaign_id"), summary.get("dataset_id")) == (
+        "tutorial_calendar_bias",
+        "synthetic_tutorial_es_1m",
+    ):
+        synthetic_basis = "exact governed tutorial campaign/dataset identity"
+    explicit_synthetic = synthetic_basis is not None
+    if explicit_synthetic and mode != "synthetic":
+        raise ValueError("explicit simulated fixture classification requires mode='synthetic'")
+    if not explicit_synthetic and mode == "synthetic":
+        raise ValueError("synthetic mode requires an explicit governed synthetic/simulated classification")
 
     labels = (
         [
@@ -626,6 +1041,11 @@ def build_diagnostic_index(
         "schema": SCHEMA,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "mode": mode,
+        "input_classification": {
+            "classification": "synthetic" if explicit_synthetic else "unverified",
+            "basis": synthetic_basis or "no positive origin classification is available",
+            "data_origin_verified": False,
+        },
         "overall_verdict": "NEEDS MANUAL REVIEW",
         "passed": False,
         "labels": labels,
@@ -665,6 +1085,7 @@ def build_diagnostic_index(
         "authoring": authoring,
         "dataset": dataset,
         "mechanics": mechanics,
+        "producer_bindings": producer_bindings,
         "stages": stages,
         "stage_outcomes_retained": True,
         "run_manifest": _artifact(manifest_path, project_root=root),
