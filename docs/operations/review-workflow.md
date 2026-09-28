@@ -27,6 +27,13 @@ out already authorized work; the human supplies the substantive judgments.
    artifact. Reopening the task retrieves the stored record through the existing
    verification service. Codex should read that record before resuming work.
 
+If Studio shows **Recover admitted V1 review**, the service already retained an
+exact pre-upgrade V1 decision but did not finish its immutable receipt write.
+Select a current matching capture and use that dedicated action. It commits the
+original V1 artifact unchanged after current full-text checks; it does not ask
+for new human fields or claim the V2 capture-binding assurance. The ordinary
+source-acceptance action stays locked in this state.
+
 If evidence is incomplete, leave the form pending. If the proposal should be
 closed, use **Dismiss** with a rationale. Dismissal is a routing disposition,
 not a scientific FAIL or permission to create a later campaign variant.

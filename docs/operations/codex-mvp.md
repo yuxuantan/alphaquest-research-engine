@@ -417,10 +417,12 @@ cannot be submitted.
 Identity matching is deterministic. Title and ordered authors must match after
 case and whitespace normalization. Publication category and source-version kind
 must be compatible, so a working paper cannot satisfy a peer-reviewed journal
-proposal. The proposal locator must exactly match a canonical locator or strong
-identifier after DOI normalization or URL scheme/host normalization; URL paths
-and query values remain case-sensitive. The canonical literature schema does not
-contain a bibliographic publication-year field. Studio therefore does not mistake
+proposal. The proposal locator must match the selected version's strong identity
+or capture locator after DOI normalization or URL scheme/host normalization. A
+parent-work locator cannot prove which child version was captured, and a matching
+capture locator cannot mask a contradictory selected-version identifier. URL
+paths and query values remain case-sensitive. The canonical literature schema
+does not contain a bibliographic publication-year field. Studio therefore does not mistake
 public-availability timing or free-form version labels for publication year; year
 remains one of the six required human metadata checks.
 
@@ -431,6 +433,20 @@ The new `alphaquest.reviewed-source-evidence/v2` receipt binds the exact work,
 version and capture revision hashes plus content and extraction hashes. Existing
 v1 receipts remain byte-identical and readable, but readers do not claim that
 those historical records contain the new capture binding.
+
+The binding also records the canonical `SAME_VERSION_AS` resolution state and
+the component-scoped correction/retraction lineage state. An active canonical
+`RETRACTS` or `CORRECTS` relationship targeting any version in that resolved
+component blocks review. Later changes to either state stale the receipt for
+current downstream use without rewriting its historical bytes. Relationships
+outside the selected component do not affect the binding.
+
+A separate recovery action exists only for a valid V1 review-delivery intent
+that was admitted before this prerequisite and lost its final write. The server
+retains all prior human fields and requires an explicitly selected, currently
+eligible full-text capture with the same content hash before committing the
+original V1 artifact unchanged. This recovery does not add a V2 binding or let a
+caller request a new V1 decision; all genuinely new source reviews remain V2.
 
 This prerequisite does not make a scientific decision. Reviewer identity and
 notes, all six metadata checks, retraction or correction status, every claim

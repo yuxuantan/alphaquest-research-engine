@@ -291,6 +291,8 @@ export interface CodexTaskRecord {
     proposal_id?: string;
     payload_sha256?: string;
     validation_sha256?: string;
+    artifact_schema?: string;
+    legacy_recovery_available?: boolean;
   } | null;
   structured_review?: {
     status?: string;

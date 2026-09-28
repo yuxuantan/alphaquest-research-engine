@@ -27,6 +27,7 @@ export interface SourceReviewCaptureOption {
   retrieval_locator: string;
   readiness: "READY" | "NOT_READY";
   issues: string[];
+  legacy_recovery_match?: boolean;
   title: string | null;
   authors: string[];
   source_category: string | null;
@@ -516,6 +517,13 @@ export const api = {
       `/api/factory/tasks/${encodeURIComponent(id)}/reviewed-source-evidence`,
       { method: "POST", body: json(value) },
     ),
+  recoverFactoryAdmittedV1Source: (
+    id: string,
+    value: { delivery: ReviewDelivery; capture_revision_sha256: string },
+  ) => request<Record<string, unknown>>(
+    `/api/factory/tasks/${encodeURIComponent(id)}/recover-admitted-v1-source-review`,
+    { method: "POST", body: json(value) },
+  ),
   factorySourceReviewReadiness: (id: string) =>
     request<SourceReviewReadiness>(
       `/api/factory/tasks/${encodeURIComponent(id)}/source-review-readiness`,

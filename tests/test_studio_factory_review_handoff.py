@@ -26,6 +26,7 @@ from alphaquest.research.literature.contracts import (
     ActorProvenanceV1,
     SourceCaptureRevisionV1,
     SourceIdentityRevisionV1,
+    SourceVersionIdentityRevisionV1,
 )
 from alphaquest.research.literature.store import LiteratureStore
 from alphaquest.studio.factory_reviews import (
@@ -34,9 +35,10 @@ from alphaquest.studio.factory_reviews import (
     HypothesisHumanAcceptanceV1,
     MECHANICS_REVIEW_FIELDS,
     SOURCE_METADATA_FIELDS,
+    ReviewedSourceEvidenceArtifactV2,
     SourceEvidenceHumanVerificationV1,
 )
-from alphaquest.studio.factory_service import ResearchFactoryService
+from alphaquest.studio.factory_service import ResearchFactoryService, _identity_token
 
 
 HASH_A = "a" * 64
@@ -128,6 +130,9 @@ def _fulltext_capture(
     capture_status: str = "FULL_TEXT_CAPTURED",
     start_first: bool = False,
     locator: str | None = None,
+    work_locators: list[str] | None = None,
+    version_strong_identifiers: dict[str, str] | None = None,
+    retained_bytes: bytes | None = None,
 ):
     store = LiteratureStore(project_root)
     actor = ActorProvenanceV1(
@@ -143,7 +148,7 @@ def _fulltext_capture(
             "title": proposal["title"],
             "authors": proposal["authors"],
             "strong_identifiers": {},
-            "locators": [source_locator],
+            "locators": work_locators or [source_locator],
             "identity_status": "VERIFIED_STRONG",
             "change_reason": "Test fixture identity",
         },
@@ -157,7 +162,7 @@ def _fulltext_capture(
             "work_revision_sha256": work.record_sha256,
             "version_kind": version_kind,
             "version_label": "2025 exchange publication",
-            "strong_identifiers": {},
+            "strong_identifiers": version_strong_identifiers or {},
             "public_availability": {
                 "original_value": "2025",
                 "parsed_value": None,
@@ -172,8 +177,8 @@ def _fulltext_capture(
         actor=actor,
         idempotency_key=f"version.{suffix}",
     )
-    content = b"Complete retained source document used by the source-review fixture."
-    extracted = b"Complete retained source document used by the source-review fixture."
+    content = retained_bytes or b"Complete retained source document used by the source-review fixture."
+    extracted = content
     content_sha = store.put_artifact(content, kind="artifacts")
     extracted_sha = store.put_artifact(extracted, kind="extracted")
     capture_payload = {
@@ -235,6 +240,52 @@ def _fulltext_capture(
         capture_payload,
         actor=actor,
         idempotency_key=f"capture.{suffix}.finish" if start_first else f"capture.{suffix}",
+    )
+
+
+def _source_review_payload(capture: SourceCaptureRevisionV1) -> dict[str, object]:
+    return {
+        "review_id": "human_source_review",
+        "reviewer": "Researcher One",
+        "reviewed_at": datetime.now(UTC),
+        "verified_metadata_fields": list(SOURCE_METADATA_FIELDS),
+        "content_sha256": capture.content_sha256,
+        "retraction_status": "NOT_RETRACTED",
+        "verification_method": "Opened the exact retained document and checked publisher metadata.",
+        "claim_reviews": [
+            {"claim_id": "direct_1", "proposed_support": "DIRECT", "decision": "ACCEPT", "evidence_sha256": HASH_B, "verification_method": "Checked the retained full text.", "notes": "Direct claim verified."},
+            {"claim_id": "inference_1", "proposed_support": "INFERENCE", "decision": "REJECT", "evidence_sha256": None, "verification_method": "Checked transfer scope.", "notes": "Transfer remains unsupported."},
+        ],
+        "notes": "Human review retained all limitations.",
+    }
+
+
+def _append_version_relationship(
+    project_root: Path,
+    *,
+    relationship_id: str,
+    subject_id: str,
+    predicate: str,
+    object_id: str,
+    status: str = "ACTIVE",
+):
+    return LiteratureStore(project_root).append_source_relationship(
+        {
+            "relationship_id": relationship_id,
+            "subject_kind": "SOURCE_VERSION",
+            "subject_id": subject_id,
+            "predicate": predicate,
+            "object_kind": "SOURCE_VERSION",
+            "object_id": object_id,
+            "status": status,
+            "assertion_evidence_refs": [],
+            "superseded_by_relationship_id": None,
+            "change_reason": f"Source review fixture {predicate} {status}",
+        },
+        actor=ActorProvenanceV1(
+            actor_class="HUMAN_OWNER_RESEARCHER", actor_id="source-review-fixture"
+        ),
+        idempotency_key=f"{relationship_id}.{status.lower()}",
     )
 
 
@@ -727,6 +778,219 @@ def test_source_review_readiness_requires_current_matching_fulltext_and_real_byt
     assert "CAPTURE_ARTIFACT_UNAVAILABLE_OR_INVALID" in next(
         item for item in changed["options"] if item["capture_id"] == fulltext.capture_id
     )["issues"]
+
+
+def test_source_locator_matching_is_version_specific_with_two_versions_of_one_work(
+    tmp_path: Path,
+) -> None:
+    _draft(tmp_path)
+    proposal_locator = str(_source_proposal()["locator"])
+    other_locator = "https://example.invalid/other-version.pdf"
+    wrong_capture = _fulltext_capture(
+        tmp_path,
+        suffix="same-work-wrong",
+        locator=other_locator,
+        work_locators=[proposal_locator, other_locator],
+        version_strong_identifiers={"url": other_locator},
+    )
+    store = LiteratureStore(tmp_path)
+    work = store.latest(SourceIdentityRevisionV1, "work.same-work-wrong")
+    store.append_source_version(
+        {
+            "source_version_id": "version.same-work-proposed",
+            "work_id": work.work_id,
+            "work_revision_sha256": work.record_sha256,
+            "version_kind": "ORIGINAL",
+            "version_label": "Exact proposed publication",
+            "strong_identifiers": {"url": proposal_locator},
+            "public_availability": {
+                "original_value": "2025", "parsed_value": None,
+                "precision": "YEAR", "verification": "VERIFIED",
+                "timezone_basis": None, "provenance_record_ids": [],
+            },
+            "identity_status": "VERIFIED_STRONG",
+            "change_reason": "Second exact version has no captured full text",
+        },
+        actor=ActorProvenanceV1(
+            actor_class="HUMAN_OWNER_RESEARCHER", actor_id="source-review-fixture"
+        ),
+        idempotency_key="version.same-work-proposed",
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="same-work-versions")
+    service.run_worker_once(worker_id="same-work-version-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == wrong_capture.capture_id
+    )
+    assert option["readiness"] == "NOT_READY"
+    assert "LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH" in option["issues"]
+
+    doi_proposal = _source_proposal()
+    doi_proposal["locator"] = "https://doi.org/10.1234/proposed"
+    contradictory = _fulltext_capture(
+        tmp_path,
+        suffix="contradictory-version-doi",
+        locator="https://doi.org/10.1234/proposed",
+        version_strong_identifiers={"doi": "10.1234/other"},
+    )
+    doi_service = ResearchFactoryService(tmp_path, runner=FakeRunner(doi_proposal))
+    doi_task = doi_service.enqueue_next(
+        campaign_id="structured_factory", request_id="contradictory-version-doi"
+    )
+    doi_service.run_worker_once(worker_id="contradictory-version-doi-worker")
+    contradictory_option = next(
+        item for item in doi_service.source_review_readiness(str(doi_task["task_id"]))["options"]
+        if item["capture_id"] == contradictory.capture_id
+    )
+    assert contradictory_option["readiness"] == "NOT_READY"
+    assert "LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH" in contradictory_option["issues"]
+
+
+def test_doi_identity_requires_a_whole_doi_or_genuine_resolver() -> None:
+    assert _identity_token("10.1234/Source.(A)") == _identity_token(
+        "https://DOI.org/10.1234/source.(a)"
+    )
+    assert _identity_token("doi: 10.1234/source") == "doi:10.1234/source"
+    assert _identity_token("10.1234/source)") != _identity_token("10.1234/source")
+    assert _identity_token(
+        "https://unrelated.example/document?reference=10.1234/source"
+    ) != _identity_token("10.1234/source")
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected_issue"),
+    (("RETRACTS", "SOURCE_VERSION_RETRACTED"), ("CORRECTS", "SOURCE_VERSION_CORRECTED")),
+)
+def test_active_canonical_reliability_relationship_blocks_review_before_submission(
+    tmp_path: Path, predicate: str, expected_issue: str,
+) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(tmp_path, suffix=f"pre-{predicate.lower()}")
+    notice = _fulltext_capture(tmp_path, suffix=f"notice-{predicate.lower()}")
+    _append_version_relationship(
+        tmp_path,
+        relationship_id=f"relationship.pre-{predicate.lower()}",
+        subject_id=notice.source_version_id,
+        predicate=predicate,
+        object_id=capture.source_version_id,
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id=f"pre-{predicate.lower()}")
+    service.run_worker_once(worker_id=f"pre-{predicate.lower()}-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "NOT_READY"
+    assert expected_issue in option["issues"]
+    with pytest.raises(ValueError, match=expected_issue):
+        service.record_reviewed_source_evidence(
+            str(task["task_id"]), verification=_source_review_payload(capture),
+            capture_revision_sha256=capture.record_sha256,
+        )
+
+
+def test_retraction_of_resolved_equivalent_version_blocks_selected_capture(tmp_path: Path) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(tmp_path, suffix="resolved-selected")
+    equivalent = _fulltext_capture(tmp_path, suffix="resolved-equivalent")
+    notice = _fulltext_capture(tmp_path, suffix="resolved-notice")
+    _append_version_relationship(
+        tmp_path, relationship_id="relationship.resolved-equivalence",
+        subject_id=equivalent.source_version_id, predicate="SAME_VERSION_AS",
+        object_id=capture.source_version_id,
+    )
+    _append_version_relationship(
+        tmp_path, relationship_id="relationship.resolved-retraction",
+        subject_id=notice.source_version_id, predicate="RETRACTS",
+        object_id=equivalent.source_version_id,
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="resolved-retraction")
+    service.run_worker_once(worker_id="resolved-retraction-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert "SOURCE_VERSION_RETRACTED" in option["issues"]
+
+
+def test_relationship_currentness_stales_downstream_without_rewriting_receipt(
+    tmp_path: Path,
+) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(tmp_path, suffix="relationship-currentness")
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="relationship-currentness")
+    service.run_worker_once(worker_id="relationship-currentness-worker")
+    service.record_reviewed_source_evidence(
+        str(task["task_id"]), verification=_source_review_payload(capture),
+        capture_revision_sha256=capture.record_sha256,
+    )
+    path = service._review_artifact_path("structured_factory", "source", str(task["task_id"]))
+    original = path.read_bytes()
+    notice = _fulltext_capture(tmp_path, suffix="relationship-currentness-notice")
+    relationship = _append_version_relationship(
+        tmp_path, relationship_id="relationship.currentness-retraction",
+        subject_id=notice.source_version_id, predicate="RETRACTS",
+        object_id=capture.source_version_id,
+    )
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
+    assert path.read_bytes() == original
+    assert ReviewedSourceEvidenceArtifactV2.model_validate_json(original)
+
+    _append_version_relationship(
+        tmp_path, relationship_id=relationship.relationship_id,
+        subject_id=relationship.subject_id, predicate=relationship.predicate,
+        object_id=relationship.object_id, status="RETRACTED",
+    )
+    selected = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert selected["readiness"] == "READY"
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
+    assert path.read_bytes() == original
+
+
+def test_equivalence_currentness_is_component_scoped_and_unrelated_relations_do_not_stale(
+    tmp_path: Path,
+) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(tmp_path, suffix="component-selected")
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="component-currentness")
+    service.run_worker_once(worker_id="component-currentness-worker")
+    service.record_reviewed_source_evidence(
+        str(task["task_id"]), verification=_source_review_payload(capture),
+        capture_revision_sha256=capture.record_sha256,
+    )
+    unrelated_a = _fulltext_capture(tmp_path, suffix="unrelated-a")
+    unrelated_b = _fulltext_capture(tmp_path, suffix="unrelated-b")
+    _append_version_relationship(
+        tmp_path, relationship_id="relationship.unrelated-equivalence",
+        subject_id=unrelated_a.source_version_id, predicate="SAME_VERSION_AS",
+        object_id=unrelated_b.source_version_id,
+    )
+    assert service._discover_plan("structured_factory")["task_type"] == "HYPOTHESIS_PROPOSAL"
+
+    equivalent = _fulltext_capture(tmp_path, suffix="component-equivalent")
+    relationship = _append_version_relationship(
+        tmp_path, relationship_id="relationship.component-equivalence",
+        subject_id=equivalent.source_version_id, predicate="SAME_VERSION_AS",
+        object_id=capture.source_version_id,
+    )
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
+    _append_version_relationship(
+        tmp_path, relationship_id=relationship.relationship_id,
+        subject_id=relationship.subject_id, predicate=relationship.predicate,
+        object_id=relationship.object_id, status="RETRACTED",
+    )
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
 
 
 def test_source_review_rejects_fake_hash_and_stale_canonical_work(tmp_path: Path) -> None:

@@ -14,6 +14,10 @@ import pytest
 
 from alphaquest.studio.api import register_api_routes
 from alphaquest.studio.drafts import DraftStore
+from alphaquest.studio.factory_review_delivery import (
+    ReviewDeliveryV1,
+    build_delivery_intent,
+)
 from alphaquest.studio.factory_reviews import (
     EngineeringHandoffIntentHumanAcceptanceV1,
     HYPOTHESIS_REVIEW_FIELDS,
@@ -34,6 +38,7 @@ from tests.test_studio_factory_review_handoff import (
     FakeRunner,
     HASH_A,
     HASH_B,
+    _append_version_relationship,
     _draft,
     _hypothesis_proposal,
     _fulltext_capture,
@@ -218,6 +223,30 @@ def _delivery(case: ReviewCase, *, operation_id: str | None = None) -> dict[str,
         "payload_sha256": validation["payload_sha256"],
         "validation_sha256": validation["validation_sha256"],
     }
+
+
+def _write_legacy_source_intent(case: ReviewCase):
+    record, campaign_id, validation, imported = case.service._reviewable_proposal(
+        case.task_id, expected_task_type=CodexTaskType.SOURCE_RESEARCH,
+    )
+    source = SourceEvidenceBundleV1.model_validate_json(
+        json.dumps(imported.validated_payload, sort_keys=True)
+    )
+    artifact = build_reviewed_source_evidence(
+        campaign_id=campaign_id,
+        task_id=record.task_id,
+        proposal_id=imported.proposal_id,
+        proposal_payload_sha256=imported.payload_sha256,
+        proposal_validation_sha256=validation["validation_sha256"],
+        source_evidence=source,
+        human_verification=case.review,
+    )
+    delivery = ReviewDeliveryV1.model_validate(_delivery(case))
+    intent = build_delivery_intent(delivery, artifact)
+    path = case.service._review_delivery_path(case.task_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(intent.model_dump_json(by_alias=True), encoding="utf-8")
+    return artifact, delivery, path
 
 
 def _record(
@@ -632,6 +661,174 @@ def test_legacy_v1_source_artifact_remains_byte_identical_and_readable(
     assert detail["structured_review"]["artifact"]["schema"] == "alphaquest.reviewed-source-evidence/v1"
     assert path.read_bytes() == before
     assert ResearchFactoryService(tmp_path).get_task(case.task_id)["review_delivery"] is None
+    with pytest.raises(RuntimeError, match="no admitted legacy"):
+        case.service.recover_admitted_legacy_source_review(
+            case.task_id, delivery=_delivery(case),
+            capture_revision_sha256=str(case.capture_revision_sha256),
+        )
+    assert path.read_bytes() == before
+
+
+def test_admitted_legacy_v1_source_review_recovers_exact_artifact_after_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _prepare_case(tmp_path, monkeypatch, "source")
+    artifact, delivery, intent_path = _write_legacy_source_intent(case)
+    intent_bytes = intent_path.read_bytes()
+    before = case.service.get_task(case.task_id)
+    assert before["review_delivery"] == {
+        "status": "ADMITTED",
+        **delivery.model_dump(mode="json"),
+        "artifact_schema": "alphaquest.reviewed-source-evidence/v1",
+        "legacy_recovery_available": True,
+    }
+    matching = [
+        item for item in case.service.source_review_readiness(case.task_id)["options"]
+        if item["legacy_recovery_match"]
+    ]
+    assert [item["capture_revision_sha256"] for item in matching] == [
+        case.capture_revision_sha256
+    ]
+
+    reopened = ResearchFactoryService(tmp_path)
+    recovered = reopened.recover_admitted_legacy_source_review(
+        case.task_id,
+        delivery=delivery,
+        capture_revision_sha256=str(case.capture_revision_sha256),
+    )
+    replayed = ResearchFactoryService(tmp_path).recover_admitted_legacy_source_review(
+        case.task_id,
+        delivery=delivery,
+        capture_revision_sha256=str(case.capture_revision_sha256),
+    )
+    assert recovered == replayed == artifact.model_dump(mode="json", by_alias=True)
+    assert recovered["schema"] == "alphaquest.reviewed-source-evidence/v1"
+    assert "capture_binding" not in recovered["human_verification"]
+    assert intent_path.read_bytes() == intent_bytes
+    review_path = reopened._review_artifact_path("structured_factory", "source", case.task_id)
+    final_bytes = review_path.read_bytes()
+    assert ReviewedSourceEvidenceArtifactV1.model_validate_json(final_bytes) == artifact
+    assert review_path.read_bytes() == final_bytes
+    detail = reopened.get_task(case.task_id)
+    assert detail["review_delivery"]["status"] == "COMMITTED"
+    assert detail["review_delivery"]["legacy_recovery_available"] is False
+
+
+def test_legacy_recovery_rejects_changed_operation_or_capture_without_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _prepare_case(tmp_path, monkeypatch, "source")
+    _artifact, delivery, intent_path = _write_legacy_source_intent(case)
+    before = intent_path.read_bytes()
+    with pytest.raises(RuntimeError, match="admitted operation"):
+        case.service.recover_admitted_legacy_source_review(
+            case.task_id,
+            delivery={**delivery.model_dump(mode="json"), "operation_id": "competing-operation"},
+            capture_revision_sha256=str(case.capture_revision_sha256),
+        )
+    different = _fulltext_capture(
+        tmp_path, suffix="legacy-different-content",
+        retained_bytes=b"Different but valid retained source bytes.",
+    )
+    with pytest.raises(ValueError, match="content does not match"):
+        case.service.recover_admitted_legacy_source_review(
+            case.task_id, delivery=delivery,
+            capture_revision_sha256=different.record_sha256,
+        )
+    with pytest.raises(ValueError, match="absent"):
+        case.service.recover_admitted_legacy_source_review(
+            case.task_id, delivery=delivery, capture_revision_sha256="f" * 64,
+        )
+    assert intent_path.read_bytes() == before
+    assert case.service._structured_review_summary(case.service.queue.get(case.task_id)) is None
+
+
+def test_legacy_recovery_write_failure_can_replay_without_changing_intent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _prepare_case(tmp_path, monkeypatch, "source")
+    artifact, delivery, intent_path = _write_legacy_source_intent(case)
+    before = intent_path.read_bytes()
+    original = _fail_final_write_once(monkeypatch)
+    with pytest.raises(RuntimeError, match="injected final review write failure"):
+        case.service.recover_admitted_legacy_source_review(
+            case.task_id, delivery=delivery,
+            capture_revision_sha256=str(case.capture_revision_sha256),
+        )
+    monkeypatch.setattr(ResearchFactoryService, "_write_review_once", staticmethod(original))
+    assert intent_path.read_bytes() == before
+    assert case.service.get_task(case.task_id)["review_delivery"]["status"] == "ADMITTED"
+    recovered = case.service.recover_admitted_legacy_source_review(
+        case.task_id, delivery=delivery,
+        capture_revision_sha256=str(case.capture_revision_sha256),
+    )
+    assert recovered["artifact_sha256"] == artifact.artifact_sha256
+
+
+def test_legacy_recovery_api_is_strict_and_new_source_reviews_remain_v2_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _prepare_case(tmp_path, monkeypatch, "source")
+    _artifact, delivery, _intent_path = _write_legacy_source_intent(case)
+    app = FastAPI()
+    register_api_routes(app, tmp_path)
+    client = TestClient(app)
+    url = f"/api/factory/tasks/{case.task_id}/recover-admitted-v1-source-review"
+    payload = {
+        "delivery": delivery.model_dump(mode="json"),
+        "capture_revision_sha256": case.capture_revision_sha256,
+    }
+    extended = {**payload, "reviewer": "caller cannot replace the retained reviewer"}
+    assert client.post(url, json=extended).status_code == 422
+    response = client.post(url, json=payload)
+    assert response.status_code == 200
+    assert response.json()["reviewed_artifact"]["schema"] == "alphaquest.reviewed-source-evidence/v1"
+
+    fresh_root = tmp_path / "fresh"
+    fresh = _prepare_case(fresh_root, monkeypatch, "source")
+    written = _record(fresh, delivery=_delivery(fresh))
+    assert written["schema"] == "alphaquest.reviewed-source-evidence/v2"
+
+
+def test_legacy_recovery_rejects_absent_v2_and_canonically_invalidated_intents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    absent = _prepare_case(tmp_path / "absent", monkeypatch, "source")
+    with pytest.raises(RuntimeError, match="no admitted legacy"):
+        absent.service.recover_admitted_legacy_source_review(
+            absent.task_id, delivery=_delivery(absent),
+            capture_revision_sha256=str(absent.capture_revision_sha256),
+        )
+
+    v2 = _prepare_case(tmp_path / "v2", monkeypatch, "source")
+    original = _fail_final_write_once(monkeypatch)
+    with pytest.raises(RuntimeError, match="injected final review write failure"):
+        _record(v2, delivery=_delivery(v2))
+    monkeypatch.setattr(ResearchFactoryService, "_write_review_once", staticmethod(original))
+    with pytest.raises(RuntimeError, match="not a legacy V1"):
+        v2.service.recover_admitted_legacy_source_review(
+            v2.task_id, delivery=_delivery(v2),
+            capture_revision_sha256=str(v2.capture_revision_sha256),
+        )
+
+    invalidated = _prepare_case(tmp_path / "invalidated", monkeypatch, "source")
+    _artifact, delivery, intent_path = _write_legacy_source_intent(invalidated)
+    before = intent_path.read_bytes()
+    notice = _fulltext_capture(tmp_path / "invalidated", suffix="legacy-retraction-notice")
+    _append_version_relationship(
+        tmp_path / "invalidated",
+        relationship_id="relationship.legacy-retraction",
+        subject_id=notice.source_version_id,
+        predicate="RETRACTS",
+        object_id="version.source",
+    )
+    with pytest.raises(ValueError, match="SOURCE_VERSION_RETRACTED"):
+        invalidated.service.recover_admitted_legacy_source_review(
+            invalidated.task_id, delivery=delivery,
+            capture_revision_sha256=str(invalidated.capture_revision_sha256),
+        )
+    assert intent_path.read_bytes() == before
+    assert invalidated.service.get_task(invalidated.task_id)["review_delivery"]["status"] == "ADMITTED"
 
 
 @pytest.mark.parametrize("kind", ["source", "hypothesis", "engineering"])

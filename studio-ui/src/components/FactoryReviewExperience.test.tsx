@@ -7,9 +7,10 @@ import type { CodexTaskRecord } from "../types";
 const committedDelivery = { status: "COMMITTED" as const, operation_id: "00000000-0000-4000-8000-000000000001",
   proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) };
 
-const mocks = vi.hoisted(() => ({ hypothesis: vi.fn(), engineering: vi.fn(), source: vi.fn(), factoryTask: vi.fn(), readiness: vi.fn() }));
+const mocks = vi.hoisted(() => ({ hypothesis: vi.fn(), engineering: vi.fn(), source: vi.fn(), legacy: vi.fn(), factoryTask: vi.fn(), readiness: vi.fn() }));
 vi.mock("../api", () => ({ api: {
   recordFactoryReviewedSource: mocks.source,
+  recoverFactoryAdmittedV1Source: mocks.legacy,
   factorySourceReviewReadiness: mocks.readiness,
   factoryTask: mocks.factoryTask,
   recordFactoryReviewedHypothesis: mocks.hypothesis,
@@ -28,9 +29,104 @@ function checkAll() {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); });
 
-beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001"); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); mocks.readiness.mockResolvedValue({ status: "READY", eligible_capture_count: 1, options: [{ capture_id: "capture.source", capture_revision_sha256: "c".repeat(64), source_version_id: "version.source", status: "FULL_TEXT_CAPTURED", content_sha256: "a".repeat(64), retrieval_locator: "https://example.test/source", readiness: "READY", issues: [], title: "Captured source", authors: ["Researcher"], source_category: "ACADEMIC", version_kind: "ORIGINAL", version_label: "Published version" }] }); });
+beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001"); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); mocks.legacy.mockResolvedValue({}); mocks.readiness.mockResolvedValue({ status: "READY", eligible_capture_count: 1, options: [{ capture_id: "capture.source", capture_revision_sha256: "c".repeat(64), source_version_id: "version.source", status: "FULL_TEXT_CAPTURED", content_sha256: "a".repeat(64), retrieval_locator: "https://example.test/source", readiness: "READY", issues: [], legacy_recovery_match: true, title: "Captured source", authors: ["Researcher"], source_category: "ACADEMIC", version_kind: "ORIGINAL", version_label: "Published version" }] }); });
 
 describe("structured review experience", () => {
+  it("recovers a server-admitted V1 source review from empty browser storage", async () => {
+    const sourceTask: CodexTaskRecord = {
+      ...task,
+      task_id: "legacy_source_task",
+      task_type: "SOURCE_RESEARCH",
+      proposal: { claims: [{ claim_id: "claim", support: "DIRECT", statement: "Evidence", source_location: "Page 1" }] },
+      review_delivery: {
+        status: "ADMITTED", operation_id: "legacy-operation", proposal_id: "proposal-1",
+        payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64),
+        artifact_schema: "alphaquest.reviewed-source-evidence/v1", legacy_recovery_available: true,
+      },
+    };
+    mocks.factoryTask.mockResolvedValue({ task: {
+      ...sourceTask,
+      review_delivery: { ...sourceTask.review_delivery, status: "COMMITTED", legacy_recovery_available: false },
+      structured_review: {
+        status: "ACCEPTED_FOR_HYPOTHESIS", proposal_id: "proposal-1",
+        proposal_payload_sha256: "a".repeat(64), proposal_validation_sha256: "d".repeat(64),
+        artifact_sha256: "e".repeat(64),
+      },
+    } });
+    const onComplete = vi.fn().mockResolvedValue(undefined);
+    render(<FactoryStructuredReview task={sourceTask} reviewer="" notes="" onComplete={onComplete} />);
+
+    const recovery = await screen.findByRole("button", { name: "RECOVER ADMITTED V1 REVIEW" });
+    await waitFor(() => expect(recovery).toBeEnabled());
+    expect(screen.queryByLabelText("Human verification method")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Human claim decision")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ACCEPT REVIEWED SOURCE EVIDENCE" })).toBeDisabled();
+    fireEvent.click(recovery);
+    await waitFor(() => expect(mocks.legacy).toHaveBeenCalledWith("legacy_source_task", {
+      delivery: {
+        operation_id: "legacy-operation", proposal_id: "proposal-1",
+        payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64),
+      },
+      capture_revision_sha256: "c".repeat(64),
+    }));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(mocks.source).not.toHaveBeenCalled();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("blocks V1 recovery when no ready capture matches the admitted content", async () => {
+    mocks.readiness.mockResolvedValue({ status: "READY", eligible_capture_count: 1, options: [{
+      capture_id: "capture.other", capture_revision_sha256: "c".repeat(64),
+      source_version_id: "version.other", status: "FULL_TEXT_CAPTURED",
+      content_sha256: "b".repeat(64), retrieval_locator: "https://example.test/other",
+      readiness: "READY", issues: [], legacy_recovery_match: false, title: "Other bytes",
+      authors: ["Researcher"], source_category: "ACADEMIC", version_kind: "ORIGINAL",
+      version_label: "Published version",
+    }] });
+    const sourceTask: CodexTaskRecord = {
+      ...task, task_type: "SOURCE_RESEARCH",
+      proposal: { claims: [{ claim_id: "claim", support: "DIRECT", statement: "Evidence", source_location: "Page 1" }] },
+      review_delivery: {
+        status: "ADMITTED", operation_id: "legacy-operation", proposal_id: "proposal-1",
+        payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64),
+        artifact_schema: "alphaquest.reviewed-source-evidence/v1", legacy_recovery_available: true,
+      },
+    };
+    render(<FactoryStructuredReview task={sourceTask} reviewer="" notes="" onComplete={vi.fn()} />);
+    expect(await screen.findByText(/No capture matches the admitted V1 document/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "RECOVER ADMITTED V1 REVIEW" })).toBeDisabled();
+    expect(mocks.legacy).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed V1 recovery locked and does not expose recovery for V2 admission", async () => {
+    const legacyTask: CodexTaskRecord = {
+      ...task, task_id: "failed_legacy_source", task_type: "SOURCE_RESEARCH",
+      proposal: { claims: [{ claim_id: "claim", support: "DIRECT", statement: "Evidence", source_location: "Page 1" }] },
+      review_delivery: {
+        status: "ADMITTED", operation_id: "legacy-operation", proposal_id: "proposal-1",
+        payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64),
+        artifact_schema: "alphaquest.reviewed-source-evidence/v1", legacy_recovery_available: true,
+      },
+    };
+    mocks.legacy.mockRejectedValue(new Error("Recovery write interrupted"));
+    mocks.factoryTask.mockResolvedValue({ task: { ...legacyTask, structured_review: null } });
+    const view = render(<FactoryStructuredReview task={legacyTask} reviewer="" notes="" onComplete={vi.fn()} />);
+    const recovery = await screen.findByRole("button", { name: "RECOVER ADMITTED V1 REVIEW" });
+    await waitFor(() => expect(recovery).toBeEnabled());
+    fireEvent.click(recovery);
+    expect(await screen.findByText(/admitted V1 operation remains locked/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "ACCEPT REVIEWED SOURCE EVIDENCE" })).toBeDisabled();
+    expect(mocks.source).not.toHaveBeenCalled();
+
+    view.unmount();
+    render(<FactoryStructuredReview task={{
+      ...legacyTask,
+      review_delivery: { ...legacyTask.review_delivery!, artifact_schema: "alphaquest.reviewed-source-evidence/v2", legacy_recovery_available: false },
+    }} reviewer="" notes="" onComplete={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "RECOVER ADMITTED V1 REVIEW" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "CHECK SAVED REVIEW" })).toBeVisible();
+  });
+
   it("keeps claim decisions blank and blocks a mismatched canonical capture", async () => {
     mocks.readiness.mockResolvedValue({
       status: "NOT_READY", eligible_capture_count: 0, options: [{

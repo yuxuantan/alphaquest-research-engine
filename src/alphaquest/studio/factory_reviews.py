@@ -167,6 +167,8 @@ class SourceFullTextCaptureBindingV1(FactoryModel):
     work_revision_sha256: str = Field(pattern=SHA256_PATTERN)
     source_version_id: str
     source_version_revision_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_version_resolution_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_reliability_state_sha256: str = Field(pattern=SHA256_PATTERN)
     capture_id: str
     capture_revision_sha256: str = Field(pattern=SHA256_PATTERN)
     content_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -534,10 +536,14 @@ __all__ = [
     "ReviewedEngineeringHandoffIntentArtifactV1",
     "ReviewedHypothesisArtifactV1",
     "ReviewedSourceEvidenceArtifactV1",
+    "ReviewedSourceEvidenceArtifactV2",
     "SOURCE_METADATA_FIELDS",
     "SourceClaimHumanReviewV1",
     "SourceEvidenceHumanVerificationV1",
+    "SourceEvidenceHumanVerificationV2",
+    "SourceFullTextCaptureBindingV1",
     "build_reviewed_engineering_handoff_intent",
     "build_reviewed_hypothesis",
     "build_reviewed_source_evidence",
+    "build_reviewed_source_evidence_v2",
 ]

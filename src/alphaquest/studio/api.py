@@ -370,6 +370,11 @@ class FactoryReviewedSourceRequest(APIModel):
     claim_reviews: list[FactorySourceClaimReviewRequest] = Field(min_length=1)
 
 
+class FactoryLegacySourceRecoveryRequest(APIModel):
+    delivery: FactoryReviewDeliveryRequest
+    capture_revision_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class FactoryReviewedHypothesisRequest(APIModel):
     delivery: FactoryReviewDeliveryRequest
     reviewer: str = Field(min_length=1)
@@ -2041,6 +2046,25 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             return ResearchFactoryService(root).source_review_readiness(task_id)
         except KeyError as exc:
             raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+
+    @app.post("/api/factory/tasks/{task_id}/recover-admitted-v1-source-review")
+    def factory_recover_admitted_v1_source_review(
+        task_id: str,
+        value: FactoryLegacySourceRecoveryRequest,
+    ) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        artifact = ResearchFactoryService(root).recover_admitted_legacy_source_review(
+            task_id,
+            delivery=value.delivery.model_dump(),
+            capture_revision_sha256=value.capture_revision_sha256,
+        )
+        return {
+            "reviewed_artifact": artifact,
+            "campaign_mutated": False,
+            "mechanics_approved": False,
+            "testing_authorized": False,
+        }
 
     @app.post("/api/factory/tasks/{task_id}/reviewed-hypothesis")
     def factory_reviewed_hypothesis(

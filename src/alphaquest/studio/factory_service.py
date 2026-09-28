@@ -22,7 +22,7 @@ import subprocess
 import tempfile
 import time
 from typing import Any, Mapping
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 from uuid import uuid4
 
 from pydantic import BaseModel, ValidationError
@@ -34,8 +34,11 @@ from alphaquest.research.factory_policy import research_factory_window_ids
 from alphaquest.research.literature.contracts import (
     SourceCaptureRevisionV1,
     SourceIdentityRevisionV1,
+    SourceRelationshipRevisionV1,
     SourceVersionIdentityRevisionV1,
+    canonical_json_bytes,
 )
+from alphaquest.research.literature.mapper import canonical_source_version_resolution
 from alphaquest.research.literature.store import LiteratureStore
 from alphaquest.research.storage import load_storage_layout
 from alphaquest.research.storage import resolve_campaign_context, resolve_recorded_path
@@ -132,13 +135,23 @@ def _identity_text(value: str) -> str:
 
 def _identity_token(value: str) -> str:
     raw = value.strip()
-    doi_match = re.search(
-        r"(?:doi(?:\.org)?[/: ]+)?(10\.\d{4,9}/\S+)", raw,
-        flags=re.IGNORECASE,
-    )
+    doi_match = re.fullmatch(r"(?:doi:\s*)?(10\.\d{4,9}/\S+)", raw, flags=re.IGNORECASE)
     if doi_match:
-        return "doi:" + doi_match.group(1).casefold().rstrip("/.,;)")
-    parsed = urlsplit(raw)
+        return "doi:" + doi_match.group(1).casefold()
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return raw
+    if (
+        parsed.scheme.lower() in {"http", "https"}
+        and parsed.hostname is not None
+        and parsed.hostname.casefold() in {"doi.org", "dx.doi.org"}
+        and parsed.username is None
+        and parsed.password is None
+    ):
+        resolver_doi = unquote(parsed.path.removeprefix("/"))
+        if re.fullmatch(r"10\.\d{4,9}/\S+", resolver_doi, flags=re.IGNORECASE):
+            return "doi:" + resolver_doi.casefold()
     if parsed.scheme and parsed.netloc:
         userinfo, separator, host_port = parsed.netloc.rpartition("@")
         prefix = f"{userinfo}@" if separator else ""
@@ -156,10 +169,21 @@ def _identity_token(value: str) -> str:
     return raw
 
 
+def _identity_family(token: str) -> str:
+    if token.startswith("doi:"):
+        return "DOI"
+    try:
+        parsed = urlsplit(token)
+    except ValueError:
+        return "OPAQUE"
+    return "URL" if parsed.scheme and parsed.netloc else "OPAQUE"
+
+
 def _source_identity_issues(
     source: SourceEvidenceBundleV1,
     work: SourceIdentityRevisionV1,
     version: SourceVersionIdentityRevisionV1,
+    capture: SourceCaptureRevisionV1,
 ) -> list[str]:
     issues: list[str] = []
     if _identity_text(source.title) != _identity_text(work.title):
@@ -184,17 +208,47 @@ def _source_identity_issues(
     proposed_locator = _identity_token(source.locator)
     canonical_anchors = {
         _identity_token(value)
-        for value in (
-            list(work.locators)
-            + list(work.strong_identifiers.values())
-            + list(version.strong_identifiers.values())
-        )
+        for value in [*version.strong_identifiers.values(), capture.retrieval_locator]
     }
-    if proposed_locator not in canonical_anchors:
+    locator_family = _identity_family(proposed_locator)
+    comparable = {
+        token for token in canonical_anchors
+        if _identity_family(token) == locator_family
+    }
+    if proposed_locator not in canonical_anchors or any(
+        token != proposed_locator for token in comparable
+    ):
         issues.append("LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH")
     if work.identity_status != "VERIFIED_STRONG" or version.identity_status != "VERIFIED_STRONG":
         issues.append("SOURCE_IDENTITY_NOT_VERIFIED_STRONG")
     return issues
+
+
+def _source_relationship_state(
+    source_version_id: str,
+    relationships: list[SourceRelationshipRevisionV1],
+) -> tuple[str, str, list[str]]:
+    """Return component-scoped canonical resolution and reliability currentness."""
+
+    _canonical_id, resolution_sha256, component = canonical_source_version_resolution(
+        source_version_id, relationships
+    )
+    latest = {item.relationship_id: item for item in relationships}
+    relevant = [
+        item for item in latest.values()
+        if item.predicate in {"RETRACTS", "CORRECTS"} and item.object_id in component
+    ]
+    reliability_sha256 = hashlib.sha256(
+        canonical_json_bytes(
+            sorted(item.record_sha256 for item in relevant), trailing_lf=False
+        )
+    ).hexdigest()
+    issues: list[str] = []
+    if any(item.status == "ACTIVE" and item.predicate == "RETRACTS" for item in relevant):
+        issues.append("SOURCE_VERSION_RETRACTED")
+    if any(item.status == "ACTIVE" and item.predicate == "CORRECTS" for item in relevant):
+        issues.append("SOURCE_VERSION_CORRECTED")
+    return resolution_sha256, reliability_sha256, issues
 
 
 _OUTPUT_MODELS: dict[CodexTaskType, type[BaseModel]] = {
@@ -816,6 +870,15 @@ class ResearchFactoryService:
             json.dumps(imported.validated_payload, sort_keys=True, allow_nan=False)
         )
         options = self._source_capture_options(source)
+        legacy_hash = self._admitted_legacy_source_content_sha256(
+            task_id, campaign_id, validation, imported
+        )
+        for item in options:
+            item["legacy_recovery_match"] = bool(
+                legacy_hash is not None
+                and item["readiness"] == "READY"
+                and item["content_sha256"] == legacy_hash
+            )
         eligible = [item for item in options if item["readiness"] == "READY"]
         return {
             "schema": "alphaquest.source-review-readiness/v1",
@@ -829,6 +892,70 @@ class ResearchFactoryService:
             "options": options,
             "scientific_approval_granted": False,
         }
+
+    def recover_admitted_legacy_source_review(
+        self,
+        task_id: str,
+        *,
+        delivery: ReviewDeliveryV1 | Mapping[str, Any],
+        capture_revision_sha256: str,
+    ) -> dict[str, Any]:
+        """Finish only an exact, pre-existing V1 source delivery admission."""
+
+        with self._controller_lock():
+            intent_path = self._review_delivery_path(task_id)
+            if not intent_path.exists():
+                raise RuntimeError("no admitted legacy source review exists for this task")
+            intent = ReviewDeliveryIntentV1.model_validate_json(
+                intent_path.read_text(encoding="utf-8")
+            )
+            if type(intent.artifact) is not ReviewedSourceEvidenceArtifactV1:
+                raise RuntimeError("the admitted review is not a legacy V1 source decision")
+            exact_delivery = ReviewDeliveryV1.model_validate(delivery)
+            if intent.delivery != exact_delivery:
+                raise RuntimeError("legacy recovery delivery does not match the admitted operation")
+            record, campaign_id, validation, imported = self._reviewable_proposal(
+                task_id, expected_task_type=CodexTaskType.SOURCE_RESEARCH
+            )
+            artifact = intent.artifact
+            source = SourceEvidenceBundleV1.model_validate_json(
+                json.dumps(imported.validated_payload, sort_keys=True, allow_nan=False)
+            )
+            if (
+                artifact.task_id != record.task_id
+                or artifact.campaign_id != campaign_id
+                or artifact.proposal_id != imported.proposal_id
+                or artifact.proposal_payload_sha256 != imported.payload_sha256
+                or artifact.proposal_validation_sha256 != validation.get("validation_sha256")
+                or artifact.source_evidence_sha256 != object_sha256(source)
+                or artifact.source_evidence != source
+            ):
+                raise RuntimeError("legacy recovery intent is not bound to the current exact proposal")
+            review_path = self._review_artifact_path(campaign_id, "source", task_id)
+            if review_path.exists():
+                stored = ReviewedSourceEvidenceArtifactV1.model_validate_json(
+                    review_path.read_text(encoding="utf-8")
+                )
+                if stored != artifact:
+                    raise RuntimeError(
+                        "stored review conflicts with the admitted legacy decision; manual reconciliation required"
+                    )
+            literature = LiteratureStore(self.project_root)
+            with literature.lock(exclusive=False):
+                records = literature._load_and_validate()
+                binding = self._ready_source_capture_binding(
+                    source,
+                    capture_revision_sha256,
+                    literature=literature,
+                    records=records,
+                )
+                if binding.content_sha256 != artifact.human_verification.content_sha256:
+                    raise ValueError(
+                        "selected canonical capture content does not match the admitted V1 review"
+                    )
+                return self._commit_review_artifact(
+                    review_path, artifact, exact_delivery
+                )
 
     def record_reviewed_hypothesis(
         self,
@@ -3218,6 +3345,7 @@ class ResearchFactoryService:
         work_heads: dict[str, SourceIdentityRevisionV1] = {}
         version_heads: dict[str, SourceVersionIdentityRevisionV1] = {}
         capture_heads: dict[str, SourceCaptureRevisionV1] = {}
+        relationships: list[SourceRelationshipRevisionV1] = []
         for item in records:
             if isinstance(item, SourceIdentityRevisionV1):
                 work_heads[item.work_id] = item
@@ -3225,6 +3353,8 @@ class ResearchFactoryService:
                 version_heads[item.source_version_id] = item
             elif isinstance(item, SourceCaptureRevisionV1):
                 capture_heads[item.capture_id] = item
+            elif isinstance(item, SourceRelationshipRevisionV1):
+                relationships.append(item)
 
         options: list[dict[str, Any]] = []
         for capture in sorted(capture_heads.values(), key=lambda item: item.capture_id):
@@ -3244,7 +3374,14 @@ class ResearchFactoryService:
             if capture.local_retention_permission != "ALLOWED":
                 issues.append("LOCAL_RETENTION_NOT_ALLOWED")
             if work is not None and version is not None:
-                issues.extend(_source_identity_issues(source, work, version))
+                issues.extend(_source_identity_issues(source, work, version, capture))
+            resolution_sha256: str | None = None
+            reliability_sha256: str | None = None
+            if version is not None:
+                resolution_sha256, reliability_sha256, relationship_issues = (
+                    _source_relationship_state(version.source_version_id, relationships)
+                )
+                issues.extend(relationship_issues)
             content: bytes | None = None
             extracted: bytes | None = None
             if capture.content_sha256 is None or capture.extracted_representation_sha256 is None:
@@ -3271,6 +3408,8 @@ class ResearchFactoryService:
                     work_revision_sha256=work.record_sha256,
                     source_version_id=version.source_version_id,
                     source_version_revision_sha256=version.record_sha256,
+                    source_version_resolution_sha256=str(resolution_sha256),
+                    source_reliability_state_sha256=str(reliability_sha256),
                     capture_id=capture.capture_id,
                     capture_revision_sha256=capture.record_sha256,
                     content_sha256=capture.content_sha256,
@@ -3382,6 +3521,13 @@ class ResearchFactoryService:
                 or intent.delivery.validation_sha256 != validation.get("validation_sha256")
                 or validation.get("status") != "VALIDATED_NOT_APPLIED"):
                 raise ValueError("review delivery no longer matches the exact task")
+            if isinstance(artifact, (ReviewedSourceEvidenceArtifactV1, ReviewedSourceEvidenceArtifactV2)):
+                imported = self._validated_proposal_integrity(record, validation)
+                if (
+                    artifact.source_evidence.model_dump(mode="json", by_alias=True)
+                    != imported.validated_payload
+                ):
+                    raise ValueError("source review delivery does not preserve the exact proposal")
             kind = ("source" if isinstance(artifact, (ReviewedSourceEvidenceArtifactV1, ReviewedSourceEvidenceArtifactV2)) else
                     "hypothesis" if isinstance(artifact, ReviewedHypothesisArtifactV1) else "engineering-intent")
             stored_path = self._review_artifact_path(artifact.campaign_id, kind, record.task_id)
@@ -3391,9 +3537,48 @@ class ResearchFactoryService:
                 if stored != artifact:
                     raise ValueError("review delivery does not match the stored review")
                 status = "COMMITTED"
-            return {"status": status, **intent.delivery.model_dump(mode="json")}
+            return {
+                "status": status,
+                **intent.delivery.model_dump(mode="json"),
+                "artifact_schema": artifact.schema_name,
+                "legacy_recovery_available": bool(
+                    status == "ADMITTED"
+                    and type(artifact) is ReviewedSourceEvidenceArtifactV1
+                ),
+            }
         except (OSError, RuntimeError, ValueError):
             return {"status": "INTEGRITY_ERROR"}
+
+    def _admitted_legacy_source_content_sha256(
+        self,
+        task_id: str,
+        campaign_id: str,
+        validation: Mapping[str, Any],
+        imported: ImportedProposalV1,
+    ) -> str | None:
+        """Return the frozen V1 content hash only for an exact current admission."""
+
+        path = self._review_delivery_path(task_id)
+        if not path.exists():
+            return None
+        try:
+            intent = ReviewDeliveryIntentV1.model_validate_json(path.read_text(encoding="utf-8"))
+            artifact = intent.artifact
+            if (
+                type(artifact) is not ReviewedSourceEvidenceArtifactV1
+                or artifact.task_id != task_id
+                or artifact.campaign_id != campaign_id
+                or artifact.proposal_id != imported.proposal_id
+                or artifact.proposal_payload_sha256 != imported.payload_sha256
+                or artifact.proposal_validation_sha256 != validation.get("validation_sha256")
+                or artifact.source_evidence.model_dump(mode="json", by_alias=True)
+                != imported.validated_payload
+                or self._review_artifact_path(campaign_id, "source", task_id).exists()
+            ):
+                return None
+            return artifact.human_verification.content_sha256
+        except (OSError, RuntimeError, ValueError):
+            return None
 
     @staticmethod
     def _write_review_once(path: Path, payload: Mapping[str, Any]) -> None:

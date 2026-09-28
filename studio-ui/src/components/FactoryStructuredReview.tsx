@@ -323,6 +323,9 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
   const [saved, setSaved] = useState(false);
   const [uncertain, setUncertain] = usePendingReview(task, onDeliveryPending);
   const [error, setError] = useState("");
+  const legacyRecovery = task.review_delivery?.status === "ADMITTED" &&
+    task.review_delivery.artifact_schema === "alphaquest.reviewed-source-evidence/v1" &&
+    task.review_delivery.legacy_recovery_available === true;
   useEffect(() => {
     setMetadataFields([]);
     setReadiness(null);
@@ -339,15 +342,18 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
     api.factorySourceReviewReadiness(task.task_id).then((value) => {
       if (!current) return;
       setReadiness(value);
-      const ready = value.options.filter((item) => item.readiness === "READY");
+      const ready = value.options.filter((item) => item.readiness === "READY" &&
+        (!legacyRecovery || item.legacy_recovery_match === true));
       if (ready.length === 1) setSelectedCapture(ready[0].capture_revision_sha256);
     }).catch((reason) => {
       if (current) setReadinessError(reason instanceof Error ? reason.message : "Source capture readiness is unavailable.");
     });
     return () => { current = false; };
-  }, [task.task_id]);
+  }, [task.task_id, legacyRecovery]);
   const readyOptions = readiness?.options.filter((item) => item.readiness === "READY") || [];
-  const selectedOption = readyOptions.find((item) => item.capture_revision_sha256 === selectedCapture);
+  const selectableOptions = readyOptions.filter((item) =>
+    !legacyRecovery || item.legacy_recovery_match === true);
+  const selectedOption = selectableOptions.find((item) => item.capture_revision_sha256 === selectedCapture);
   const contentHash = selectedOption?.content_sha256 || "";
   const complete = Boolean(
     reviewer.trim() && notes.trim() && method.trim() && selectedCapture && SHA256.test(contentHash) &&
@@ -395,6 +401,64 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
       setBusy(false);
     }
   }
+  async function recoverLegacy() {
+    const admitted = task.review_delivery;
+    if (!legacyRecovery || !selectedOption || busy || saved || disabled ||
+      typeof admitted?.operation_id !== "string" ||
+      typeof admitted.proposal_id !== "string" ||
+      typeof admitted.payload_sha256 !== "string" ||
+      typeof admitted.validation_sha256 !== "string") return;
+    const delivery = {
+      operation_id: admitted.operation_id,
+      proposal_id: admitted.proposal_id,
+      payload_sha256: admitted.payload_sha256,
+      validation_sha256: admitted.validation_sha256,
+    };
+    setBusy(true);
+    setUncertain(true);
+    setError("");
+    onDeliveryPending?.(task.task_id);
+    let requestError = "";
+    try {
+      await api.recoverFactoryAdmittedV1Source(task.task_id, {
+        delivery,
+        capture_revision_sha256: selectedOption.capture_revision_sha256,
+      });
+    } catch (reason) {
+      requestError = reason instanceof Error ? reason.message : "Legacy recovery outcome is uncertain.";
+    }
+    try {
+      const result = await api.factoryTask(task.task_id);
+      const current = "task" in result ? result.task : result;
+      const receipt = current.structured_review;
+      const retained = current.review_delivery;
+      if (current.task_id === task.task_id &&
+        receipt?.status === "ACCEPTED_FOR_HYPOTHESIS" &&
+        receipt.proposal_id === delivery.proposal_id &&
+        receipt.proposal_payload_sha256 === delivery.payload_sha256 &&
+        receipt.proposal_validation_sha256 === delivery.validation_sha256 &&
+        retained?.status === "COMMITTED" &&
+        retained.artifact_schema === "alphaquest.reviewed-source-evidence/v1" &&
+        retained.operation_id === delivery.operation_id &&
+        retained.proposal_id === delivery.proposal_id &&
+        retained.payload_sha256 === delivery.payload_sha256 &&
+        retained.validation_sha256 === delivery.validation_sha256) {
+        markReviewSaved(task, setSaved);
+        setUncertain(false);
+        setBusy(false);
+        try {
+          await onComplete("The previously admitted V1 source review was recovered unchanged. Read its historical receipt before continuing.");
+        } catch {
+          setError("The V1 review was recovered, but the screen could not refresh. Reload Studio to read the stored receipt; do not resubmit.");
+        }
+        return;
+      }
+    } catch {
+      // Retain the lock and report the uncertain result below.
+    }
+    setError(`${requestError || "Could not confirm the recovered receipt."} The admitted V1 operation remains locked; reload Studio and inspect the saved task before retrying recovery.`);
+    setBusy(false);
+  }
   return (
     <div className="factory-structured-review">
       <Notice tone="info" title="Verify the source outside Codex">
@@ -402,9 +466,9 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
       </Notice>
       <label className="field">
         <span className="field-label">Canonical full-text capture</span>
-        <select aria-label="Canonical full-text capture" value={selectedCapture} onChange={(event) => setSelectedCapture(event.target.value)} disabled={!readiness || readyOptions.length === 0}>
+        <select aria-label="Canonical full-text capture" value={selectedCapture} onChange={(event) => setSelectedCapture(event.target.value)} disabled={!readiness || selectableOptions.length === 0}>
           <option value="">Choose a compatible captured document</option>
-          {readyOptions.map((item) => (
+          {selectableOptions.map((item) => (
             <option value={item.capture_revision_sha256} key={item.capture_revision_sha256}>
               {item.title} · {item.version_label} · {item.capture_id}
             </option>
@@ -417,6 +481,11 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
           Source review is blocked until LiteratureStore contains a current, retained full-text capture matching this exact proposal version.
         </Notice>
       )}
+      {legacyRecovery && readiness && selectableOptions.length === 0 && readyOptions.length > 0 && (
+        <Notice tone="warning" title="No capture matches the admitted V1 document">
+          Recovery requires current eligible full-text bytes whose content hash exactly matches the previously admitted V1 decision.
+        </Notice>
+      )}
       {readiness?.options.filter((item) => item.readiness !== "READY").map((item) => (
         <Notice tone="warning" key={item.capture_revision_sha256} title={`${item.capture_id} is not review-ready`}>
           {item.issues.join(", ")}
@@ -426,6 +495,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
         <span className="field-label">Captured source content SHA-256</span>
         <input aria-label="Captured source content SHA-256" value={contentHash} readOnly placeholder="Selected capture supplies this hash" />
       </label>
+      {!legacyRecovery && <>
       <label className="field">
         <span className="field-label">Human verification method</span>
         <input value={method} onChange={(event) => setMethod(event.target.value)} placeholder="Opened DOI/PDF, checked title/authors/year and captured file bytes" />
@@ -476,8 +546,20 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
         </fieldset>
       ))}
       {!complete && <p className="factory-proposal-requirement">Verify all metadata, enter valid hashes, decide every claim, accept at least one claim, and complete reviewer notes.</p>}
-      {uncertain && !saved && <ReviewRecovery task={task} onComplete={onComplete} disabled={busy}
+      </>}
+      {uncertain && !saved && !legacyRecovery && <ReviewRecovery task={task} onComplete={onComplete} disabled={busy}
         setSaved={setSaved} setUncertain={setUncertain} setError={setError} />}
+      {legacyRecovery && !saved && (
+        <>
+          <Notice tone="warning" title="Recover the previously admitted V1 review">
+            This completes the exact historical decision already retained by the service. It preserves the V1 receipt and does not add V2 capture-binding assurance or create a new human decision.
+          </Notice>
+          <Button type="button" variant="secondary" disabled={disabled || busy || !selectedOption}
+            onClick={() => void recoverLegacy()}>
+            {busy ? "RECOVERING ADMITTED V1 REVIEW…" : "RECOVER ADMITTED V1 REVIEW"}
+          </Button>
+        </>
+      )}
       {saved && <Notice tone="info">Review saved. Read the receipt before continuing.</Notice>}
       {error && <Notice tone="warning">{error}</Notice>}
       <Button type="button" disabled={disabled || busy || saved || uncertain || !complete} onClick={() => void submit()}>ACCEPT REVIEWED SOURCE EVIDENCE</Button>
