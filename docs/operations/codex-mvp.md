@@ -52,12 +52,34 @@ can support real research under that path's own rules. It is not a recorder-qual
 P3 dossier. Synthetic fixtures may demonstrate engineering behavior but cannot
 establish a real scientific result or qualify an upstream source.
 
-## Twelve-hour delivery contract
+## Develop until the MVP objective is met
 
-The owner's subsequent deadline is 2026-09-27 19:04 UTC / 2026-09-28 03:04
-Singapore. The target is one supervised end-to-end research workflow operated by
-Codex, ending in a **diagnostic pre-acceptance** research report. It is not a fully
-autonomous factory or a qualified trading candidate.
+On 2026-09-28 the owner replaced the elapsed twelve-hour timebox with this rule:
+**continue authorized development until the agreed MVP objective and its acceptance
+criteria are met, without waiting for routine scheduling decisions or deadline
+extensions.** There is no active calendar deadline for MVP engineering. The
+unapproved September 30 proposal is withdrawn as a development stopping condition.
+
+The original deadline, 2026-09-27 19:04 UTC / 2026-09-28 03:04 Singapore, was missed
+and remains historical evidence. Removing it neither completes the MVP nor expands
+its scope. The target remains one supervised end-to-end research workflow operated
+by Codex, ending in a **diagnostic pre-acceptance** research report.
+
+Codex chooses routine implementation steps, fixes, checks and independent reviews
+without asking the owner to manage development. A pending scientific decision
+blocks its dependent research actions; continue other scope-eligible MVP work and
+record the unresolved decision and its repercussions. Do not repeatedly ask for a
+replacement deadline or treat an unanswered scheduling question as a global stop.
+If all remaining work requires a substantive owner decision or an external change,
+report that actual dependency. Do not create busywork, fabricate decisions, or claim
+completion from a fixture-only demonstration while real-case requirements remain.
+
+This development policy does not change a campaign's frozen `ResearchObjectivesV1`
+contract, approve its numerical targets, or substitute for source, hypothesis,
+implementation, dataset, duplicate or mechanics review. The existing spending,
+locked-acceptance, trading, independent-review and safeguard-skip restrictions stay
+in force. A stored campaign deadline must still satisfy its own contract; the
+unconfirmed real-case proposal has not become a stored or approved protocol.
 
 Include exactly one instrument, one compatible existing local dataset, one suitable
 existing certified strategy lane, and one predeclared variant. Prefer ES if the
@@ -74,7 +96,7 @@ related questions into a review pack without merging their distinct approvals.
 Use the existing campaign CLI's `--no-acceptance` route. Do not use a worker route
 that unconditionally schedules acceptance. Locked acceptance data, its missing
 canonical authorization bridge, candidate promotion and trading readiness are
-outside this timebox. This no-acceptance route always has overall verdict
+outside this MVP scope. This no-acceptance route always has overall verdict
 `NEEDS MANUAL REVIEW`, including when a stage fails. Preserve those failed-stage
 outcomes without promoting them to a terminal scientific `FAIL` or `PASS`.
 A profitable strategy is not a condition for a successful workflow demonstration.
@@ -84,7 +106,10 @@ The campaign CLI writes a stage summary and stage reports; it does not finalize 
 those exact outputs and their input identities. This report is the MVP deliverable,
 not a canonical finalized bundle. Canonical finalization is deferred.
 
-| Elapsed time | Deliverable |
+The original time allocation below is retained as a historical sequencing plan;
+these elapsed-time bands no longer impose stopping conditions or require renewal.
+
+| Original elapsed-time estimate | Deliverable |
 | --- | --- |
 | 0–1 hour | Resolve the authoritative integration base; confirm certified lane, local data and owner review path; freeze the exact slice |
 | 1–4 hours | Codex-operated runbook and review packs using existing CLI/API/Studio services; only fixes essential to this slice |
@@ -105,7 +130,7 @@ checks on the exact pull-request head. A passing older candidate or a successful
 synthetic run does not satisfy those gates for a changed candidate. Keep the
 delivery status separate from the diagnostic research verdict.
 
-Deferred by the timebox, **not** by a safeguard:
+Deferred under the retained MVP scope, **not** by a safeguard:
 
 - Automatic reviewed-research-to-draft/admission and certified-mechanics compilers.
 - General frequency/data routing, downloading new data, and paid integrations.
