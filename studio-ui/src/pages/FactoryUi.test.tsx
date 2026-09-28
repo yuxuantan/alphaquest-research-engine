@@ -196,7 +196,7 @@ describe("Codex research factory UI", () => {
       state: "PROPOSAL_READY",
       task_type: "MECHANICS_INTENT",
       campaign_id: "factory_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.mechanics-intent/v1",
         execution_lane: "CERTIFIED_RECIPE",
@@ -290,7 +290,7 @@ describe("Codex research factory UI", () => {
       state: "PROPOSAL_READY",
       task_type: "SOURCE_RESEARCH",
       campaign_id: "factory_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.source-evidence-bundle/v1",
         claims: [
@@ -382,7 +382,7 @@ describe("Codex research factory UI", () => {
       state: "PROPOSAL_READY",
       task_type: "HYPOTHESIS_PROPOSAL",
       campaign_id: "factory_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: { schema: "alphaquest.hypothesis-proposal/v1" },
       proposal_disposition: null,
       structured_review: null,
@@ -509,7 +509,7 @@ describe("Codex research factory UI", () => {
       task_id: "codex-proposal-dismiss",
       state: "PROPOSAL_READY",
       task_type: "HYPOTHESIS_PROPOSAL",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.hypothesis-proposal/v1",
         hypothesis: "Bounded test proposal",
@@ -581,7 +581,7 @@ describe("Codex research factory UI", () => {
       state: "PROPOSAL_READY",
       task_type: "NEXT_EXPERIMENT",
       campaign_id: "published_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.next-action-ranking-proposal/v1",
         recommendations: [
@@ -658,7 +658,7 @@ describe("Codex research factory UI", () => {
       state: "PROPOSAL_READY",
       task_type: "NEXT_EXPERIMENT",
       campaign_id: "published_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.next-action-ranking-proposal/v1",
         recommendations: [
@@ -743,10 +743,10 @@ describe("Codex research factory UI", () => {
 
 it("reopens a saved structured receipt while another proposal is pending", async () => {
   const pending = { task_id: "pending-hypothesis", state: "PROPOSAL_READY", task_type: "HYPOTHESIS_PROPOSAL",
-    campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+    campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
     proposal: { schema: "alphaquest.hypothesis-proposal/v1" } };
   const saved = { task_id: "saved-source", state: "PROPOSAL_READY", task_type: "SOURCE_RESEARCH",
-    campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+    campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
     proposal: { schema: "alphaquest.source-evidence-bundle/v1", claims: [] },
     structured_review: { status: "ACCEPTED_FOR_HYPOTHESIS", reviewer: "Source Reviewer", notes: "Verified captured source.", review_id: "source-review-1" } };
   mocks.factoryStatus.mockResolvedValue(status({ latest_task: pending }));

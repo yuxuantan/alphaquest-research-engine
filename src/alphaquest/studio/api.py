@@ -352,7 +352,15 @@ class FactorySourceClaimReviewRequest(APIModel):
     notes: str = Field(min_length=1)
 
 
+class FactoryReviewDeliveryRequest(APIModel):
+    operation_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+    proposal_id: str = Field(min_length=1)
+    payload_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class FactoryReviewedSourceRequest(APIModel):
+    delivery: FactoryReviewDeliveryRequest
     reviewer: str = Field(min_length=1)
     notes: str = Field(min_length=1)
     verified_metadata_fields: list[str] = Field(min_length=6, max_length=6)
@@ -363,6 +371,7 @@ class FactoryReviewedSourceRequest(APIModel):
 
 
 class FactoryReviewedHypothesisRequest(APIModel):
+    delivery: FactoryReviewDeliveryRequest
     reviewer: str = Field(min_length=1)
     notes: str = Field(min_length=1)
     reviewed_fields: list[str] = Field(min_length=20, max_length=20)
@@ -374,6 +383,7 @@ class FactoryReviewedHypothesisRequest(APIModel):
 
 
 class FactoryReviewedEngineeringIntentRequest(APIModel):
+    delivery: FactoryReviewDeliveryRequest
     reviewer: str = Field(min_length=1)
     notes: str = Field(min_length=1)
     reviewed_fields: list[str] = Field(min_length=19, max_length=19)
@@ -2013,6 +2023,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             artifact = ResearchFactoryService(root).record_reviewed_source_evidence(
                 task_id,
                 verification=verification,
+                delivery=value.delivery.model_dump(),
             )
         except KeyError as exc:
             raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
@@ -2047,6 +2058,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             artifact = ResearchFactoryService(root).record_reviewed_hypothesis(
                 task_id,
                 acceptance=acceptance,
+                delivery=value.delivery.model_dump(),
             )
         except KeyError as exc:
             raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
@@ -2081,6 +2093,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             artifact = ResearchFactoryService(root).record_reviewed_engineering_handoff_intent(
                 task_id,
                 acceptance=acceptance,
+                delivery=value.delivery.model_dump(),
             )
         except KeyError as exc:
             raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc

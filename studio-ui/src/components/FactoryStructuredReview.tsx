@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api";
+import { api, type ReviewDelivery } from "../api";
 import type { CodexTaskRecord } from "../types";
 import { ProposalValue } from "./FactoryReviewRecord";
 import { Button, Notice } from "./UI";
@@ -166,6 +166,7 @@ function deliveryKey(task: CodexTaskRecord): string {
 }
 
 function deliveryPending(task: CodexTaskRecord): boolean {
+  if (task.review_delivery) return true;
   try { return localStorage.getItem(deliveryKey(task)) !== null; }
   catch { return true; }
 }
@@ -177,30 +178,38 @@ function usePendingReview(task: CodexTaskRecord) {
     observePending();
     window.addEventListener("storage", observePending);
     return () => window.removeEventListener("storage", observePending);
-  }, [task.task_id]);
+  }, [task.task_id, task.review_delivery]);
   return [uncertain, setUncertain] as const;
 }
 
-function beginReviewSubmission(task: CodexTaskRecord, setUncertain: (value: boolean) => void, setError: (value: string) => void): boolean {
+function beginReviewSubmission(task: CodexTaskRecord, setUncertain: (value: boolean) => void, setError: (value: string) => void): ReviewDelivery | null {
   if (deliveryPending(task)) {
     setUncertain(true);
     setError("An earlier submission has an unresolved outcome. Check the saved review before taking further action.");
-    return false;
+    return null;
+  }
+  const revision = task.proposal_validation;
+  if (typeof revision?.proposal_id !== "string" || !revision.proposal_id ||
+    typeof revision.payload_sha256 !== "string" || !SHA256.test(revision.payload_sha256) ||
+    typeof revision.validation_sha256 !== "string" || !SHA256.test(revision.validation_sha256)) {
+    setError("The exact proposal version is unavailable. Reload the task before submitting a review.");
+    return null;
   }
   try {
-    // Only a delivery marker, never an approval or a copy of the human decision.
-    // Write before sending, so remounting/reloading cannot forget an in-flight POST.
-    localStorage.setItem(deliveryKey(task), JSON.stringify({
-      task_id: task.task_id,
-      proposal_id: task.proposal_validation?.proposal_id,
-      payload_sha256: task.proposal_validation?.payload_sha256,
-      validation_sha256: task.proposal_validation?.validation_sha256,
-    }));
-    return true;
+    const delivery: ReviewDelivery = {
+      operation_id: crypto.randomUUID(),
+      proposal_id: revision.proposal_id,
+      payload_sha256: revision.payload_sha256!,
+      validation_sha256: revision.validation_sha256!,
+    };
+    // Advisory delivery marker only. The service pins the exact decision across
+    // origins; this marker also preserves uncertainty before server admission.
+    localStorage.setItem(deliveryKey(task), JSON.stringify({ task_id: task.task_id, ...delivery }));
+    return delivery;
   } catch {
     setUncertain(true);
     setError("Could not retain the submission state in this browser. No decision was sent. Restore browser storage before submitting a review.");
-    return false;
+    return null;
   }
 }
 
@@ -315,11 +324,13 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
   );
   async function submit() {
     if (!complete || !retractionStatus || busy || saved || uncertain || disabled) return;
-    if (!beginReviewSubmission(task, setUncertain, setError)) return;
+    const delivery = beginReviewSubmission(task, setUncertain, setError);
+    if (!delivery) return;
     setBusy(true);
     setError("");
     try {
       await api.recordFactoryReviewedSource(task.task_id, {
+        delivery,
         reviewer: reviewer.trim(),
         notes: notes.trim(),
         verified_metadata_fields: metadataFields,
@@ -429,11 +440,13 @@ function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: Revie
   const complete = reviewer.trim() && notes.trim() && fields.length === HYPOTHESIS_FIELDS.length && gates.length === gateNames.length;
   async function submit() {
     if (!complete || busy || saved || uncertain || disabled) return;
-    if (!beginReviewSubmission(task, setUncertain, setError)) return;
+    const delivery = beginReviewSubmission(task, setUncertain, setError);
+    if (!delivery) return;
     setBusy(true);
     setError("");
     try {
       await api.recordFactoryReviewedHypothesis(task.task_id, {
+        delivery,
         reviewer: reviewer.trim(), notes: notes.trim(), reviewed_fields: fields,
         objective_alignment: "PASS", source_claim_alignment: "PASS", falsifiability: "PASS",
         information_timeline_no_lookahead: "PASS", execution_cost_awareness: "PASS",
@@ -481,11 +494,13 @@ function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete }
   const complete = reviewer.trim() && notes.trim() && fields.length === MECHANICS_FIELDS.length && gates.length === gateNames.length;
   async function submit() {
     if (!complete || busy || saved || uncertain || disabled) return;
-    if (!beginReviewSubmission(task, setUncertain, setError)) return;
+    const delivery = beginReviewSubmission(task, setUncertain, setError);
+    if (!delivery) return;
     setBusy(true);
     setError("");
     try {
       await api.recordFactoryReviewedEngineeringIntent(task.task_id, {
+        delivery,
         reviewer: reviewer.trim(), notes: notes.trim(), reviewed_fields: fields,
         hypothesis_alignment: "PASS", unsupported_scope_confirmed: "PASS", causal_timeline_reviewed: "PASS",
       });

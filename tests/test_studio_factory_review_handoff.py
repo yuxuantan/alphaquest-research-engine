@@ -504,6 +504,13 @@ def test_reviewed_source_api_requires_explicit_hashes_and_advances_factory(tmp_p
             },
         ],
     }
+    validation = service.get_task(str(task["task_id"]))["proposal_validation"]
+    payload["delivery"] = {
+        "operation_id": "api-source-review-delivery",
+        "proposal_id": validation["proposal_id"],
+        "payload_sha256": validation["payload_sha256"],
+        "validation_sha256": validation["validation_sha256"],
+    }
     invalid = {**payload, "content_sha256": "not-a-hash"}
     assert client.post(
         f"/api/factory/tasks/{task['task_id']}/reviewed-source-evidence",

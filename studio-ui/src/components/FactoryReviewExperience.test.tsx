@@ -27,6 +27,48 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); });
 beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); });
 
 describe("structured review experience", () => {
+  it.each(["SOURCE_RESEARCH", "HYPOTHESIS_PROPOSAL", "MECHANICS_INTENT"])(
+    "locks %s from server admission with empty origin-local storage",
+    async (taskType) => {
+      const currentTask: CodexTaskRecord = { ...task, task_type: taskType,
+        proposal: taskType === "SOURCE_RESEARCH" ? { claims: [{ claim_id: "claim", support: "DIRECT", statement: "Evidence", source_location: "Page 1" }] }
+          : taskType === "MECHANICS_INTENT" ? { execution_lane: "ENGINEERING_HANDOFF" } : task.proposal,
+        review_delivery: { status: "ADMITTED", operation_id: "other-origin-operation" },
+      };
+      render(<FactoryStructuredReview task={currentTask} reviewer="Researcher" notes="Changed notes" onComplete={vi.fn()} />);
+      checkAll();
+      if (taskType === "SOURCE_RESEARCH") {
+        for (const [label, value] of [
+          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked metadata"],
+          ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
+          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Confirmed"],
+        ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      }
+      expect(localStorage.length).toBe(0);
+      const button = screen.getByRole("button", { name: /^ACCEPT/ });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+      expect(mocks.source).not.toHaveBeenCalled();
+      expect(mocks.hypothesis).not.toHaveBeenCalled();
+      expect(mocks.engineering).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "CHECK SAVED REVIEW" })).toBeEnabled();
+    },
+  );
+
+  it("binds each submission and its marker to one operation and exact proposal revision", async () => {
+    mocks.hypothesis.mockImplementation(() => new Promise(() => {}));
+    render(<FactoryStructuredReview task={task} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
+    checkAll();
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(mocks.hypothesis).toHaveBeenCalledTimes(1));
+    const delivery = mocks.hypothesis.mock.calls[0][1].delivery;
+    expect(delivery).toEqual({ operation_id: expect.any(String), proposal_id: "proposal-1",
+      payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) });
+    expect(delivery.operation_id.length).toBeGreaterThan(0);
+    expect(JSON.parse(localStorage.getItem(`alphaquest.review-delivery.pending.v1:${task.task_id}`)!))
+      .toEqual({ task_id: task.task_id, ...delivery });
+  });
+
   it("puts exact values beside acknowledgements and exposes unresolved evidence", () => {
     render(<FactoryStructuredReview task={task} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
     const check = screen.getByRole("checkbox", { name: "causal mechanism" });

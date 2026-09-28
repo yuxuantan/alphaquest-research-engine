@@ -11,6 +11,13 @@ import type {
   StudioSettings,
 } from "./types";
 
+export interface ReviewDelivery {
+  operation_id: string;
+  proposal_id: string;
+  payload_sha256: string;
+  validation_sha256: string;
+}
+
 export class ApiError extends Error {
   status: number;
   fields: Record<string, string>;
@@ -466,6 +473,7 @@ export const api = {
   recordFactoryReviewedSource: (
     id: string,
     value: {
+      delivery: ReviewDelivery;
       reviewer: string;
       notes: string;
       verified_metadata_fields: string[];
@@ -489,6 +497,7 @@ export const api = {
   recordFactoryReviewedHypothesis: (
     id: string,
     value: {
+      delivery: ReviewDelivery;
       reviewer: string;
       notes: string;
       reviewed_fields: string[];
@@ -506,6 +515,7 @@ export const api = {
   recordFactoryReviewedEngineeringIntent: (
     id: string,
     value: {
+      delivery: ReviewDelivery;
       reviewer: string;
       notes: string;
       reviewed_fields: string[];

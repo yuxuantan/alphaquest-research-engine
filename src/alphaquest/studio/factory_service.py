@@ -45,6 +45,13 @@ from alphaquest.studio.codex_runtime import (
     _unexpected_failure_result,
 )
 from alphaquest.studio.drafts import DraftStore
+from alphaquest.studio.factory_review_delivery import (
+    ReviewArtifact,
+    ReviewDeliveryIntentV1,
+    ReviewDeliveryV1,
+    build_delivery_intent,
+    substantive_review,
+)
 from alphaquest.studio.factory_reviews import (
     EngineeringHandoffIntentHumanAcceptanceV1,
     HypothesisHumanAcceptanceV1,
@@ -655,6 +662,7 @@ class ResearchFactoryService:
         task_id: str,
         *,
         verification: SourceEvidenceHumanVerificationV1 | Mapping[str, Any],
+        delivery: ReviewDeliveryV1 | Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Accept one complete source proposal through an explicit human check.
 
@@ -687,14 +695,14 @@ class ResearchFactoryService:
                 human_verification=review,
             )
             path = self._review_artifact_path(campaign_id, "source", task_id)
-            self._write_review_once(path, artifact.model_dump(mode="json", by_alias=True))
-            return artifact.model_dump(mode="json", by_alias=True)
+            return self._commit_review_artifact(path, artifact, delivery)
 
     def record_reviewed_hypothesis(
         self,
         task_id: str,
         *,
         acceptance: HypothesisHumanAcceptanceV1 | Mapping[str, Any],
+        delivery: ReviewDeliveryV1 | Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Accept an exact hypothesis proposal without collapsing it to text."""
 
@@ -732,14 +740,14 @@ class ResearchFactoryService:
                 human_acceptance=review,
             )
             path = self._review_artifact_path(campaign_id, "hypothesis", task_id)
-            self._write_review_once(path, artifact.model_dump(mode="json", by_alias=True))
-            return artifact.model_dump(mode="json", by_alias=True)
+            return self._commit_review_artifact(path, artifact, delivery)
 
     def record_reviewed_engineering_handoff_intent(
         self,
         task_id: str,
         *,
         acceptance: EngineeringHandoffIntentHumanAcceptanceV1 | Mapping[str, Any],
+        delivery: ReviewDeliveryV1 | Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Accept an unsupported mechanics intent for a proposal-only handoff."""
 
@@ -778,8 +786,7 @@ class ResearchFactoryService:
                 human_acceptance=review,
             )
             path = self._review_artifact_path(campaign_id, "engineering-intent", task_id)
-            self._write_review_once(path, artifact.model_dump(mode="json", by_alias=True))
-            return artifact.model_dump(mode="json", by_alias=True)
+            return self._commit_review_artifact(path, artifact, delivery)
 
     def pause(self, *, reason: str = "Paused by the local operator.") -> dict[str, Any]:
         message = reason.strip()
@@ -991,6 +998,7 @@ class ResearchFactoryService:
         payload["structured_review"] = self._structured_review_summary(
             record, include_artifact=include_proposal
         )
+        payload["review_delivery"] = self._review_delivery_summary(record, validation)
         payload["selected_action"] = self._selected_next_action(record)
         payload["selected_action_completion"] = self._selected_action_completion(record)
         payload["applied"] = False
@@ -3055,6 +3063,80 @@ class ResearchFactoryService:
         if kind not in {"source", "hypothesis", "engineering-intent"}:
             raise ValueError("unsupported factory review artifact kind")
         return self.review_root / campaign_id / kind / f"{task_id}.json"
+
+    def _review_delivery_path(self, task_id: str) -> Path:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", task_id):
+            raise ValueError("invalid task identity for review delivery")
+        # Separate from campaign/kind directories scanned by approval readers.
+        return self.review_root / "delivery" / f"{task_id}.json"
+
+    def _commit_review_artifact(
+        self, path: Path, artifact: ReviewArtifact,
+        delivery: ReviewDeliveryV1 | Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Called under the controller lock, after all existing review checks.
+
+        Pin the first server-admitted decision, not the first browser click.
+        A delivery intent is transport state and is never review authority.
+        """
+        intent_path = self._review_delivery_path(artifact.task_id)
+        if delivery is None:
+            if intent_path.exists():
+                raise RuntimeError("this task has an admitted review delivery; reconcile its exact operation")
+            value = artifact.model_dump(mode="json", by_alias=True)
+            self._write_review_once(path, value)
+            return value
+        binding = ReviewDeliveryV1.model_validate(delivery)
+        if not binding.matches(artifact):
+            raise RuntimeError("review delivery does not match the current exact proposal")
+        if intent_path.exists():
+            intent = ReviewDeliveryIntentV1.model_validate_json(intent_path.read_text(encoding="utf-8"))
+            if intent.delivery != binding or substantive_review(intent.artifact) != substantive_review(artifact):
+                raise RuntimeError("a different review decision or operation is already admitted for this task")
+        else:
+            if path.exists():
+                raise RuntimeError("a human review artifact is immutable and already exists for this task")
+            intent = build_delivery_intent(binding, artifact)
+            _atomic_json(intent_path, intent.model_dump(mode="json", by_alias=True))
+        # The retained review ID, timestamp, and artifact hash come from the
+        # first admission. Replays revalidate current context before reaching us.
+        value = intent.artifact.model_dump(mode="json", by_alias=True)
+        if path.exists():
+            stored = type(intent.artifact).model_validate_json(path.read_text(encoding="utf-8"))
+            if stored != intent.artifact:
+                raise RuntimeError("stored review does not match its admitted delivery; manual reconciliation required")
+        else:
+            self._write_review_once(path, value)
+        return value
+
+    def _review_delivery_summary(
+        self, record: CodexTaskRecordV1, validation: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        path = self._review_delivery_path(record.task_id)
+        if not path.exists():
+            return None
+        try:
+            intent = ReviewDeliveryIntentV1.model_validate_json(path.read_text(encoding="utf-8"))
+            artifact = intent.artifact
+            metadata = self._task_metadata(record)
+            if (artifact.task_id != record.task_id or artifact.campaign_id != metadata.get("campaign_id")
+                or intent.delivery.proposal_id != validation.get("proposal_id")
+                or intent.delivery.payload_sha256 != validation.get("payload_sha256")
+                or intent.delivery.validation_sha256 != validation.get("validation_sha256")
+                or validation.get("status") != "VALIDATED_NOT_APPLIED"):
+                raise ValueError("review delivery no longer matches the exact task")
+            kind = ("source" if isinstance(artifact, ReviewedSourceEvidenceArtifactV1) else
+                    "hypothesis" if isinstance(artifact, ReviewedHypothesisArtifactV1) else "engineering-intent")
+            stored_path = self._review_artifact_path(artifact.campaign_id, kind, record.task_id)
+            status = "ADMITTED"
+            if stored_path.exists():
+                stored = type(artifact).model_validate_json(stored_path.read_text(encoding="utf-8"))
+                if stored != artifact:
+                    raise ValueError("review delivery does not match the stored review")
+                status = "COMMITTED"
+            return {"status": status, **intent.delivery.model_dump(mode="json")}
+        except (OSError, RuntimeError, ValueError):
+            return {"status": "INTEGRITY_ERROR"}
 
     @staticmethod
     def _write_review_once(path: Path, payload: Mapping[str, Any]) -> None:

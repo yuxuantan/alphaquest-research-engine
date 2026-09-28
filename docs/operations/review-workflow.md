@@ -39,16 +39,30 @@ If the request itself fails, Studio reads back the task and keeps submission
 locked. A stored decision opens the receipt flow. An empty readback does not
 prove the original write has finished, so it never enables another submission.
 Use **Check saved review** to read the task again without issuing another write.
-A browser delivery marker is written before submission and preserves this lock
-across reopening/reloading the form. It contains task/version identifiers only,
-never a decision or approval. Submission requires working browser storage.
+Before sending, a browser delivery marker retains the operation ID and exact
+proposal version. It contains no decision or approval and requires working
+browser storage. The service also admits one immutable delivery intent per task,
+bound to that operation, the proposal/validation hashes, and the exact human
+review. This coordinates tabs, browser profiles and the supported loopback
+addresses. A task with an admitted delivery remains locked even in a browser
+with no local marker.
+
+The first decision **admitted by the service** owns the task. A browser click
+whose request has not reached the service cannot reserve that ordering. Another
+request may reach the service first; the recorded receipt identifies the actual
+saved decision. Conflicting operations or changed human input are rejected.
+An exact operation replay can return the original receipt or finish an
+interrupted artifact write, retaining its original reviewer, timestamp and hash.
+The transport intent itself never permits downstream research: only the existing
+verified review artifact does. Existing historical reviews remain authoritative.
+
+**Check saved review** only reads; it never automatically retries a mutation.
 Only a successful service write response or a matching stored receipt clears the
-marker. Do not clear browser data to force a retry of an unresolved submission;
-if no receipt appears, reconcile the original request with the service first.
-If readback also fails or evidence cannot be verified, the outcome stays
-uncertain. Reopen the task to inspect its authoritative state before taking
-further action; do not assume the save failed. Existing one-shot storage
-prevents replacing a review. An integrity error remains blocked.
+local marker. Do not clear browser data to force a retry. If a crash leaves an
+admitted intent without a review artifact, reconcile its exact operation and
+submitted contents with the service; do not create a replacement decision. This
+rare recovery remains an operator task. Empty or failed readback and integrity
+errors stay blocked. The UI does not claim that a missing receipt proves failure.
 
 ## Decision scope
 
