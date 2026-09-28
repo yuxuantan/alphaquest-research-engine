@@ -15,9 +15,10 @@ out already authorized work; the human supplies the substantive judgments.
    values, conflicts and unresolved questions. Values are shown beside their
    acknowledgement controls; the complete validated JSON remains available.
 3. Check each required field and criterion. Source review additionally requires
-   captured document and accepted-claim hashes, a retraction check, a decision
-   for every claim, and each claim's verification method and notes. A rejected
-   claim stays in the record; at least one accepted claim is required to proceed.
+   selecting a compatible canonical full-text capture, accepted-claim hashes, a
+   retraction check, a decision for every claim, and each claim's verification
+   method and notes. A rejected claim stays in the record; at least one accepted
+   claim is required to proceed.
 4. Enter your reviewer identity and notes, then submit the specific acceptance
    action. The configured identity is a local attribution label, not an
    authenticated signature. A hash identifies content, not the human who read it.
@@ -76,7 +77,7 @@ errors stay blocked. The UI does not claim that a missing receipt proves failure
 
 | Review | Existing record | What the decision permits |
 | --- | --- | --- |
-| Source verification | `ReviewedSourceEvidenceArtifactV1` with `SourceEvidenceHumanVerificationV1` | Hypothesis proposal using the accepted source claims |
+| Source verification | New writes: `ReviewedSourceEvidenceArtifactV2` with an exact canonical full-text binding; historical v1 remains readable without that assurance | Hypothesis proposal using the accepted source claims |
 | Hypothesis acceptance | `ReviewedHypothesisArtifactV1` with `HypothesisHumanAcceptanceV1` | Mechanics proposal for that economic hypothesis |
 | Unsupported mechanics intent | `ReviewedEngineeringHandoffIntentArtifactV1` | A proposal-only engineering handoff; no implementation or certification |
 | Manual mechanics review | `MechanicsApprovalService` and the existing approval JSON | Performance testing only after current evidence and every required sample pass |

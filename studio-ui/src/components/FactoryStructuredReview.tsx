@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type ReviewDelivery } from "../api";
+import { api, type ReviewDelivery, type SourceReviewReadiness } from "../api";
 import type { CodexTaskRecord } from "../types";
 import { ProposalValue } from "./FactoryReviewRecord";
 import { Button, Notice } from "./UI";
@@ -310,7 +310,9 @@ function ReviewRecovery({ task, onComplete, disabled, setSaved, setUncertain, se
 function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryPending }: ReviewProps) {
   const claims = useMemo(() => claimsFrom(task), [task.proposal]);
   const [metadataFields, setMetadataFields] = useState<string[]>([]);
-  const [contentHash, setContentHash] = useState("");
+  const [readiness, setReadiness] = useState<SourceReviewReadiness | null>(null);
+  const [readinessError, setReadinessError] = useState("");
+  const [selectedCapture, setSelectedCapture] = useState("");
   const [retractionStatus, setRetractionStatus] = useState<"" | "NOT_RETRACTED" | "CORRECTED">("");
   const [method, setMethod] = useState("");
   const [decisions, setDecisions] = useState<Record<string, "" | "ACCEPT" | "REJECT">>({});
@@ -323,7 +325,9 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
   const [error, setError] = useState("");
   useEffect(() => {
     setMetadataFields([]);
-    setContentHash("");
+    setReadiness(null);
+    setReadinessError("");
+    setSelectedCapture("");
     setRetractionStatus("");
     setMethod("");
     setDecisions({});
@@ -331,9 +335,22 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
     setClaimNotes({});
     setClaimMethods({});
     setError("");
+    let current = true;
+    api.factorySourceReviewReadiness(task.task_id).then((value) => {
+      if (!current) return;
+      setReadiness(value);
+      const ready = value.options.filter((item) => item.readiness === "READY");
+      if (ready.length === 1) setSelectedCapture(ready[0].capture_revision_sha256);
+    }).catch((reason) => {
+      if (current) setReadinessError(reason instanceof Error ? reason.message : "Source capture readiness is unavailable.");
+    });
+    return () => { current = false; };
   }, [task.task_id]);
+  const readyOptions = readiness?.options.filter((item) => item.readiness === "READY") || [];
+  const selectedOption = readyOptions.find((item) => item.capture_revision_sha256 === selectedCapture);
+  const contentHash = selectedOption?.content_sha256 || "";
   const complete = Boolean(
-    reviewer.trim() && notes.trim() && method.trim() && SHA256.test(contentHash) &&
+    reviewer.trim() && notes.trim() && method.trim() && selectedCapture && SHA256.test(contentHash) &&
     retractionStatus && metadataFields.length === SOURCE_METADATA_FIELDS.length && claims.length &&
     claims.every((claim) => decisions[claim.claim_id] && claimNotes[claim.claim_id]?.trim() && claimMethods[claim.claim_id]?.trim() &&
       (decisions[claim.claim_id] === "REJECT" || SHA256.test(evidenceHashes[claim.claim_id] || ""))) &&
@@ -349,10 +366,10 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
     try {
       await api.recordFactoryReviewedSource(task.task_id, {
         delivery,
+        capture_revision_sha256: selectedCapture,
         reviewer: reviewer.trim(),
         notes: notes.trim(),
         verified_metadata_fields: metadataFields,
-        content_sha256: contentHash,
         retraction_status: retractionStatus,
         verification_method: method.trim(),
         claim_reviews: claims.map((claim) => ({
@@ -381,11 +398,33 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
   return (
     <div className="factory-structured-review">
       <Notice tone="info" title="Verify the source outside Codex">
-        Open the original source, capture the exact bytes or document used, and decide every claim. Codex's PARTIAL source status remains unchanged inside the preserved proposal.
+        Select a canonical full-text capture, open that exact document, and decide every claim. Codex's PARTIAL source status remains unchanged inside the preserved proposal.
       </Notice>
       <label className="field">
+        <span className="field-label">Canonical full-text capture</span>
+        <select aria-label="Canonical full-text capture" value={selectedCapture} onChange={(event) => setSelectedCapture(event.target.value)} disabled={!readiness || readyOptions.length === 0}>
+          <option value="">Choose a compatible captured document</option>
+          {readyOptions.map((item) => (
+            <option value={item.capture_revision_sha256} key={item.capture_revision_sha256}>
+              {item.title} · {item.version_label} · {item.capture_id}
+            </option>
+          ))}
+        </select>
+      </label>
+      {readinessError && <Notice tone="warning" title="Capture readiness unavailable">{readinessError}</Notice>}
+      {readiness && readyOptions.length === 0 && (
+        <Notice tone="warning" title="No compatible full-text capture">
+          Source review is blocked until LiteratureStore contains a current, retained full-text capture matching this exact proposal version.
+        </Notice>
+      )}
+      {readiness?.options.filter((item) => item.readiness !== "READY").map((item) => (
+        <Notice tone="warning" key={item.capture_revision_sha256} title={`${item.capture_id} is not review-ready`}>
+          {item.issues.join(", ")}
+        </Notice>
+      ))}
+      <label className="field">
         <span className="field-label">Captured source content SHA-256</span>
-        <input value={contentHash} onChange={(event) => setContentHash(event.target.value.trim().toLowerCase())} placeholder="64 lowercase hexadecimal characters" />
+        <input aria-label="Captured source content SHA-256" value={contentHash} readOnly placeholder="Selected capture supplies this hash" />
       </label>
       <label className="field">
         <span className="field-label">Human verification method</span>

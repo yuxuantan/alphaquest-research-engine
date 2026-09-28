@@ -401,3 +401,42 @@ no universal typed origin field, so absence of a warning yields
 
 The [structured review workflow](review-workflow.md) defines the proposal,
 checklist and durable receipt experience using the existing review contracts.
+
+### Source documents must be ready before review
+
+For every new source-evidence review, Studio reads the canonical LiteratureStore
+and reports readiness for captures that already exist. The selected capture must
+be the current work, source-version, and capture revision; both the work and
+source-version identity must be `VERIFIED_STRONG`;
+its retained content and extracted representation must still exist with the
+recorded hashes and byte counts; local retention must be allowed; and the capture
+must be `FULL_TEXT_CAPTURED`. Abstract-only, metadata-only, failed, inaccessible,
+missing, stale, or identity-mismatched captures remain visible as not ready and
+cannot be submitted.
+
+Identity matching is deterministic. Title and ordered authors must match after
+case and whitespace normalization. Publication category and source-version kind
+must be compatible, so a working paper cannot satisfy a peer-reviewed journal
+proposal. The proposal locator must exactly match a canonical locator or strong
+identifier after DOI normalization or URL scheme/host normalization; URL paths
+and query values remain case-sensitive. The canonical literature schema does not
+contain a bibliographic publication-year field. Studio therefore does not mistake
+public-availability timing or free-form version labels for publication year; year
+remains one of the six required human metadata checks.
+
+The reviewer selects the canonical capture rather than typing a document hash.
+Studio displays its content hash read-only, while the service recomputes readiness
+and holds the LiteratureStore shared lock through immutable receipt publication.
+The new `alphaquest.reviewed-source-evidence/v2` receipt binds the exact work,
+version and capture revision hashes plus content and extraction hashes. Existing
+v1 receipts remain byte-identical and readable, but readers do not claim that
+those historical records contain the new capture binding.
+
+This prerequisite does not make a scientific decision. Reviewer identity and
+notes, all six metadata checks, retraction or correction status, every claim
+decision, each verification method, and claim notes remain mandatory. Claim
+evidence hashes continue to be separate human attestations; a future canonical
+claim-extraction bridge is outside this slice. No document upload, arbitrary path,
+network fetch, paid source access, automated source selection, admission compiler,
+campaign write, mechanics approval, performance test, holdout access, or trading
+authority is added.

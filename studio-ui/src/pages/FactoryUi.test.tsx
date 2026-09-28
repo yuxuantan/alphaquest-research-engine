@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   setFactorySelectedAction: vi.fn(),
   completeFactorySelectedAction: vi.fn(),
   recordFactoryReviewedSource: vi.fn(),
+  factorySourceReviewReadiness: vi.fn(),
   recordFactoryReviewedHypothesis: vi.fn(),
   recordFactoryReviewedEngineeringIntent: vi.fn(),
   pauseFactory: vi.fn(),
@@ -99,6 +100,15 @@ beforeEach(() => {
   mocks.setFactorySelectedAction.mockResolvedValue({ task: {} });
   mocks.completeFactorySelectedAction.mockResolvedValue({ task: {} });
   mocks.recordFactoryReviewedSource.mockResolvedValue({ reviewed_artifact: {} });
+  mocks.factorySourceReviewReadiness.mockResolvedValue({
+    status: "READY", eligible_capture_count: 1, options: [{
+      capture_id: "capture.source", capture_revision_sha256: "c".repeat(64),
+      source_version_id: "version.source", status: "FULL_TEXT_CAPTURED",
+      content_sha256: "a".repeat(64), retrieval_locator: "https://example.test/source",
+      readiness: "READY", issues: [], title: "Captured source", authors: ["Researcher"],
+      source_category: "ACADEMIC", version_kind: "ORIGINAL", version_label: "Published version",
+    }],
+  });
   mocks.recordFactoryReviewedHypothesis.mockResolvedValue({ reviewed_artifact: {} });
   mocks.recordFactoryReviewedEngineeringIntent.mockResolvedValue({ reviewed_artifact: {} });
 });
@@ -334,9 +344,7 @@ describe("Codex research factory UI", () => {
     fireEvent.change(screen.getByLabelText("Required review notes"), {
       target: { value: "Checked the original source and every claim." },
     });
-    fireEvent.change(screen.getByLabelText("Captured source content SHA-256"), {
-      target: { value: "a".repeat(64) },
-    });
+    await waitFor(() => expect(screen.getByLabelText("Captured source content SHA-256")).toHaveValue("a".repeat(64)));
     fireEvent.change(screen.getByLabelText("Human verification method"), {
       target: { value: "Opened the publisher PDF and checked its metadata." },
     });
@@ -365,7 +373,7 @@ describe("Codex research factory UI", () => {
       "codex-source-review",
       expect.objectContaining({
         reviewer: "Configured Reviewer",
-        content_sha256: "a".repeat(64),
+        capture_revision_sha256: "c".repeat(64),
         retraction_status: "NOT_RETRACTED",
         claim_reviews: [expect.objectContaining({
           claim_id: "claim_1",

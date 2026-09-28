@@ -361,10 +361,10 @@ class FactoryReviewDeliveryRequest(APIModel):
 
 class FactoryReviewedSourceRequest(APIModel):
     delivery: FactoryReviewDeliveryRequest
+    capture_revision_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     reviewer: str = Field(min_length=1)
     notes: str = Field(min_length=1)
     verified_metadata_fields: list[str] = Field(min_length=6, max_length=6)
-    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     retraction_status: Literal["NOT_RETRACTED", "CORRECTED"]
     verification_method: str = Field(min_length=1)
     claim_reviews: list[FactorySourceClaimReviewRequest] = Field(min_length=1)
@@ -2005,24 +2005,23 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         task_id: str,
         value: FactoryReviewedSourceRequest,
     ) -> dict[str, Any]:
-        from alphaquest.studio.factory_reviews import SourceEvidenceHumanVerificationV1
         from alphaquest.studio.factory_service import ResearchFactoryService
 
-        verification = SourceEvidenceHumanVerificationV1(
-            review_id=f"source_review_{uuid4().hex}",
-            reviewer=value.reviewer,
-            reviewed_at=datetime.now(timezone.utc),
-            verified_metadata_fields=value.verified_metadata_fields,
-            content_sha256=value.content_sha256,
-            retraction_status=value.retraction_status,
-            verification_method=value.verification_method,
-            claim_reviews=[item.model_dump() for item in value.claim_reviews],
-            notes=value.notes,
-        )
+        verification = {
+            "review_id": f"source_review_{uuid4().hex}",
+            "reviewer": value.reviewer,
+            "reviewed_at": datetime.now(timezone.utc),
+            "verified_metadata_fields": value.verified_metadata_fields,
+            "retraction_status": value.retraction_status,
+            "verification_method": value.verification_method,
+            "claim_reviews": [item.model_dump() for item in value.claim_reviews],
+            "notes": value.notes,
+        }
         try:
             artifact = ResearchFactoryService(root).record_reviewed_source_evidence(
                 task_id,
                 verification=verification,
+                capture_revision_sha256=value.capture_revision_sha256,
                 delivery=value.delivery.model_dump(),
             )
         except KeyError as exc:
@@ -2033,6 +2032,15 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             "mechanics_approved": False,
             "testing_authorized": False,
         }
+
+    @app.get("/api/factory/tasks/{task_id}/source-review-readiness")
+    def factory_source_review_readiness(task_id: str) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        try:
+            return ResearchFactoryService(root).source_review_readiness(task_id)
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
 
     @app.post("/api/factory/tasks/{task_id}/reviewed-hypothesis")
     def factory_reviewed_hypothesis(

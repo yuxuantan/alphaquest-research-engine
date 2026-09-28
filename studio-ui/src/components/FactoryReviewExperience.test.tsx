@@ -7,9 +7,10 @@ import type { CodexTaskRecord } from "../types";
 const committedDelivery = { status: "COMMITTED" as const, operation_id: "00000000-0000-4000-8000-000000000001",
   proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) };
 
-const mocks = vi.hoisted(() => ({ hypothesis: vi.fn(), engineering: vi.fn(), source: vi.fn(), factoryTask: vi.fn() }));
+const mocks = vi.hoisted(() => ({ hypothesis: vi.fn(), engineering: vi.fn(), source: vi.fn(), factoryTask: vi.fn(), readiness: vi.fn() }));
 vi.mock("../api", () => ({ api: {
   recordFactoryReviewedSource: mocks.source,
+  factorySourceReviewReadiness: mocks.readiness,
   factoryTask: mocks.factoryTask,
   recordFactoryReviewedHypothesis: mocks.hypothesis,
   recordFactoryReviewedEngineeringIntent: mocks.engineering,
@@ -27,9 +28,36 @@ function checkAll() {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); });
 
-beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001"); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); });
+beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001"); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); mocks.readiness.mockResolvedValue({ status: "READY", eligible_capture_count: 1, options: [{ capture_id: "capture.source", capture_revision_sha256: "c".repeat(64), source_version_id: "version.source", status: "FULL_TEXT_CAPTURED", content_sha256: "a".repeat(64), retrieval_locator: "https://example.test/source", readiness: "READY", issues: [], title: "Captured source", authors: ["Researcher"], source_category: "ACADEMIC", version_kind: "ORIGINAL", version_label: "Published version" }] }); });
 
 describe("structured review experience", () => {
+  it("keeps claim decisions blank and blocks a mismatched canonical capture", async () => {
+    mocks.readiness.mockResolvedValue({
+      status: "NOT_READY", eligible_capture_count: 0, options: [{
+        capture_id: "capture.working", capture_revision_sha256: "c".repeat(64),
+        source_version_id: "version.working", status: "FULL_TEXT_CAPTURED",
+        content_sha256: "a".repeat(64), retrieval_locator: "https://example.test/working",
+        readiness: "NOT_READY", issues: ["PUBLICATION_CATEGORY_MISMATCH"],
+        title: "Working paper", authors: ["Researcher"], source_category: "WORKING_PAPER",
+        version_kind: "WORKING_PAPER_REVISION", version_label: "Working paper",
+      }],
+    });
+    const sourceTask: CodexTaskRecord = {
+      ...task,
+      task_id: "source_task",
+      task_type: "SOURCE_RESEARCH",
+      proposal: { claims: [{ claim_id: "claim", support: "DIRECT", statement: "Evidence", source_location: "Page 1" }] },
+    };
+    render(<FactoryStructuredReview task={sourceTask} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
+    expect(await screen.findByText(/No compatible full-text capture/i)).toBeVisible();
+    expect(screen.getByText(/PUBLICATION_CATEGORY_MISMATCH/i)).toBeVisible();
+    expect(screen.getByLabelText("Canonical full-text capture")).toBeDisabled();
+    expect(screen.getByLabelText("Captured source content SHA-256")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Human claim decision")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "ACCEPT REVIEWED SOURCE EVIDENCE" })).toBeDisabled();
+    expect(mocks.source).not.toHaveBeenCalled();
+  });
+
   it.each(["SOURCE_RESEARCH", "HYPOTHESIS_PROPOSAL", "MECHANICS_INTENT"])(
     "locks %s from server admission with empty origin-local storage",
     async (taskType) => {
@@ -42,7 +70,7 @@ describe("structured review experience", () => {
       checkAll();
       if (taskType === "SOURCE_RESEARCH") {
         for (const [label, value] of [
-          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked metadata"],
+          ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
           ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Confirmed"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -90,12 +118,13 @@ describe("structured review experience", () => {
       checkAll();
       if (taskType === "SOURCE_RESEARCH") {
         for (const [label, value] of [
-          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked metadata"],
+          ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
           ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Confirmed"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       const button = screen.getByRole("button");
+      await waitFor(() => expect(button).toBeEnabled());
       fireEvent.click(button);
       expect(await screen.findByText(/different submission/i)).toBeVisible();
       expect(onComplete).not.toHaveBeenCalled();
@@ -153,13 +182,13 @@ describe("structured review experience", () => {
       checkAll();
       if (taskType === "SOURCE_RESEARCH") {
         for (const [label, value] of [
-          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked publisher metadata"],
+          ["Human verification method", "Checked publisher metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
           ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       const button = screen.getByRole("button");
-      expect(button).toBeEnabled();
+      await waitFor(() => expect(button).toBeEnabled());
       fireEvent.click(button);
       await waitFor(() => expect(mocks.factoryTask).toHaveBeenCalledWith(task.task_id));
       await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
@@ -189,12 +218,13 @@ describe("structured review experience", () => {
       checkAll();
       if (taskType === "SOURCE_RESEARCH") {
         for (const [label, value] of [
-          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked metadata"],
+          ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
           ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       let submit = screen.getByRole("button");
+      await waitFor(() => expect(submit).toBeEnabled());
       fireEvent.click(submit);
       await waitFor(() => expect(mocks.factoryTask).toHaveBeenCalledTimes(1));
       await screen.findByText(/No stored review is visible yet/);
@@ -206,7 +236,7 @@ describe("structured review experience", () => {
       checkAll();
       if (taskType === "SOURCE_RESEARCH") {
         for (const [label, value] of [
-          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked metadata"],
+          ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
           ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });

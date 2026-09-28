@@ -15,11 +15,12 @@ from alphaquest.studio.factory_reviews import (
     ReviewedEngineeringHandoffIntentArtifactV1,
     ReviewedHypothesisArtifactV1,
     ReviewedSourceEvidenceArtifactV1,
+    ReviewedSourceEvidenceArtifactV2,
 )
 from alphaquest.studio.research_factory import FactoryModel, SHA256_PATTERN, object_sha256
 
 ReviewArtifact = (
-    ReviewedSourceEvidenceArtifactV1 | ReviewedHypothesisArtifactV1
+    ReviewedSourceEvidenceArtifactV1 | ReviewedSourceEvidenceArtifactV2 | ReviewedHypothesisArtifactV1
     | ReviewedEngineeringHandoffIntentArtifactV1
 )
 

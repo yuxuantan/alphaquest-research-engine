@@ -22,17 +22,21 @@ from alphaquest.studio.factory_reviews import (
     ReviewedEngineeringHandoffIntentArtifactV1,
     ReviewedHypothesisArtifactV1,
     ReviewedSourceEvidenceArtifactV1,
+    ReviewedSourceEvidenceArtifactV2,
     SOURCE_METADATA_FIELDS,
     SourceEvidenceHumanVerificationV1,
+    build_reviewed_source_evidence,
 )
 from alphaquest.studio.factory_service import ResearchFactoryService
-from alphaquest.studio.research_factory import object_sha256
+from alphaquest.studio.research_factory import CodexTaskType, object_sha256
+from alphaquest.studio.research_factory import SourceEvidenceBundleV1
 from tests.test_studio_factory_review_handoff import (
     FakeRunner,
     HASH_A,
     HASH_B,
     _draft,
     _hypothesis_proposal,
+    _fulltext_capture,
     _mechanics_proposal,
     _source_proposal,
 )
@@ -52,15 +56,20 @@ class ReviewCase:
     review: Any
     artifact_model: type
     storage_kind: str
+    capture_revision_sha256: str | None = None
 
 
-def _source_review(*, review_id: str = "source_review_original", notes: str | None = None):
+def _source_review(
+    *, content_sha256: str = HASH_A,
+    review_id: str = "source_review_original",
+    notes: str | None = None,
+):
     return SourceEvidenceHumanVerificationV1(
         review_id=review_id,
         reviewer="Researcher One",
         reviewed_at=REVIEWED_AT,
         verified_metadata_fields=list(SOURCE_METADATA_FIELDS),
-        content_sha256=HASH_A,
+        content_sha256=content_sha256,
         retraction_status="NOT_RETRACTED",
         verification_method="Opened the captured source and checked its publisher metadata.",
         claim_reviews=[
@@ -121,6 +130,7 @@ def _prepare_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str) ->
     monkeypatch.setattr("alphaquest.studio.factory_service._certified_catalog", lambda _root: [])
     _draft(tmp_path)
     service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    capture = _fulltext_capture(tmp_path)
     source_task = service.enqueue_next(
         campaign_id="structured_factory", request_id=f"{kind}-source-task"
     )
@@ -132,13 +142,19 @@ def _prepare_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str) ->
             str(source_task["task_id"]),
             "record_reviewed_source_evidence",
             "verification",
-            _source_review(),
-            ReviewedSourceEvidenceArtifactV1,
+            _source_review(content_sha256=capture.content_sha256),
+            ReviewedSourceEvidenceArtifactV2,
             "source",
+            capture.record_sha256,
         )
 
     service.record_reviewed_source_evidence(
-        str(source_task["task_id"]), verification=_source_review(review_id="source_prerequisite")
+        str(source_task["task_id"]),
+        verification=_source_review(
+            content_sha256=capture.content_sha256,
+            review_id="source_prerequisite",
+        ),
+        capture_revision_sha256=capture.record_sha256,
     )
     hypothesis_plan = service._discover_plan("structured_factory")
     bindings = hypothesis_plan["artifacts"]["research_bindings"]
@@ -214,6 +230,8 @@ def _record(
     target = service or case.service
     method = getattr(target, case.method_name)
     kwargs = {case.argument_name: review or case.review}
+    if case.kind == "source":
+        kwargs["capture_revision_sha256"] = case.capture_revision_sha256
     if delivery is not _NO_DELIVERY:
         kwargs["delivery"] = delivery
     return method(case.task_id, **kwargs)
@@ -365,6 +383,10 @@ def _api_payload(case: ReviewCase) -> dict[str, Any]:
     review = case.review.model_dump(mode="json")
     for server_owned in ("review_id", "reviewed_at", "decision", "source_identity_status"):
         review.pop(server_owned, None)
+    if case.kind == "source":
+        review.pop("content_sha256", None)
+        review.pop("capture_binding", None)
+        review["capture_revision_sha256"] = case.capture_revision_sha256
     return {**review, "delivery": _delivery(case)}
 
 
@@ -552,7 +574,7 @@ def test_valid_but_different_stored_artifact_reports_integrity_error_and_is_not_
     different["human_verification"]["notes"] = "A different but internally valid stored review."
     unsigned = {key: value for key, value in different.items() if key != "artifact_sha256"}
     different["artifact_sha256"] = object_sha256(unsigned)
-    assert ReviewedSourceEvidenceArtifactV1.model_validate_json(json.dumps(different))
+    assert ReviewedSourceEvidenceArtifactV2.model_validate_json(json.dumps(different))
     artifact_path.write_text(json.dumps(different), encoding="utf-8")
     changed_bytes = artifact_path.read_bytes()
 
@@ -582,6 +604,33 @@ def test_reviewed_api_rejects_flat_or_extended_delivery_bodies(
     extended = json.loads(json.dumps(payload))
     extended["delivery"]["unexpected"] = "not admitted"
     assert client.post(url, json=extended).status_code == 422
+
+
+def test_legacy_v1_source_artifact_remains_byte_identical_and_readable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _prepare_case(tmp_path, monkeypatch, "source")
+    record, campaign_id, validation, imported = case.service._reviewable_proposal(
+        case.task_id, expected_task_type=CodexTaskType.SOURCE_RESEARCH,
+    )
+    source = SourceEvidenceBundleV1.model_validate_json(
+        json.dumps(imported.validated_payload, sort_keys=True)
+    )
+    artifact = build_reviewed_source_evidence(
+        campaign_id=campaign_id,
+        task_id=record.task_id,
+        proposal_id=imported.proposal_id,
+        proposal_payload_sha256=imported.payload_sha256,
+        proposal_validation_sha256=validation["validation_sha256"],
+        source_evidence=source,
+        human_verification=case.review,
+    )
+    path = case.service._review_artifact_path(campaign_id, "source", case.task_id)
+    case.service._write_review_once(path, artifact.model_dump(mode="json", by_alias=True))
+    before = path.read_bytes()
+    detail = ResearchFactoryService(tmp_path).get_task(case.task_id)
+    assert detail["structured_review"]["artifact"]["schema"] == "alphaquest.reviewed-source-evidence/v1"
+    assert path.read_bytes() == before
     assert ResearchFactoryService(tmp_path).get_task(case.task_id)["review_delivery"] is None
 
 

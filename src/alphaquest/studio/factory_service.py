@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 import time
 from typing import Any, Mapping
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from pydantic import BaseModel, ValidationError
@@ -30,6 +31,12 @@ import yaml
 from alphaquest.authoring.models import ResearchObjectivesV1
 from alphaquest.research.experiment_registry import ExperimentRegistry
 from alphaquest.research.factory_policy import research_factory_window_ids
+from alphaquest.research.literature.contracts import (
+    SourceCaptureRevisionV1,
+    SourceIdentityRevisionV1,
+    SourceVersionIdentityRevisionV1,
+)
+from alphaquest.research.literature.store import LiteratureStore
 from alphaquest.research.storage import load_storage_layout
 from alphaquest.research.storage import resolve_campaign_context, resolve_recorded_path
 from alphaquest.studio.codex_runtime import (
@@ -58,10 +65,13 @@ from alphaquest.studio.factory_reviews import (
     ReviewedEngineeringHandoffIntentArtifactV1,
     ReviewedHypothesisArtifactV1,
     ReviewedSourceEvidenceArtifactV1,
+    ReviewedSourceEvidenceArtifactV2,
+    SourceEvidenceHumanVerificationV2,
+    SourceFullTextCaptureBindingV1,
     SourceEvidenceHumanVerificationV1,
     build_reviewed_engineering_handoff_intent,
     build_reviewed_hypothesis,
-    build_reviewed_source_evidence,
+    build_reviewed_source_evidence_v2,
 )
 from alphaquest.studio.research_factory import (
     CandidateDueDiligenceSummaryV1,
@@ -83,6 +93,7 @@ from alphaquest.studio.research_factory import (
     MechanicsIntentV1,
     ResearchBudgetV1,
     ResultSummaryV1,
+    SHA256_PATTERN,
     BudgetUsageV1,
     StageKind,
     SourceEvidenceBundleV1,
@@ -113,6 +124,77 @@ DEFAULT_FORBIDDEN_INFORMATION = (
     "Do not reinterpret a performance result as human mechanics approval or deployment authorization.",
     "Do not claim a source is verified when direct source evidence is absent from this packet.",
 )
+
+
+def _identity_text(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _identity_token(value: str) -> str:
+    raw = value.strip()
+    doi_match = re.search(
+        r"(?:doi(?:\.org)?[/: ]+)?(10\.\d{4,9}/\S+)", raw,
+        flags=re.IGNORECASE,
+    )
+    if doi_match:
+        return "doi:" + doi_match.group(1).casefold().rstrip("/.,;)")
+    parsed = urlsplit(raw)
+    if parsed.scheme and parsed.netloc:
+        userinfo, separator, host_port = parsed.netloc.rpartition("@")
+        prefix = f"{userinfo}@" if separator else ""
+        if host_port.startswith("[") and "]" in host_port:
+            closing = host_port.index("]")
+            authority = prefix + host_port[: closing + 1].lower() + host_port[closing + 1 :]
+        else:
+            colon = host_port.rfind(":")
+            host = host_port[:colon] if colon >= 0 else host_port
+            port = host_port[colon:] if colon >= 0 else ""
+            authority = prefix + host.lower() + port
+        return urlunsplit(
+            (parsed.scheme.lower(), authority, parsed.path, parsed.query, parsed.fragment)
+        )
+    return raw
+
+
+def _source_identity_issues(
+    source: SourceEvidenceBundleV1,
+    work: SourceIdentityRevisionV1,
+    version: SourceVersionIdentityRevisionV1,
+) -> list[str]:
+    issues: list[str] = []
+    if _identity_text(source.title) != _identity_text(work.title):
+        issues.append("TITLE_MISMATCH")
+    if [_identity_text(item) for item in source.authors] != [
+        _identity_text(item) for item in work.authors
+    ]:
+        issues.append("AUTHORS_MISMATCH")
+    expected_categories = {
+        "PEER_REVIEWED": ({"ACADEMIC"}, {"ORIGINAL", "PUBLISHED_SUCCESSOR"}),
+        "WORKING_PAPER": ({"WORKING_PAPER"}, {"ORIGINAL", "WORKING_PAPER_REVISION"}),
+        "EXCHANGE_RESEARCH": ({"EXCHANGE"}, None),
+        "PRACTITIONER_RESEARCH": ({"PRACTITIONER"}, None),
+        "PRIMARY_DATA_DOCUMENTATION": ({"OTHER"}, None),
+        "OTHER": ({"OTHER"}, None),
+    }
+    categories, version_kinds = expected_categories[source.publication_type]
+    if work.source_category not in categories or (
+        version_kinds is not None and version.version_kind not in version_kinds
+    ):
+        issues.append("PUBLICATION_CATEGORY_MISMATCH")
+    proposed_locator = _identity_token(source.locator)
+    canonical_anchors = {
+        _identity_token(value)
+        for value in (
+            list(work.locators)
+            + list(work.strong_identifiers.values())
+            + list(version.strong_identifiers.values())
+        )
+    }
+    if proposed_locator not in canonical_anchors:
+        issues.append("LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH")
+    if work.identity_status != "VERIFIED_STRONG" or version.identity_status != "VERIFIED_STRONG":
+        issues.append("SOURCE_IDENTITY_NOT_VERIFIED_STRONG")
+    return issues
 
 
 _OUTPUT_MODELS: dict[CodexTaskType, type[BaseModel]] = {
@@ -664,6 +746,7 @@ class ResearchFactoryService:
         task_id: str,
         *,
         verification: SourceEvidenceHumanVerificationV1 | Mapping[str, Any],
+        capture_revision_sha256: str,
         delivery: ReviewDeliveryV1 | Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Accept one complete source proposal through an explicit human check.
@@ -679,25 +762,73 @@ class ResearchFactoryService:
                 task_id,
                 expected_task_type=CodexTaskType.SOURCE_RESEARCH,
             )
-            review = (
-                verification
-                if isinstance(verification, SourceEvidenceHumanVerificationV1)
-                else SourceEvidenceHumanVerificationV1.model_validate(verification)
-            )
             source = SourceEvidenceBundleV1.model_validate_json(
                 json.dumps(imported.validated_payload, sort_keys=True, allow_nan=False)
             )
-            artifact = build_reviewed_source_evidence(
-                campaign_id=campaign_id,
-                task_id=task_id,
-                proposal_id=imported.proposal_id,
-                proposal_payload_sha256=imported.payload_sha256,
-                proposal_validation_sha256=str(validation["validation_sha256"]),
-                source_evidence=source,
-                human_verification=review,
-            )
-            path = self._review_artifact_path(campaign_id, "source", task_id)
-            return self._commit_review_artifact(path, artifact, delivery)
+            literature = LiteratureStore(self.project_root)
+            # Keep the canonical snapshot stable until the immutable review is
+            # published. Compliant LiteratureStore writers take the exclusive
+            # form of this same lock.
+            with literature.lock(exclusive=False):
+                records = literature._load_and_validate()
+                binding = self._ready_source_capture_binding(
+                    source,
+                    capture_revision_sha256,
+                    literature=literature,
+                    records=records,
+                )
+                review_payload = (
+                    verification.model_dump(mode="python")
+                    if isinstance(verification, SourceEvidenceHumanVerificationV1)
+                    else dict(verification)
+                )
+                supplied_hash = review_payload.get("content_sha256")
+                if supplied_hash not in {None, binding.content_sha256}:
+                    raise ValueError("supplied source hash does not match the selected canonical capture")
+                supplied_binding = review_payload.get("capture_binding")
+                if supplied_binding is not None and SourceFullTextCaptureBindingV1.model_validate(
+                    supplied_binding
+                ) != binding:
+                    raise ValueError("supplied source binding does not match the selected canonical capture")
+                review_payload["content_sha256"] = binding.content_sha256
+                review_payload["capture_binding"] = binding.model_dump(mode="python")
+                review = SourceEvidenceHumanVerificationV2.model_validate(review_payload)
+                artifact = build_reviewed_source_evidence_v2(
+                    campaign_id=campaign_id,
+                    task_id=task_id,
+                    proposal_id=imported.proposal_id,
+                    proposal_payload_sha256=imported.payload_sha256,
+                    proposal_validation_sha256=str(validation["validation_sha256"]),
+                    source_evidence=source,
+                    human_verification=review,
+                )
+                path = self._review_artifact_path(campaign_id, "source", task_id)
+                return self._commit_review_artifact(path, artifact, delivery)
+
+    def source_review_readiness(self, task_id: str) -> dict[str, Any]:
+        """Return deterministic, read-only full-text choices for a source proposal."""
+
+        record, campaign_id, validation, imported = self._reviewable_proposal(
+            task_id,
+            expected_task_type=CodexTaskType.SOURCE_RESEARCH,
+        )
+        source = SourceEvidenceBundleV1.model_validate_json(
+            json.dumps(imported.validated_payload, sort_keys=True, allow_nan=False)
+        )
+        options = self._source_capture_options(source)
+        eligible = [item for item in options if item["readiness"] == "READY"]
+        return {
+            "schema": "alphaquest.source-review-readiness/v1",
+            "task_id": record.task_id,
+            "campaign_id": campaign_id,
+            "proposal_id": imported.proposal_id,
+            "proposal_payload_sha256": imported.payload_sha256,
+            "proposal_validation_sha256": str(validation["validation_sha256"]),
+            "status": "READY" if eligible else "NOT_READY",
+            "eligible_capture_count": len(eligible),
+            "options": options,
+            "scientific_approval_granted": False,
+        }
 
     def record_reviewed_hypothesis(
         self,
@@ -1063,7 +1194,7 @@ class ResearchFactoryService:
 
     @staticmethod
     def _review_receipt(
-        artifact: ReviewedSourceEvidenceArtifactV1 | ReviewedHypothesisArtifactV1
+        artifact: ReviewedSourceEvidenceArtifactV1 | ReviewedSourceEvidenceArtifactV2 | ReviewedHypothesisArtifactV1
         | ReviewedEngineeringHandoffIntentArtifactV1,
         status: str,
         review: SourceEvidenceHumanVerificationV1 | HypothesisHumanAcceptanceV1
@@ -3041,6 +3172,130 @@ class ResearchFactoryService:
         self._current_review_context(record)
         return record, campaign_id, validation, imported
 
+    def _ready_source_capture_binding(
+        self,
+        source: SourceEvidenceBundleV1,
+        capture_revision_sha256: str,
+        *,
+        literature: LiteratureStore | None = None,
+        records: list[Any] | None = None,
+    ) -> SourceFullTextCaptureBindingV1:
+        if not re.fullmatch(SHA256_PATTERN, capture_revision_sha256):
+            raise ValueError("capture_revision_sha256 must be a lowercase SHA-256 value")
+        matches = [
+            item for item in (
+                self._source_capture_options_from_records(source, literature, records)
+                if literature is not None and records is not None
+                else self._source_capture_options(source)
+            )
+            if item["capture_revision_sha256"] == capture_revision_sha256
+        ]
+        if len(matches) != 1:
+            raise ValueError("selected canonical capture is absent from source-review readiness")
+        selected = matches[0]
+        if selected["readiness"] != "READY":
+            raise ValueError(
+                "selected canonical capture is not ready for source review: "
+                + ", ".join(selected["issues"])
+            )
+        return SourceFullTextCaptureBindingV1.model_validate(selected["binding"])
+
+    def _source_capture_options(self, source: SourceEvidenceBundleV1) -> list[dict[str, Any]]:
+        """Evaluate canonical capture heads without repairing or writing the store."""
+
+        store = LiteratureStore(self.project_root)
+        with store.lock(exclusive=False):
+            return self._source_capture_options_from_records(
+                source, store, store._load_and_validate()
+            )
+
+    @staticmethod
+    def _source_capture_options_from_records(
+        source: SourceEvidenceBundleV1,
+        store: LiteratureStore,
+        records: list[Any],
+    ) -> list[dict[str, Any]]:
+        work_heads: dict[str, SourceIdentityRevisionV1] = {}
+        version_heads: dict[str, SourceVersionIdentityRevisionV1] = {}
+        capture_heads: dict[str, SourceCaptureRevisionV1] = {}
+        for item in records:
+            if isinstance(item, SourceIdentityRevisionV1):
+                work_heads[item.work_id] = item
+            elif isinstance(item, SourceVersionIdentityRevisionV1):
+                version_heads[item.source_version_id] = item
+            elif isinstance(item, SourceCaptureRevisionV1):
+                capture_heads[item.capture_id] = item
+
+        options: list[dict[str, Any]] = []
+        for capture in sorted(capture_heads.values(), key=lambda item: item.capture_id):
+            issues: list[str] = []
+            version = version_heads.get(capture.source_version_id)
+            work = work_heads.get(version.work_id) if version is not None else None
+            if version is None or capture.source_version_revision_sha256 != version.record_sha256:
+                issues.append("STALE_OR_MISSING_SOURCE_VERSION")
+            if work is None or version is None or version.work_revision_sha256 != work.record_sha256:
+                issues.append("STALE_OR_MISSING_SOURCE_WORK")
+            if capture.status != "FULL_TEXT_CAPTURED":
+                issues.append(
+                    "ABSTRACT_NOT_FULL_TEXT"
+                    if capture.status == "GENUINE_ABSTRACT_CAPTURED"
+                    else f"CAPTURE_{capture.status}"
+                )
+            if capture.local_retention_permission != "ALLOWED":
+                issues.append("LOCAL_RETENTION_NOT_ALLOWED")
+            if work is not None and version is not None:
+                issues.extend(_source_identity_issues(source, work, version))
+            content: bytes | None = None
+            extracted: bytes | None = None
+            if capture.content_sha256 is None or capture.extracted_representation_sha256 is None:
+                issues.append("CAPTURE_ARTIFACT_BINDING_MISSING")
+            else:
+                try:
+                    content = store._verify_artifact_unlocked(
+                        str(capture.content_sha256), kind="artifacts"
+                    )
+                    extracted = store._verify_artifact_unlocked(
+                        str(capture.extracted_representation_sha256), kind="extracted"
+                    )
+                except (FileNotFoundError, OSError, RuntimeError, ValueError):
+                    issues.append("CAPTURE_ARTIFACT_UNAVAILABLE_OR_INVALID")
+            if content is not None and len(content) != capture.content_bytes:
+                issues.append("CONTENT_BYTE_COUNT_MISMATCH")
+            if extracted is not None and len(extracted) != capture.extracted_bytes:
+                issues.append("EXTRACTION_BYTE_COUNT_MISMATCH")
+            binding = None
+            if work is not None and version is not None and capture.content_sha256 is not None \
+                    and capture.extracted_representation_sha256 is not None:
+                binding = SourceFullTextCaptureBindingV1(
+                    work_id=work.work_id,
+                    work_revision_sha256=work.record_sha256,
+                    source_version_id=version.source_version_id,
+                    source_version_revision_sha256=version.record_sha256,
+                    capture_id=capture.capture_id,
+                    capture_revision_sha256=capture.record_sha256,
+                    content_sha256=capture.content_sha256,
+                    extracted_representation_sha256=capture.extracted_representation_sha256,
+                ).model_dump(mode="json")
+            options.append(
+                {
+                    "capture_id": capture.capture_id,
+                    "capture_revision_sha256": capture.record_sha256,
+                    "source_version_id": capture.source_version_id,
+                    "status": capture.status,
+                    "content_sha256": capture.content_sha256,
+                    "retrieval_locator": capture.retrieval_locator,
+                    "readiness": "READY" if not issues else "NOT_READY",
+                    "issues": sorted(set(issues)),
+                    "binding": binding,
+                    "title": work.title if work is not None else None,
+                    "authors": list(work.authors) if work is not None else [],
+                    "source_category": work.source_category if work is not None else None,
+                    "version_kind": version.version_kind if version is not None else None,
+                    "version_label": version.version_label if version is not None else None,
+                }
+            )
+        return options
+
     def _current_review_context(self, record: CodexTaskRecordV1) -> dict[str, Any]:
         """Return authoritative task inputs only when they still match the packet."""
 
@@ -3127,7 +3382,7 @@ class ResearchFactoryService:
                 or intent.delivery.validation_sha256 != validation.get("validation_sha256")
                 or validation.get("status") != "VALIDATED_NOT_APPLIED"):
                 raise ValueError("review delivery no longer matches the exact task")
-            kind = ("source" if isinstance(artifact, ReviewedSourceEvidenceArtifactV1) else
+            kind = ("source" if isinstance(artifact, (ReviewedSourceEvidenceArtifactV1, ReviewedSourceEvidenceArtifactV2)) else
                     "hypothesis" if isinstance(artifact, ReviewedHypothesisArtifactV1) else "engineering-intent")
             stored_path = self._review_artifact_path(artifact.campaign_id, kind, record.task_id)
             status = "ADMITTED"
@@ -3151,14 +3406,18 @@ class ResearchFactoryService:
     def _reviewed_source_artifacts(
         self,
         campaign_id: str,
-    ) -> list[ReviewedSourceEvidenceArtifactV1]:
+    ) -> list[ReviewedSourceEvidenceArtifactV1 | ReviewedSourceEvidenceArtifactV2]:
         root = self.review_root / campaign_id / "source"
         if not root.is_dir():
             return []
-        artifacts: list[ReviewedSourceEvidenceArtifactV1] = []
+        artifacts: list[ReviewedSourceEvidenceArtifactV1 | ReviewedSourceEvidenceArtifactV2] = []
         for path in sorted(root.glob("*.json")):
-            artifact = ReviewedSourceEvidenceArtifactV1.model_validate_json(
-                path.read_text(encoding="utf-8")
+            raw = path.read_text(encoding="utf-8")
+            schema = str(json.loads(raw).get("schema") or "")
+            artifact = (
+                ReviewedSourceEvidenceArtifactV2.model_validate_json(raw)
+                if schema == "alphaquest.reviewed-source-evidence/v2"
+                else ReviewedSourceEvidenceArtifactV1.model_validate_json(raw)
             )
             if artifact.campaign_id != campaign_id or path.stem != artifact.task_id:
                 raise StaleProposalError("reviewed source artifact identity is invalid")
@@ -3176,6 +3435,15 @@ class ResearchFactoryService:
                 != imported.validated_payload
             ):
                 raise StaleProposalError("reviewed source artifact is not bound to its validated proposal")
+            if isinstance(artifact, ReviewedSourceEvidenceArtifactV2):
+                current_binding = self._ready_source_capture_binding(
+                    artifact.source_evidence,
+                    artifact.human_verification.capture_binding.capture_revision_sha256,
+                )
+                if current_binding != artifact.human_verification.capture_binding:
+                    raise StaleProposalError(
+                        "reviewed source artifact canonical full-text binding is stale"
+                    )
             artifacts.append(artifact)
         hashes = [item.source_evidence_sha256 for item in artifacts]
         if len(hashes) != len(set(hashes)):
