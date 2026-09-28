@@ -623,6 +623,8 @@ class ResearchFactoryService:
             raise RuntimeError("a proposal disposition is immutable and has already been recorded")
         if self._selected_next_action(record) is not None:
             raise RuntimeError("a proposal with an immutable selected action cannot also receive a disposition")
+        if self._review_delivery_path(task_id).exists() or self._structured_review_summary(record) is not None:
+            raise RuntimeError("a proposal with an admitted or recorded human review cannot receive a disposition")
         action = disposition.strip().upper()
         if action not in {"ACKNOWLEDGE", "DISMISS"}:
             raise ValueError("proposal disposition must be ACKNOWLEDGE or DISMISS")

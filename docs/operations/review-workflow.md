@@ -53,6 +53,14 @@ request may reach the service first; the recorded receipt identifies the actual
 saved decision. Conflicting operations or changed human input are rejected.
 An exact operation replay can return the original receipt or finish an
 interrupted artifact write, retaining its original reviewer, timestamp and hash.
+Recovery confirms the saved submission only when the service's committed operation
+ID and proposal bindings match the browser's retained operation. A receipt for a
+different operation is shown as an unconfirmed submission; reopening the task
+allows inspection of the authoritative receipt without claiming that the losing
+submission succeeded. Dismissal and acknowledgement cannot supersede an admitted
+or recorded structured decision, including an interrupted delivery. The UI also
+locks dismissal as soon as a structured submission begins.
+
 The transport intent itself never permits downstream research: only the existing
 verified review artifact does. Existing historical reviews remain authoritative.
 

@@ -88,6 +88,7 @@ function status(
 }
 
 beforeEach(() => {
+  localStorage.clear();
   vi.resetAllMocks();
   mocks.factoryStatus.mockResolvedValue(status());
   mocks.factoryTasks.mockResolvedValue({ tasks: [] });
@@ -102,7 +103,7 @@ beforeEach(() => {
   mocks.recordFactoryReviewedEngineeringIntent.mockResolvedValue({ reviewed_artifact: {} });
 });
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); localStorage.clear(); });
 
 describe("Codex research factory UI", () => {
   it("lets the researcher select an exact factory campaign scope", async () => {
@@ -375,6 +376,36 @@ describe("Codex research factory UI", () => {
     ));
     expect(await screen.findByText(/separate human-verified artifact/i)).toBeVisible();
   });
+
+  it.each(["ADMITTED", "INTEGRITY_ERROR", "LOCAL_PENDING"] as const)(
+    "blocks dismissal while a structured delivery is %s",
+    async (deliveryState) => {
+      const proposalTask = {
+        task_id: "pending-hypothesis-review", state: "PROPOSAL_READY", task_type: "HYPOTHESIS_PROPOSAL",
+        campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
+        proposal: { schema: "alphaquest.hypothesis-proposal/v1" }, proposal_disposition: null, structured_review: null,
+        review_delivery: deliveryState === "LOCAL_PENDING" ? null : { status: deliveryState },
+      };
+      mocks.factoryStatus.mockResolvedValue(status({ latest_task: { ...proposalTask, proposal: undefined } }));
+      mocks.factoryTask.mockResolvedValue({ task: proposalTask });
+      mocks.recordFactoryReviewedHypothesis.mockImplementation(() => new Promise(() => {}));
+      render(<MemoryRouter><WorkflowPage /></MemoryRouter>);
+      const submit = await screen.findByRole("button", { name: "ACCEPT REVIEWED HYPOTHESIS" });
+      fireEvent.change(screen.getByLabelText("Required review notes"), { target: { value: "My exact review decision." } });
+      const dismiss = screen.getByRole("button", { name: "DISMISS" });
+      if (deliveryState === "LOCAL_PENDING") {
+        expect(dismiss).toBeEnabled();
+        for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
+        expect(submit).toBeEnabled();
+        fireEvent.click(submit);
+        await waitFor(() => expect(mocks.recordFactoryReviewedHypothesis).toHaveBeenCalledTimes(1));
+      }
+      await waitFor(() => expect(dismiss).toBeDisabled());
+      fireEvent.click(dismiss);
+      expect(mocks.setFactoryProposalDisposition).not.toHaveBeenCalled();
+      expect(submit).toBeDisabled();
+    },
+  );
 
   it("requires exhaustive hypothesis-field and quality-gate acceptance", async () => {
     const proposalTask = {

@@ -583,3 +583,40 @@ def test_reviewed_api_rejects_flat_or_extended_delivery_bodies(
     extended["delivery"]["unexpected"] = "not admitted"
     assert client.post(url, json=extended).status_code == 422
     assert ResearchFactoryService(tmp_path).get_task(case.task_id)["review_delivery"] is None
+
+
+@pytest.mark.parametrize("kind", ["source", "hypothesis", "engineering"])
+@pytest.mark.parametrize("state", ["admitted", "committed", "historical"])
+@pytest.mark.parametrize("disposition", ["DISMISS", "ACKNOWLEDGE"])
+def test_disposition_cannot_supersede_admitted_or_recorded_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str, state: str, disposition: str
+) -> None:
+    case = _prepare_case(tmp_path, monkeypatch, kind)
+    delivery = _delivery(case)
+    if state == "admitted":
+        original = _fail_final_write_once(monkeypatch)
+        with pytest.raises(RuntimeError, match="injected final review write failure"):
+            _record(case, delivery=delivery)
+        monkeypatch.setattr(ResearchFactoryService, "_write_review_once", staticmethod(original))
+    elif state == "committed":
+        _record(case, delivery=delivery)
+    else:
+        _record(case)
+    reopened = ResearchFactoryService(tmp_path)
+    with pytest.raises(RuntimeError, match="review"):
+        reopened.record_proposal_disposition(
+            case.task_id, disposition=disposition, reviewer="Competing reviewer", notes="Close this task."
+        )
+    app = FastAPI()
+    register_api_routes(app, tmp_path)
+    response = TestClient(app).post(
+        f"/api/factory/tasks/{case.task_id}/proposal-disposition",
+        json={"disposition": disposition, "reviewer": "Competing reviewer", "notes": "Close this task."},
+    )
+    assert response.status_code == 409
+    assert reopened.get_task(case.task_id)["proposal_disposition"] is None
+    if state != "historical":
+        result = _record(case, service=reopened, review=_replayed_review(case), delivery=delivery)
+        saved = result.get("human_verification", result.get("human_acceptance"))
+        assert saved["review_id"] == case.review.review_id
+    assert reopened.get_task(case.task_id)["structured_review"] is not None

@@ -141,22 +141,24 @@ export function FactoryStructuredReview({
   notes,
   disabled,
   onComplete,
+  onDeliveryPending,
 }: {
   task: CodexTaskRecord;
   reviewer: string;
   notes: string;
   disabled?: boolean;
   onComplete: (message: string) => Promise<void>;
+  onDeliveryPending?: (taskId: string) => void;
 }) {
   const revision = `${task.task_id}:${task.proposal_validation?.payload_sha256 || ""}:${task.proposal_validation?.validation_sha256 || ""}`;
   if (task.task_type === "SOURCE_RESEARCH") {
-    return <SourceReview key={revision} task={task} reviewer={reviewer} notes={notes} disabled={disabled} onComplete={onComplete} />;
+    return <SourceReview key={revision} task={task} reviewer={reviewer} notes={notes} disabled={disabled} onComplete={onComplete} onDeliveryPending={onDeliveryPending} />;
   }
   if (task.task_type === "HYPOTHESIS_PROPOSAL") {
-    return <HypothesisReview key={revision} task={task} reviewer={reviewer} notes={notes} disabled={disabled} onComplete={onComplete} />;
+    return <HypothesisReview key={revision} task={task} reviewer={reviewer} notes={notes} disabled={disabled} onComplete={onComplete} onDeliveryPending={onDeliveryPending} />;
   }
   if (task.task_type === "MECHANICS_INTENT" && task.proposal?.execution_lane === "ENGINEERING_HANDOFF") {
-    return <EngineeringIntentReview key={revision} task={task} reviewer={reviewer} notes={notes} disabled={disabled} onComplete={onComplete} />;
+    return <EngineeringIntentReview key={revision} task={task} reviewer={reviewer} notes={notes} disabled={disabled} onComplete={onComplete} onDeliveryPending={onDeliveryPending} />;
   }
   return null;
 }
@@ -171,14 +173,16 @@ function deliveryPending(task: CodexTaskRecord): boolean {
   catch { return true; }
 }
 
-function usePendingReview(task: CodexTaskRecord) {
+function usePendingReview(task: CodexTaskRecord, onDeliveryPending?: (taskId: string) => void) {
   const [uncertain, setUncertain] = useState(() => deliveryPending(task));
   useEffect(() => {
-    const observePending = () => { if (deliveryPending(task)) setUncertain(true); };
+    const observePending = () => {
+      if (deliveryPending(task)) { setUncertain(true); onDeliveryPending?.(task.task_id); }
+    };
     observePending();
     window.addEventListener("storage", observePending);
     return () => window.removeEventListener("storage", observePending);
-  }, [task.task_id, task.review_delivery]);
+  }, [task.task_id, task.review_delivery, onDeliveryPending]);
   return [uncertain, setUncertain] as const;
 }
 
@@ -249,6 +253,19 @@ async function recoverReviewSubmission(
       receipt.proposal_id === task.proposal_validation.proposal_id &&
       receipt.proposal_validation_sha256 === task.proposal_validation.validation_sha256 &&
       receipt.proposal_payload_sha256 === task.proposal_validation?.payload_sha256) {
+      const marker = JSON.parse(localStorage.getItem(deliveryKey(task)) || "null");
+      const delivery = current.review_delivery;
+      if (!marker || marker.task_id !== task.task_id ||
+        typeof marker.operation_id !== "string" || !marker.operation_id ||
+        marker.proposal_id !== task.proposal_validation.proposal_id ||
+        marker.payload_sha256 !== task.proposal_validation.payload_sha256 ||
+        marker.validation_sha256 !== task.proposal_validation.validation_sha256 ||
+        delivery?.status !== "COMMITTED" || delivery.operation_id !== marker.operation_id ||
+        delivery.proposal_id !== marker.proposal_id || delivery.payload_sha256 !== marker.payload_sha256 ||
+        delivery.validation_sha256 !== marker.validation_sha256) {
+        setError("A stored review exists, but it could not be matched to this submission. A different submission may have been saved. Reopen the task to inspect its receipt; this submission remains unconfirmed.");
+        return;
+      }
       markReviewSaved(task, setSaved);
       setError("");
       try {
@@ -290,7 +307,7 @@ function ReviewRecovery({ task, onComplete, disabled, setSaved, setUncertain, se
   </>;
 }
 
-function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewProps) {
+function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryPending }: ReviewProps) {
   const claims = useMemo(() => claimsFrom(task), [task.proposal]);
   const [metadataFields, setMetadataFields] = useState<string[]>([]);
   const [contentHash, setContentHash] = useState("");
@@ -302,7 +319,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
   const [claimNotes, setClaimNotes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [uncertain, setUncertain] = usePendingReview(task);
+  const [uncertain, setUncertain] = usePendingReview(task, onDeliveryPending);
   const [error, setError] = useState("");
   useEffect(() => {
     setMetadataFields([]);
@@ -326,6 +343,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
     if (!complete || !retractionStatus || busy || saved || uncertain || disabled) return;
     const delivery = beginReviewSubmission(task, setUncertain, setError);
     if (!delivery) return;
+    onDeliveryPending?.(task.task_id);
     setBusy(true);
     setError("");
     try {
@@ -428,12 +446,12 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete }: ReviewPro
   );
 }
 
-function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: ReviewProps) {
+function HypothesisReview({ task, reviewer, notes, disabled, onComplete, onDeliveryPending }: ReviewProps) {
   const [fields, setFields] = useState<string[]>([]);
   const [gates, setGates] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [uncertain, setUncertain] = usePendingReview(task);
+  const [uncertain, setUncertain] = usePendingReview(task, onDeliveryPending);
   const [error, setError] = useState("");
   const gateNames = ["objective_alignment", "source_claim_alignment", "falsifiability", "information_timeline_no_lookahead", "execution_cost_awareness"];
   useEffect(() => { setFields([]); setGates([]); setError(""); }, [task.task_id]);
@@ -442,6 +460,7 @@ function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: Revie
     if (!complete || busy || saved || uncertain || disabled) return;
     const delivery = beginReviewSubmission(task, setUncertain, setError);
     if (!delivery) return;
+    onDeliveryPending?.(task.task_id);
     setBusy(true);
     setError("");
     try {
@@ -482,12 +501,12 @@ function HypothesisReview({ task, reviewer, notes, disabled, onComplete }: Revie
   );
 }
 
-function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete }: ReviewProps) {
+function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete, onDeliveryPending }: ReviewProps) {
   const [fields, setFields] = useState<string[]>([]);
   const [gates, setGates] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [uncertain, setUncertain] = usePendingReview(task);
+  const [uncertain, setUncertain] = usePendingReview(task, onDeliveryPending);
   const [error, setError] = useState("");
   const gateNames = ["hypothesis_alignment", "unsupported_scope_confirmed", "causal_timeline_reviewed"];
   useEffect(() => { setFields([]); setGates([]); setError(""); }, [task.task_id]);
@@ -496,6 +515,7 @@ function EngineeringIntentReview({ task, reviewer, notes, disabled, onComplete }
     if (!complete || busy || saved || uncertain || disabled) return;
     const delivery = beginReviewSubmission(task, setUncertain, setError);
     if (!delivery) return;
+    onDeliveryPending?.(task.task_id);
     setBusy(true);
     setError("");
     try {
@@ -533,5 +553,6 @@ interface ReviewProps {
   reviewer: string;
   notes: string;
   disabled?: boolean;
+  onDeliveryPending?: (taskId: string) => void;
   onComplete: (message: string) => Promise<void>;
 }

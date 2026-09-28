@@ -178,6 +178,10 @@ export function WorkflowPage() {
   const [proposalNotes, setProposalNotes] = useState("");
   const [proposalReviewError, setProposalReviewError] = useState("");
   const [selectedProposalId, setSelectedProposalId] = useState("");
+  const [pendingReviewTasks, setPendingReviewTasks] = useState<Set<string>>(() => new Set());
+  const noteReviewDeliveryPending = useCallback((taskId: string) => {
+    setPendingReviewTasks((current) => current.has(taskId) ? current : new Set(current).add(taskId));
+  }, []);
   const [proposalSelectedAction, setProposalSelectedAction] = useState<
     SelectableFactoryNextAction | ""
   >("");
@@ -883,6 +887,7 @@ export function WorkflowPage() {
                     reviewer={proposalReviewer}
                     notes={proposalNotes}
                     disabled={factoryBusy}
+                    onDeliveryPending={noteReviewDeliveryPending}
                     onComplete={(message) =>
                       completeStructuredReview(validatedProposalTask.task_id, message)
                     }
@@ -910,7 +915,8 @@ export function WorkflowPage() {
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={factoryBusy || !proposalReviewComplete}
+                    disabled={factoryBusy || !proposalReviewComplete ||
+                      Boolean(validatedProposalTask.review_delivery) || pendingReviewTasks.has(validatedProposalTask.task_id)}
                     onClick={() =>
                       void setProposalDisposition(
                         validatedProposalTask.task_id,

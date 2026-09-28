@@ -4,6 +4,9 @@ import { FactoryStructuredReview } from "./FactoryStructuredReview";
 import { FactoryReviewReceipt } from "./FactoryReviewRecord";
 import type { CodexTaskRecord } from "../types";
 
+const committedDelivery = { status: "COMMITTED" as const, operation_id: "00000000-0000-4000-8000-000000000001",
+  proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) };
+
 const mocks = vi.hoisted(() => ({ hypothesis: vi.fn(), engineering: vi.fn(), source: vi.fn(), factoryTask: vi.fn() }));
 vi.mock("../api", () => ({ api: {
   recordFactoryReviewedSource: mocks.source,
@@ -24,7 +27,7 @@ function checkAll() {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); });
 
-beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); });
+beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001"); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); });
 
 describe("structured review experience", () => {
   it.each(["SOURCE_RESEARCH", "HYPOTHESIS_PROPOSAL", "MECHANICS_INTENT"])(
@@ -69,6 +72,40 @@ describe("structured review experience", () => {
       .toEqual({ task_id: task.task_id, ...delivery });
   });
 
+  it.each(["SOURCE_RESEARCH", "HYPOTHESIS_PROPOSAL", "MECHANICS_INTENT"])(
+    "does not confirm a competing %s submission as the local operation",
+    async (taskType) => {
+      const currentTask = { ...task, task_type: taskType, proposal: taskType === "SOURCE_RESEARCH"
+        ? { claims: [{ claim_id: "claim", support: "DIRECT", statement: "Evidence", source_location: "Page 1" }] }
+        : taskType === "MECHANICS_INTENT" ? { execution_lane: "ENGINEERING_HANDOFF" } : task.proposal };
+      const mutation = taskType === "SOURCE_RESEARCH" ? mocks.source : taskType === "MECHANICS_INTENT" ? mocks.engineering : mocks.hypothesis;
+      mutation.mockRejectedValue(new Error("A different operation owns this task"));
+      const status = taskType === "SOURCE_RESEARCH" ? "ACCEPTED_FOR_HYPOTHESIS" : taskType === "MECHANICS_INTENT" ? "ACCEPTED_FOR_ENGINEERING_HANDOFF" : "ACCEPTED_FOR_MECHANICS";
+      mocks.factoryTask.mockResolvedValue({ task: { ...currentTask,
+        review_delivery: { status: "COMMITTED", operation_id: "competing-operation", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
+        structured_review: { status, proposal_id: "proposal-1", proposal_validation_sha256: "d".repeat(64), proposal_payload_sha256: "a".repeat(64), artifact_sha256: "c".repeat(64), reviewer: "Other reviewer", notes: "Different decision" },
+      } });
+      const onComplete = vi.fn().mockResolvedValue(undefined);
+      render(<FactoryStructuredReview task={currentTask} reviewer="Researcher" notes="My decision" onComplete={onComplete} />);
+      checkAll();
+      if (taskType === "SOURCE_RESEARCH") {
+        for (const [label, value] of [
+          ["Captured source content SHA-256", "a".repeat(64)], ["Human verification method", "Checked metadata"],
+          ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
+          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Confirmed"],
+        ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      }
+      const button = screen.getByRole("button");
+      fireEvent.click(button);
+      expect(await screen.findByText(/different submission/i)).toBeVisible();
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(button).toBeDisabled();
+      expect(screen.queryByText("Review saved. Read the receipt before continuing.")).not.toBeInTheDocument();
+      expect(localStorage.getItem(`alphaquest.review-delivery.pending.v1:${task.task_id}`)).not.toBeNull();
+      expect(mutation).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("puts exact values beside acknowledgements and exposes unresolved evidence", () => {
     render(<FactoryStructuredReview task={task} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
     const check = screen.getByRole("checkbox", { name: "causal mechanism" });
@@ -108,7 +145,7 @@ describe("structured review experience", () => {
       const mutation = taskType === "SOURCE_RESEARCH" ? mocks.source : taskType === "MECHANICS_INTENT" ? mocks.engineering : mocks.hypothesis;
       mutation.mockRejectedValueOnce(new Error("Response lost after commit"));
       const status = taskType === "SOURCE_RESEARCH" ? "ACCEPTED_FOR_HYPOTHESIS" : taskType === "MECHANICS_INTENT" ? "ACCEPTED_FOR_ENGINEERING_HANDOFF" : "ACCEPTED_FOR_MECHANICS";
-      mocks.factoryTask.mockResolvedValue({ task: { ...currentTask, structured_review: {
+      mocks.factoryTask.mockResolvedValue({ task: { ...currentTask, review_delivery: committedDelivery, structured_review: {
         status, proposal_id: "proposal-1", proposal_validation_sha256: "d".repeat(64), proposal_payload_sha256: "a".repeat(64), artifact_sha256: "c".repeat(64),
       } } });
       const onComplete = vi.fn().mockResolvedValue(undefined);
@@ -144,7 +181,7 @@ describe("structured review experience", () => {
       let committed = false;
       const pendingCommit = new Promise<void>((resolve) => { finishCommit = resolve; }).then(() => { committed = true; });
       const status = taskType === "SOURCE_RESEARCH" ? "ACCEPTED_FOR_HYPOTHESIS" : taskType === "MECHANICS_INTENT" ? "ACCEPTED_FOR_ENGINEERING_HANDOFF" : "ACCEPTED_FOR_MECHANICS";
-      mocks.factoryTask.mockImplementation(async () => ({ task: { ...currentTask, structured_review: committed
+      mocks.factoryTask.mockImplementation(async () => ({ task: { ...currentTask, review_delivery: committedDelivery, structured_review: committed
         ? { status, proposal_id: "proposal-1", proposal_validation_sha256: "d".repeat(64), proposal_payload_sha256: "a".repeat(64), artifact_sha256: "c".repeat(64) } : null } }));
       const onComplete = vi.fn().mockResolvedValue(undefined);
       const props = { task: currentTask, reviewer: "Researcher", notes: "Checked", onComplete };
@@ -203,7 +240,7 @@ describe("structured review experience", () => {
 
   it.each(["proposal_id", "proposal_validation_sha256"])("keeps recovery locked when receipt %s differs", async (field) => {
     mocks.hypothesis.mockRejectedValueOnce(new Error("Connection lost"));
-    mocks.factoryTask.mockResolvedValue({ task: { ...task, structured_review: {
+    mocks.factoryTask.mockResolvedValue({ task: { ...task, review_delivery: committedDelivery, structured_review: {
       status: "ACCEPTED_FOR_MECHANICS", proposal_id: "proposal-1", proposal_validation_sha256: "d".repeat(64),
       proposal_payload_sha256: "a".repeat(64), [field]: "wrong-identity",
     } } });
