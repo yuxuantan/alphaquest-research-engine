@@ -410,7 +410,10 @@ be the current work, source-version, and capture revision; both the work and
 source-version identity must be `VERIFIED_STRONG`;
 its retained content and extracted representation must still exist with the
 recorded hashes and byte counts; local retention must be allowed; and the capture
-must be `FULL_TEXT_CAPTURED`. Abstract-only, metadata-only, failed, inaccessible,
+must be `FULL_TEXT_CAPTURED`. Both the raw document and extracted representation
+must contain at least one byte. This mechanical nonempty check does not establish
+semantic full-text completeness; the human still verifies the actual document
+and claims. Abstract-only, metadata-only, failed, inaccessible,
 missing, stale, or identity-mismatched captures remain visible as not ready and
 cannot be submitted.
 

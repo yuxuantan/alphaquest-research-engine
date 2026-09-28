@@ -225,7 +225,7 @@ def _delivery(case: ReviewCase, *, operation_id: str | None = None) -> dict[str,
     }
 
 
-def _write_legacy_source_intent(case: ReviewCase):
+def _write_legacy_source_intent(case: ReviewCase, *, review: Any | None = None):
     record, campaign_id, validation, imported = case.service._reviewable_proposal(
         case.task_id, expected_task_type=CodexTaskType.SOURCE_RESEARCH,
     )
@@ -239,7 +239,7 @@ def _write_legacy_source_intent(case: ReviewCase):
         proposal_payload_sha256=imported.payload_sha256,
         proposal_validation_sha256=validation["validation_sha256"],
         source_evidence=source,
-        human_verification=case.review,
+        human_verification=review or case.review,
     )
     delivery = ReviewDeliveryV1.model_validate(_delivery(case))
     intent = build_delivery_intent(delivery, artifact)
@@ -712,6 +712,57 @@ def test_admitted_legacy_v1_source_review_recovers_exact_artifact_after_restart(
     detail = reopened.get_task(case.task_id)
     assert detail["review_delivery"]["status"] == "COMMITTED"
     assert detail["review_delivery"]["legacy_recovery_available"] is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "extracted", "expected_issue"),
+    [
+        (b"", b"inspectable extraction", "CAPTURE_RAW_CONTENT_EMPTY"),
+        (b"retained raw document", b"", "CAPTURE_EXTRACTED_REPRESENTATION_EMPTY"),
+        (b"", b"", "CAPTURE_RAW_CONTENT_EMPTY"),
+    ],
+    ids=("empty-raw", "empty-extraction", "both-empty"),
+)
+def test_admitted_legacy_v1_recovery_rejects_empty_capture_and_stays_admitted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raw: bytes,
+    extracted: bytes,
+    expected_issue: str,
+) -> None:
+    case = _prepare_case(tmp_path, monkeypatch, "source")
+    empty_capture = _fulltext_capture(
+        tmp_path,
+        suffix="legacy-empty-artifact",
+        retained_bytes=raw,
+        extracted_representation_bytes=extracted,
+    )
+    legacy_review = _source_review(content_sha256=str(empty_capture.content_sha256))
+    _artifact, delivery, intent_path = _write_legacy_source_intent(
+        case, review=legacy_review
+    )
+    intent_bytes = intent_path.read_bytes()
+    option = next(
+        item for item in case.service.source_review_readiness(case.task_id)["options"]
+        if item["capture_id"] == empty_capture.capture_id
+    )
+    assert option["readiness"] == "NOT_READY"
+    assert expected_issue in option["issues"]
+    assert option["legacy_recovery_match"] is False
+
+    with pytest.raises(ValueError, match=expected_issue):
+        case.service.recover_admitted_legacy_source_review(
+            case.task_id,
+            delivery=delivery,
+            capture_revision_sha256=empty_capture.record_sha256,
+        )
+    assert intent_path.read_bytes() == intent_bytes
+    assert not case.service._review_artifact_path(
+        "structured_factory", "source", case.task_id
+    ).exists()
+    detail = case.service.get_task(case.task_id)
+    assert detail["review_delivery"]["status"] == "ADMITTED"
+    assert detail["structured_review"] is None
 
 
 def test_legacy_recovery_rejects_changed_operation_or_capture_without_mutation(

@@ -3404,8 +3404,12 @@ class ResearchFactoryService:
                     issues.append("CAPTURE_ARTIFACT_UNAVAILABLE_OR_INVALID")
             if content is not None and len(content) != capture.content_bytes:
                 issues.append("CONTENT_BYTE_COUNT_MISMATCH")
+            if content is not None and len(content) == 0:
+                issues.append("CAPTURE_RAW_CONTENT_EMPTY")
             if extracted is not None and len(extracted) != capture.extracted_bytes:
                 issues.append("EXTRACTION_BYTE_COUNT_MISMATCH")
+            if extracted is not None and len(extracted) == 0:
+                issues.append("CAPTURE_EXTRACTED_REPRESENTATION_EMPTY")
             binding = None
             if work is not None and version is not None and capture.content_sha256 is not None \
                     and capture.extracted_representation_sha256 is not None:

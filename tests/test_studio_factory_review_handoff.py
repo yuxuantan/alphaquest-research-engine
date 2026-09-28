@@ -37,8 +37,11 @@ from alphaquest.studio.factory_reviews import (
     SOURCE_METADATA_FIELDS,
     ReviewedSourceEvidenceArtifactV2,
     SourceEvidenceHumanVerificationV1,
+    SourceEvidenceHumanVerificationV2,
+    build_reviewed_source_evidence_v2,
 )
 from alphaquest.studio.factory_service import ResearchFactoryService, _identity_token
+from alphaquest.studio.research_factory import CodexTaskType, SourceEvidenceBundleV1
 
 
 HASH_A = "a" * 64
@@ -133,6 +136,7 @@ def _fulltext_capture(
     work_locators: list[str] | None = None,
     version_strong_identifiers: dict[str, str] | None = None,
     retained_bytes: bytes | None = None,
+    extracted_representation_bytes: bytes | None = None,
 ):
     store = LiteratureStore(project_root)
     actor = ActorProvenanceV1(
@@ -177,8 +181,16 @@ def _fulltext_capture(
         actor=actor,
         idempotency_key=f"version.{suffix}",
     )
-    content = retained_bytes or b"Complete retained source document used by the source-review fixture."
-    extracted = content
+    content = (
+        retained_bytes
+        if retained_bytes is not None
+        else b"Complete retained source document used by the source-review fixture."
+    )
+    extracted = (
+        extracted_representation_bytes
+        if extracted_representation_bytes is not None
+        else content
+    )
     content_sha = store.put_artifact(content, kind="artifacts")
     extracted_sha = store.put_artifact(extracted, kind="extracted")
     capture_payload = {
@@ -778,6 +790,114 @@ def test_source_review_readiness_requires_current_matching_fulltext_and_real_byt
     assert "CAPTURE_ARTIFACT_UNAVAILABLE_OR_INVALID" in next(
         item for item in changed["options"] if item["capture_id"] == fulltext.capture_id
     )["issues"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "extracted", "expected_issues"),
+    [
+        (b"", b"inspectable extraction", ["CAPTURE_RAW_CONTENT_EMPTY"]),
+        (b"retained raw document", b"", ["CAPTURE_EXTRACTED_REPRESENTATION_EMPTY"]),
+        (
+            b"",
+            b"",
+            ["CAPTURE_EXTRACTED_REPRESENTATION_EMPTY", "CAPTURE_RAW_CONTENT_EMPTY"],
+        ),
+    ],
+    ids=("empty-raw", "empty-extraction", "both-empty"),
+)
+def test_empty_capture_artifacts_block_readiness_write_and_downstream_v2_use(
+    tmp_path: Path,
+    raw: bytes,
+    extracted: bytes,
+    expected_issues: list[str],
+) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(
+        tmp_path,
+        suffix="empty-artifact",
+        retained_bytes=raw,
+        extracted_representation_bytes=extracted,
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(
+        campaign_id="structured_factory", request_id="empty-artifact-source"
+    )
+    service.run_worker_once(worker_id="empty-artifact-worker")
+    task_id = str(task["task_id"])
+
+    readiness = service.source_review_readiness(task_id)
+    option = next(
+        item for item in readiness["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "NOT_READY"
+    assert option["issues"] == expected_issues
+    with pytest.raises(ValueError, match="CAPTURE_.*_EMPTY"):
+        service.record_reviewed_source_evidence(
+            task_id,
+            verification=_source_review_payload(capture),
+            capture_revision_sha256=capture.record_sha256,
+        )
+    review_path = service._review_artifact_path(
+        "structured_factory", "source", task_id
+    )
+    assert not review_path.exists()
+
+    # Represent a validly hashed receipt produced before this readiness rule.
+    # Its immutable bytes remain readable as history but cannot supply current
+    # downstream source authority.
+    record, campaign_id, validation, imported = service._reviewable_proposal(
+        task_id, expected_task_type=CodexTaskType.SOURCE_RESEARCH,
+    )
+    source = SourceEvidenceBundleV1.model_validate_json(
+        json.dumps(imported.validated_payload, sort_keys=True)
+    )
+    verification = SourceEvidenceHumanVerificationV2.model_validate(
+        {**_source_review_payload(capture), "capture_binding": option["binding"]}
+    )
+    artifact = build_reviewed_source_evidence_v2(
+        campaign_id=campaign_id,
+        task_id=record.task_id,
+        proposal_id=imported.proposal_id,
+        proposal_payload_sha256=imported.payload_sha256,
+        proposal_validation_sha256=validation["validation_sha256"],
+        source_evidence=source,
+        human_verification=verification,
+    )
+    service._write_review_once(
+        review_path, artifact.model_dump(mode="json", by_alias=True)
+    )
+    historical_bytes = review_path.read_bytes()
+    assert ReviewedSourceEvidenceArtifactV2.model_validate_json(historical_bytes) == artifact
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
+    assert review_path.read_bytes() == historical_bytes
+
+
+def test_nonempty_raw_and_extraction_remain_review_ready(tmp_path: Path) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(
+        tmp_path,
+        suffix="nonempty-artifacts",
+        retained_bytes=b"%PDF retained raw document",
+        extracted_representation_bytes=b"Inspectable extracted text",
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(
+        campaign_id="structured_factory", request_id="nonempty-artifact-source"
+    )
+    service.run_worker_once(worker_id="nonempty-artifact-worker")
+    task_id = str(task["task_id"])
+    option = next(
+        item for item in service.source_review_readiness(task_id)["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "READY"
+    artifact = service.record_reviewed_source_evidence(
+        task_id,
+        verification=_source_review_payload(capture),
+        capture_revision_sha256=capture.record_sha256,
+    )
+    assert artifact["schema"] == "alphaquest.reviewed-source-evidence/v2"
 
 
 def test_source_locator_matching_is_version_specific_with_two_versions_of_one_work(
