@@ -420,7 +420,9 @@ must be compatible, so a working paper cannot satisfy a peer-reviewed journal
 proposal. The proposal locator must match the selected version's strong identity
 or capture locator after DOI normalization or URL scheme/host normalization. A
 parent-work locator cannot prove which child version was captured, and a matching
-capture locator cannot mask a contradictory selected-version identifier. URL
+capture locator cannot mask a contradictory selected-version identifier. DOI
+identifiers declared by the selected version and DOI resolver capture locators
+must agree even when the proposal itself uses a matching publisher URL. URL
 paths and query values remain case-sensitive. The canonical literature schema
 does not contain a bibliographic publication-year field. Studio therefore does not mistake
 public-availability timing or free-form version labels for publication year; year

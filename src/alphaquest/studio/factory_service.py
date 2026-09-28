@@ -206,17 +206,23 @@ def _source_identity_issues(
     ):
         issues.append("PUBLICATION_CATEGORY_MISMATCH")
     proposed_locator = _identity_token(source.locator)
-    canonical_anchors = {
-        _identity_token(value)
-        for value in [*version.strong_identifiers.values(), capture.retrieval_locator]
+    version_anchors = {
+        _identity_token(value) for value in version.strong_identifiers.values()
     }
+    capture_anchor = _identity_token(capture.retrieval_locator)
+    canonical_anchors = {*version_anchors, capture_anchor}
     locator_family = _identity_family(proposed_locator)
     comparable = {
         token for token in canonical_anchors
         if _identity_family(token) == locator_family
     }
-    if proposed_locator not in canonical_anchors or any(
-        token != proposed_locator for token in comparable
+    doi_anchors = {
+        token for token in canonical_anchors if _identity_family(token) == "DOI"
+    }
+    if (
+        proposed_locator not in canonical_anchors
+        or any(token != proposed_locator for token in comparable)
+        or len(doi_anchors) > 1
     ):
         issues.append("LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH")
     if work.identity_status != "VERIFIED_STRONG" or version.identity_status != "VERIFIED_STRONG":

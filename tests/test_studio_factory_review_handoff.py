@@ -860,6 +860,97 @@ def test_doi_identity_requires_a_whole_doi_or_genuine_resolver() -> None:
 
 
 @pytest.mark.parametrize(
+    ("version_identifiers", "capture_locator"),
+    [
+        (
+            {"url": "https://publisher.example/article/proposed", "doi": "10.1234/expected"},
+            "https://doi.org/10.1234/wrong",
+        ),
+        (
+            {"doi": "10.1234/wrong", "url": "https://publisher.example/article/proposed"},
+            "https://doi.org/10.1234/expected",
+        ),
+        (
+            {"url": "https://publisher.example/article/proposed", "doi_primary": "10.1234/expected", "doi_secondary": "10.1234/wrong"},
+            "https://doi.org/10.1234/expected",
+        ),
+        (
+            {"doi_secondary": "10.1234/wrong", "url": "https://publisher.example/article/proposed", "doi_primary": "10.1234/expected"},
+            "https://doi.org/10.1234/expected",
+        ),
+    ],
+    ids=("capture-doi-conflict", "version-doi-conflict", "internal-doi-conflict", "internal-doi-permutation"),
+)
+def test_doi_contradictions_block_readiness_and_review_write_independently_of_proposal_url(
+    tmp_path: Path,
+    version_identifiers: dict[str, str],
+    capture_locator: str,
+) -> None:
+    _draft(tmp_path)
+    proposal = _source_proposal()
+    proposal["locator"] = "https://publisher.example/article/proposed"
+    capture = _fulltext_capture(
+        tmp_path,
+        suffix="cross-family-doi-conflict",
+        locator=capture_locator,
+        version_strong_identifiers=version_identifiers,
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(proposal))
+    task = service.enqueue_next(
+        campaign_id="structured_factory", request_id="cross-family-doi-conflict"
+    )
+    service.run_worker_once(worker_id="cross-family-doi-conflict-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "NOT_READY"
+    assert "LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH" in option["issues"]
+    with pytest.raises(ValueError, match="LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH"):
+        service.record_reviewed_source_evidence(
+            str(task["task_id"]),
+            verification=_source_review_payload(capture),
+            capture_revision_sha256=capture.record_sha256,
+        )
+    assert not service._review_artifact_path(
+        "structured_factory", "source", str(task["task_id"])
+    ).exists()
+
+
+def test_publisher_url_with_consistent_version_and_capture_doi_is_review_ready(
+    tmp_path: Path,
+) -> None:
+    _draft(tmp_path)
+    publisher_url = "https://publisher.example/article/proposed"
+    proposal = _source_proposal()
+    proposal["locator"] = publisher_url
+    capture = _fulltext_capture(
+        tmp_path,
+        suffix="consistent-cross-family-doi",
+        locator="https://doi.org/10.1234/expected",
+        version_strong_identifiers={"url": publisher_url, "doi": "10.1234/expected"},
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(proposal))
+    task = service.enqueue_next(
+        campaign_id="structured_factory", request_id="consistent-cross-family-doi"
+    )
+    service.run_worker_once(worker_id="consistent-cross-family-doi-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "READY"
+    artifact = service.record_reviewed_source_evidence(
+        str(task["task_id"]),
+        verification=_source_review_payload(capture),
+        capture_revision_sha256=capture.record_sha256,
+    )
+    assert artifact["schema"] == "alphaquest.reviewed-source-evidence/v2"
+
+
+@pytest.mark.parametrize(
     ("predicate", "expected_issue"),
     (("RETRACTS", "SOURCE_VERSION_RETRACTED"), ("CORRECTS", "SOURCE_VERSION_CORRECTED")),
 )
