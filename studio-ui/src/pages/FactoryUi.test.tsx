@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   setFactorySelectedAction: vi.fn(),
   completeFactorySelectedAction: vi.fn(),
   recordFactoryReviewedSource: vi.fn(),
+  factorySourceReviewReadiness: vi.fn(),
   recordFactoryReviewedHypothesis: vi.fn(),
   recordFactoryReviewedEngineeringIntent: vi.fn(),
   pauseFactory: vi.fn(),
@@ -88,6 +89,7 @@ function status(
 }
 
 beforeEach(() => {
+  localStorage.clear();
   vi.resetAllMocks();
   mocks.factoryStatus.mockResolvedValue(status());
   mocks.factoryTasks.mockResolvedValue({ tasks: [] });
@@ -98,11 +100,21 @@ beforeEach(() => {
   mocks.setFactorySelectedAction.mockResolvedValue({ task: {} });
   mocks.completeFactorySelectedAction.mockResolvedValue({ task: {} });
   mocks.recordFactoryReviewedSource.mockResolvedValue({ reviewed_artifact: {} });
+  mocks.factorySourceReviewReadiness.mockResolvedValue({
+    status: "READY", eligible_capture_count: 1, options: [{
+      capture_id: "capture.source", capture_revision_sha256: "c".repeat(64),
+      source_version_id: "version.source", status: "FULL_TEXT_CAPTURED",
+      content_sha256: "a".repeat(64), retrieval_locator: "https://example.test/source",
+      readiness: "READY", issues: [], title: "Captured source", authors: ["Researcher"],
+      source_category: "ACADEMIC", version_kind: "ORIGINAL", version_label: "Published version",
+      claim_evidence: [{ claim_id: "claim_1", status: "BOUND", evidence_sha256: "b".repeat(64), evidence_kind: "EXTRACTED_TEXT", reason: null }],
+    }],
+  });
   mocks.recordFactoryReviewedHypothesis.mockResolvedValue({ reviewed_artifact: {} });
   mocks.recordFactoryReviewedEngineeringIntent.mockResolvedValue({ reviewed_artifact: {} });
 });
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); localStorage.clear(); });
 
 describe("Codex research factory UI", () => {
   it("lets the researcher select an exact factory campaign scope", async () => {
@@ -196,7 +208,7 @@ describe("Codex research factory UI", () => {
       state: "PROPOSAL_READY",
       task_type: "MECHANICS_INTENT",
       campaign_id: "factory_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.mechanics-intent/v1",
         execution_lane: "CERTIFIED_RECIPE",
@@ -285,12 +297,16 @@ describe("Codex research factory UI", () => {
   });
 
   it("records source verification only after hashes and every claim decision are complete", async () => {
+    const readiness = await mocks.factorySourceReviewReadiness();
+    mocks.factorySourceReviewReadiness.mockResolvedValue({ ...readiness, eligible_capture_count: 2,
+      options: [...readiness.options, { ...readiness.options[0], capture_id: "capture.other", capture_revision_sha256: "e".repeat(64) }],
+    });
     const proposalTask = {
       task_id: "codex-source-review",
       state: "PROPOSAL_READY",
       task_type: "SOURCE_RESEARCH",
       campaign_id: "factory_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.source-evidence-bundle/v1",
         claims: [
@@ -330,12 +346,18 @@ describe("Codex research factory UI", () => {
     expect(screen.queryByRole("button", { name: "ACKNOWLEDGE FOR HUMAN TRANSFER" }))
       .not.toBeInTheDocument();
     expect(submit).toBeDisabled();
+    const captureChoice = screen.getByLabelText("Canonical full-text capture");
+    await waitFor(() => expect(captureChoice).toBeEnabled());
+    fireEvent.change(captureChoice, { target: { value: "e".repeat(64) } });
     fireEvent.change(screen.getByLabelText("Required review notes"), {
       target: { value: "Checked the original source and every claim." },
     });
-    fireEvent.change(screen.getByLabelText("Captured source content SHA-256"), {
-      target: { value: "a".repeat(64) },
+    fireEvent.change(captureChoice, { target: { value: "c".repeat(64) } });
+    expect(screen.getByLabelText("Required review notes")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("Required review notes"), {
+      target: { value: "Rechecked the newly selected source and every claim." },
     });
+    await waitFor(() => expect(screen.getByLabelText("Captured source content SHA-256")).toHaveValue("a".repeat(64)));
     fireEvent.change(screen.getByLabelText("Human verification method"), {
       target: { value: "Opened the publisher PDF and checked its metadata." },
     });
@@ -348,12 +370,17 @@ describe("Codex research factory UI", () => {
     fireEvent.change(screen.getByLabelText("Human claim decision"), {
       target: { value: "ACCEPT" },
     });
-    fireEvent.change(screen.getByLabelText("Claim evidence SHA-256"), {
-      target: { value: "b".repeat(64) },
+    expect(screen.getByLabelText("Claim evidence SHA-256")).toHaveValue("b".repeat(64));
+    expect(screen.getByLabelText("Claim evidence SHA-256")).toHaveAttribute("readonly");
+    fireEvent.change(screen.getByLabelText("Claim verification method"), {
+      target: { value: "READ_PASSAGE" },
     });
-    fireEvent.change(screen.getByLabelText("Claim review notes"), {
+    fireEvent.change(screen.getByLabelText("Evidence location"), { target: { value: "Page 7" } });
+    fireEvent.change(screen.getByLabelText("What I found"), {
       target: { value: "The captured passage directly supports the narrow claim." },
     });
+    fireEvent.change(screen.getByLabelText("Decision rationale"), { target: { value: "The source states the same result." } });
+    fireEvent.change(screen.getByLabelText("Limitations or discrepancies"), { target: { value: "No transfer claim accepted." } });
     await waitFor(() => expect(submit).toBeEnabled());
     fireEvent.click(submit);
 
@@ -361,7 +388,7 @@ describe("Codex research factory UI", () => {
       "codex-source-review",
       expect.objectContaining({
         reviewer: "Configured Reviewer",
-        content_sha256: "a".repeat(64),
+        capture_revision_sha256: "c".repeat(64),
         retraction_status: "NOT_RETRACTED",
         claim_reviews: [expect.objectContaining({
           claim_id: "claim_1",
@@ -373,13 +400,43 @@ describe("Codex research factory UI", () => {
     expect(await screen.findByText(/separate human-verified artifact/i)).toBeVisible();
   });
 
+  it.each(["ADMITTED", "INTEGRITY_ERROR", "LOCAL_PENDING"] as const)(
+    "blocks dismissal while a structured delivery is %s",
+    async (deliveryState) => {
+      const proposalTask = {
+        task_id: "pending-hypothesis-review", state: "PROPOSAL_READY", task_type: "HYPOTHESIS_PROPOSAL",
+        campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
+        proposal: { schema: "alphaquest.hypothesis-proposal/v1" }, proposal_disposition: null, structured_review: null,
+        review_delivery: deliveryState === "LOCAL_PENDING" ? null : { status: deliveryState },
+      };
+      mocks.factoryStatus.mockResolvedValue(status({ latest_task: { ...proposalTask, proposal: undefined } }));
+      mocks.factoryTask.mockResolvedValue({ task: proposalTask });
+      mocks.recordFactoryReviewedHypothesis.mockImplementation(() => new Promise(() => {}));
+      render(<MemoryRouter><WorkflowPage /></MemoryRouter>);
+      const submit = await screen.findByRole("button", { name: "ACCEPT REVIEWED HYPOTHESIS" });
+      fireEvent.change(screen.getByLabelText("Required review notes"), { target: { value: "My exact review decision." } });
+      const dismiss = screen.getByRole("button", { name: "DISMISS" });
+      if (deliveryState === "LOCAL_PENDING") {
+        expect(dismiss).toBeEnabled();
+        for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
+        expect(submit).toBeEnabled();
+        fireEvent.click(submit);
+        await waitFor(() => expect(mocks.recordFactoryReviewedHypothesis).toHaveBeenCalledTimes(1));
+      }
+      await waitFor(() => expect(dismiss).toBeDisabled());
+      fireEvent.click(dismiss);
+      expect(mocks.setFactoryProposalDisposition).not.toHaveBeenCalled();
+      expect(submit).toBeDisabled();
+    },
+  );
+
   it("requires exhaustive hypothesis-field and quality-gate acceptance", async () => {
     const proposalTask = {
       task_id: "codex-hypothesis-review",
       state: "PROPOSAL_READY",
       task_type: "HYPOTHESIS_PROPOSAL",
       campaign_id: "factory_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: { schema: "alphaquest.hypothesis-proposal/v1" },
       proposal_disposition: null,
       structured_review: null,
@@ -506,7 +563,7 @@ describe("Codex research factory UI", () => {
       task_id: "codex-proposal-dismiss",
       state: "PROPOSAL_READY",
       task_type: "HYPOTHESIS_PROPOSAL",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.hypothesis-proposal/v1",
         hypothesis: "Bounded test proposal",
@@ -578,7 +635,7 @@ describe("Codex research factory UI", () => {
       state: "PROPOSAL_READY",
       task_type: "NEXT_EXPERIMENT",
       campaign_id: "published_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.next-action-ranking-proposal/v1",
         recommendations: [
@@ -655,7 +712,7 @@ describe("Codex research factory UI", () => {
       state: "PROPOSAL_READY",
       task_type: "NEXT_EXPERIMENT",
       campaign_id: "published_example",
-      proposal_validation: { status: "VALIDATED_NOT_APPLIED" },
+      proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
       proposal: {
         schema: "alphaquest.next-action-ranking-proposal/v1",
         recommendations: [
@@ -735,4 +792,24 @@ describe("Codex research factory UI", () => {
     ).toBeVisible();
     expect(await screen.findByText(/EDGE_ABANDONED/)).toBeVisible();
   });
+});
+
+
+it("reopens a saved structured receipt while another proposal is pending", async () => {
+  const pending = { task_id: "pending-hypothesis", state: "PROPOSAL_READY", task_type: "HYPOTHESIS_PROPOSAL",
+    campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
+    proposal: { schema: "alphaquest.hypothesis-proposal/v1" } };
+  const saved = { task_id: "saved-source", state: "PROPOSAL_READY", task_type: "SOURCE_RESEARCH",
+    campaign_id: "factory_example", proposal_validation: { status: "VALIDATED_NOT_APPLIED", proposal_id: "proposal-1", payload_sha256: "a".repeat(64), validation_sha256: "d".repeat(64) },
+    proposal: { schema: "alphaquest.source-evidence-bundle/v1", claims: [] },
+    structured_review: { status: "ACCEPTED_FOR_HYPOTHESIS", reviewer: "Source Reviewer", notes: "Verified captured source.", review_id: "source-review-1" } };
+  mocks.factoryStatus.mockResolvedValue(status({ latest_task: pending }));
+  mocks.factoryTasks.mockResolvedValue({ tasks: [pending, saved] });
+  mocks.factoryTask.mockImplementation(async (id: string) => ({ task: id === saved.task_id ? saved : pending }));
+  render(<MemoryRouter><WorkflowPage /></MemoryRouter>);
+  expect(await screen.findByRole("button", { name: "ACCEPT REVIEWED HYPOTHESIS" })).toBeVisible();
+  fireEvent.change(screen.getByLabelText("Recent proposals and saved reviews"), { target: { value: saved.task_id } });
+  expect(await screen.findByRole("region", { name: "Saved review receipt" })).toBeVisible();
+  expect(screen.getByText("source-review-1")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "ACCEPT REVIEWED SOURCE EVIDENCE" })).not.toBeInTheDocument();
 });

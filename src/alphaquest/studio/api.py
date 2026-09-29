@@ -45,6 +45,7 @@ from alphaquest.research.storage import (
     resolve_campaign_context,
     resolve_recorded_path,
 )
+from alphaquest.studio.research_factory import SelectedSourceV1
 from alphaquest.studio.data_import import DataImportSpec, DatasetImporter
 from alphaquest.studio.analysis import (
     governed_chart_snapshot,
@@ -335,6 +336,7 @@ class FactoryRunNextRequest(APIModel):
 
     campaign_id: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_]*$")
     request_id: str = Field(min_length=8, max_length=120)
+    selected_source: SelectedSourceV1 | None = None
 
 
 class FactoryProposalDispositionRequest(APIModel):
@@ -352,17 +354,31 @@ class FactorySourceClaimReviewRequest(APIModel):
     notes: str = Field(min_length=1)
 
 
+class FactoryReviewDeliveryRequest(APIModel):
+    operation_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+    proposal_id: str = Field(min_length=1)
+    payload_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    validation_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class FactoryReviewedSourceRequest(APIModel):
+    delivery: FactoryReviewDeliveryRequest
+    capture_revision_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     reviewer: str = Field(min_length=1)
     notes: str = Field(min_length=1)
     verified_metadata_fields: list[str] = Field(min_length=6, max_length=6)
-    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     retraction_status: Literal["NOT_RETRACTED", "CORRECTED"]
     verification_method: str = Field(min_length=1)
     claim_reviews: list[FactorySourceClaimReviewRequest] = Field(min_length=1)
 
 
+class FactoryLegacySourceRecoveryRequest(APIModel):
+    delivery: FactoryReviewDeliveryRequest
+    capture_revision_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class FactoryReviewedHypothesisRequest(APIModel):
+    delivery: FactoryReviewDeliveryRequest
     reviewer: str = Field(min_length=1)
     notes: str = Field(min_length=1)
     reviewed_fields: list[str] = Field(min_length=20, max_length=20)
@@ -374,6 +390,7 @@ class FactoryReviewedHypothesisRequest(APIModel):
 
 
 class FactoryReviewedEngineeringIntentRequest(APIModel):
+    delivery: FactoryReviewDeliveryRequest
     reviewer: str = Field(min_length=1)
     notes: str = Field(min_length=1)
     reviewed_fields: list[str] = Field(min_length=19, max_length=19)
@@ -1954,6 +1971,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         task = ResearchFactoryService(root).enqueue_next(
             campaign_id=value.campaign_id,
             request_id=value.request_id,
+            **({"selected_source": value.selected_source} if value.selected_source is not None else {}),
         )
         return {
             "task": task,
@@ -1995,27 +2013,55 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         task_id: str,
         value: FactoryReviewedSourceRequest,
     ) -> dict[str, Any]:
-        from alphaquest.studio.factory_reviews import SourceEvidenceHumanVerificationV1
         from alphaquest.studio.factory_service import ResearchFactoryService
 
-        verification = SourceEvidenceHumanVerificationV1(
-            review_id=f"source_review_{uuid4().hex}",
-            reviewer=value.reviewer,
-            reviewed_at=datetime.now(timezone.utc),
-            verified_metadata_fields=value.verified_metadata_fields,
-            content_sha256=value.content_sha256,
-            retraction_status=value.retraction_status,
-            verification_method=value.verification_method,
-            claim_reviews=[item.model_dump() for item in value.claim_reviews],
-            notes=value.notes,
-        )
+        verification = {
+            "review_id": f"source_review_{uuid4().hex}",
+            "reviewer": value.reviewer,
+            "reviewed_at": datetime.now(timezone.utc),
+            "verified_metadata_fields": value.verified_metadata_fields,
+            "retraction_status": value.retraction_status,
+            "verification_method": value.verification_method,
+            "claim_reviews": [item.model_dump() for item in value.claim_reviews],
+            "notes": value.notes,
+        }
         try:
             artifact = ResearchFactoryService(root).record_reviewed_source_evidence(
                 task_id,
                 verification=verification,
+                capture_revision_sha256=value.capture_revision_sha256,
+                delivery=value.delivery.model_dump(),
             )
         except KeyError as exc:
             raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+        return {
+            "reviewed_artifact": artifact,
+            "campaign_mutated": False,
+            "mechanics_approved": False,
+            "testing_authorized": False,
+        }
+
+    @app.get("/api/factory/tasks/{task_id}/source-review-readiness")
+    def factory_source_review_readiness(task_id: str) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        try:
+            return ResearchFactoryService(root).source_review_readiness(task_id)
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+
+    @app.post("/api/factory/tasks/{task_id}/recover-admitted-v1-source-review")
+    def factory_recover_admitted_v1_source_review(
+        task_id: str,
+        value: FactoryLegacySourceRecoveryRequest,
+    ) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        artifact = ResearchFactoryService(root).recover_admitted_legacy_source_review(
+            task_id,
+            delivery=value.delivery.model_dump(),
+            capture_revision_sha256=value.capture_revision_sha256,
+        )
         return {
             "reviewed_artifact": artifact,
             "campaign_mutated": False,
@@ -2047,6 +2093,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             artifact = ResearchFactoryService(root).record_reviewed_hypothesis(
                 task_id,
                 acceptance=acceptance,
+                delivery=value.delivery.model_dump(),
             )
         except KeyError as exc:
             raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
@@ -2081,6 +2128,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             artifact = ResearchFactoryService(root).record_reviewed_engineering_handoff_intent(
                 task_id,
                 acceptance=acceptance,
+                delivery=value.delivery.model_dump(),
             )
         except KeyError as exc:
             raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc

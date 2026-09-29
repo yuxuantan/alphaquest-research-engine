@@ -11,6 +11,43 @@ import type {
   StudioSettings,
 } from "./types";
 
+export interface ReviewDelivery {
+  operation_id: string;
+  proposal_id: string;
+  payload_sha256: string;
+  validation_sha256: string;
+}
+
+export interface SourceReviewCaptureOption {
+  capture_id: string;
+  capture_revision_sha256: string;
+  source_version_id: string;
+  status: string;
+  content_sha256: string | null;
+  retrieval_locator: string;
+  readiness: "READY" | "NOT_READY";
+  issues: string[];
+  legacy_recovery_match?: boolean;
+  title: string | null;
+  authors: string[];
+  source_category: string | null;
+  version_kind: string | null;
+  version_label: string | null;
+  claim_evidence?: {
+    claim_id: string;
+    status: "BOUND" | "UNBOUND";
+    evidence_sha256: string | null;
+    evidence_kind: "SOURCE_DOCUMENT" | "EXTRACTED_TEXT" | null;
+    reason: string | null;
+  }[];
+}
+
+export interface SourceReviewReadiness {
+  status: "READY" | "NOT_READY";
+  eligible_capture_count: number;
+  options: SourceReviewCaptureOption[];
+}
+
 export class ApiError extends Error {
   status: number;
   fields: Record<string, string>;
@@ -466,10 +503,11 @@ export const api = {
   recordFactoryReviewedSource: (
     id: string,
     value: {
+      delivery: ReviewDelivery;
+      capture_revision_sha256: string;
       reviewer: string;
       notes: string;
       verified_metadata_fields: string[];
-      content_sha256: string;
       retraction_status: "NOT_RETRACTED" | "CORRECTED";
       verification_method: string;
       claim_reviews: Array<{
@@ -486,9 +524,21 @@ export const api = {
       `/api/factory/tasks/${encodeURIComponent(id)}/reviewed-source-evidence`,
       { method: "POST", body: json(value) },
     ),
+  recoverFactoryAdmittedV1Source: (
+    id: string,
+    value: { delivery: ReviewDelivery; capture_revision_sha256: string },
+  ) => request<Record<string, unknown>>(
+    `/api/factory/tasks/${encodeURIComponent(id)}/recover-admitted-v1-source-review`,
+    { method: "POST", body: json(value) },
+  ),
+  factorySourceReviewReadiness: (id: string) =>
+    request<SourceReviewReadiness>(
+      `/api/factory/tasks/${encodeURIComponent(id)}/source-review-readiness`,
+    ),
   recordFactoryReviewedHypothesis: (
     id: string,
     value: {
+      delivery: ReviewDelivery;
       reviewer: string;
       notes: string;
       reviewed_fields: string[];
@@ -506,6 +556,7 @@ export const api = {
   recordFactoryReviewedEngineeringIntent: (
     id: string,
     value: {
+      delivery: ReviewDelivery;
       reviewer: string;
       notes: string;
       reviewed_fields: string[];

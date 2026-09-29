@@ -160,6 +160,38 @@ class SourceEvidenceHumanVerificationV1(FactoryModel):
         return self
 
 
+class SourceFullTextCaptureBindingV1(FactoryModel):
+    """Exact canonical full-text bytes selected for one source review."""
+
+    work_id: str
+    work_revision_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_version_id: str
+    source_version_revision_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_version_resolution_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_reliability_state_sha256: str = Field(pattern=SHA256_PATTERN)
+    capture_id: str
+    capture_revision_sha256: str = Field(pattern=SHA256_PATTERN)
+    content_sha256: str = Field(pattern=SHA256_PATTERN)
+    extracted_representation_sha256: str = Field(pattern=SHA256_PATTERN)
+
+    @field_validator("work_id", "source_version_id", "capture_id")
+    @classmethod
+    def _identities(cls, value: str) -> str:
+        return _nonblank(value)
+
+
+class SourceEvidenceHumanVerificationV2(SourceEvidenceHumanVerificationV1):
+    """Human source decision bound to a canonical, retained full-text capture."""
+
+    capture_binding: SourceFullTextCaptureBindingV1
+
+    @model_validator(mode="after")
+    def _content_matches_capture(self) -> "SourceEvidenceHumanVerificationV2":
+        if self.content_sha256 != self.capture_binding.content_sha256:
+            raise ValueError("human verification content hash does not match the canonical capture")
+        return self
+
+
 class ReviewedSourceEvidenceArtifactV1(FactoryModel):
     """Complete AI source proposal plus its one-shot human verification."""
 
@@ -183,6 +215,43 @@ class ReviewedSourceEvidenceArtifactV1(FactoryModel):
 
     @model_validator(mode="after")
     def _integrity(self) -> "ReviewedSourceEvidenceArtifactV1":
+        if self.source_evidence_sha256 != object_sha256(self.source_evidence):
+            raise ValueError("source_evidence_sha256 does not match the preserved proposal")
+        proposed = {item.claim_id: item for item in self.source_evidence.claims}
+        reviewed = {item.claim_id: item for item in self.human_verification.claim_reviews}
+        if len(reviewed) != len(self.human_verification.claim_reviews) or set(reviewed) != set(proposed):
+            raise ValueError("human claim reviews must cover every proposed claim exactly once")
+        for claim_id, review in reviewed.items():
+            if review.proposed_support != proposed[claim_id].support:
+                raise ValueError(f"claim review support is mismatched for {claim_id}")
+        if self.artifact_sha256 != _artifact_sha256(self):
+            raise ValueError("reviewed source artifact SHA-256 is invalid")
+        return self
+
+
+class ReviewedSourceEvidenceArtifactV2(FactoryModel):
+    """New source review with immutable canonical full-text provenance."""
+
+    schema_name: Literal["alphaquest.reviewed-source-evidence/v2"] = Field(
+        default="alphaquest.reviewed-source-evidence/v2",
+        alias="schema",
+        serialization_alias="schema",
+    )
+    campaign_id: str
+    task_id: str
+    proposal_id: str
+    proposal_payload_sha256: str = Field(pattern=SHA256_PATTERN)
+    proposal_validation_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_evidence: SourceEvidenceBundleV1
+    source_evidence_sha256: str = Field(pattern=SHA256_PATTERN)
+    human_verification: SourceEvidenceHumanVerificationV2
+    campaign_mutations_performed: Literal[False] = False
+    mechanics_approval_granted: Literal[False] = False
+    testing_authorized: Literal[False] = False
+    artifact_sha256: str = Field(pattern=SHA256_PATTERN)
+
+    @model_validator(mode="after")
+    def _integrity(self) -> "ReviewedSourceEvidenceArtifactV2":
         if self.source_evidence_sha256 != object_sha256(self.source_evidence):
             raise ValueError("source_evidence_sha256 does not match the preserved proposal")
         proposed = {item.claim_id: item for item in self.source_evidence.claims}
@@ -371,6 +440,34 @@ def build_reviewed_source_evidence(
     return ReviewedSourceEvidenceArtifactV1.model_validate(payload)
 
 
+def build_reviewed_source_evidence_v2(
+    *,
+    campaign_id: str,
+    task_id: str,
+    proposal_id: str,
+    proposal_payload_sha256: str,
+    proposal_validation_sha256: str,
+    source_evidence: SourceEvidenceBundleV1,
+    human_verification: SourceEvidenceHumanVerificationV2,
+) -> ReviewedSourceEvidenceArtifactV2:
+    payload: dict[str, Any] = {
+        "schema": "alphaquest.reviewed-source-evidence/v2",
+        "campaign_id": campaign_id,
+        "task_id": task_id,
+        "proposal_id": proposal_id,
+        "proposal_payload_sha256": proposal_payload_sha256,
+        "proposal_validation_sha256": proposal_validation_sha256,
+        "source_evidence": source_evidence,
+        "source_evidence_sha256": object_sha256(source_evidence),
+        "human_verification": human_verification,
+        "campaign_mutations_performed": False,
+        "mechanics_approval_granted": False,
+        "testing_authorized": False,
+    }
+    payload["artifact_sha256"] = _artifact_sha256(payload)
+    return ReviewedSourceEvidenceArtifactV2.model_validate(payload)
+
+
 def build_reviewed_hypothesis(
     *,
     campaign_id: str,
@@ -439,10 +536,14 @@ __all__ = [
     "ReviewedEngineeringHandoffIntentArtifactV1",
     "ReviewedHypothesisArtifactV1",
     "ReviewedSourceEvidenceArtifactV1",
+    "ReviewedSourceEvidenceArtifactV2",
     "SOURCE_METADATA_FIELDS",
     "SourceClaimHumanReviewV1",
     "SourceEvidenceHumanVerificationV1",
+    "SourceEvidenceHumanVerificationV2",
+    "SourceFullTextCaptureBindingV1",
     "build_reviewed_engineering_handoff_intent",
     "build_reviewed_hypothesis",
     "build_reviewed_source_evidence",
+    "build_reviewed_source_evidence_v2",
 ]

@@ -61,7 +61,7 @@ export function mechanicsAnnotationFormState(detail: any): {
   const annotation = detail?.trade_evidence?.annotation;
   const savedStatus = String(annotation?.reviewer_status || "").trim();
   return {
-    status: savedStatus || "Correct",
+    status: savedStatus,
     notes: String(annotation?.reviewer_notes || ""),
   };
 }
@@ -403,7 +403,7 @@ function MechanicsReview({
 }) {
   const [detail, setDetail] = useState<any>(item);
   const [trade, setTrade] = useState("");
-  const [status, setStatus] = useState("Correct");
+  const [status, setStatus] = useState("");
   const [notes, setNotes] = useState("");
   const [reviewer, setReviewer] = useState("");
   const [decisionNotes, setDecisionNotes] = useState("");
@@ -480,7 +480,7 @@ function MechanicsReview({
   }, [identity, requestedTrade]);
   async function selectTrade(value: string) {
     setTrade(value);
-    setStatus("Correct");
+    setStatus("");
     setNotes("");
     setBusy("evidence");
     setFeedback("");
@@ -550,6 +550,8 @@ function MechanicsReview({
   );
   async function saveAnnotation(event: FormEvent) {
     event.preventDefault();
+    if (busy || !status || !notes.trim() || !detail.trade_evidence_token ||
+      String(detail.trade_evidence?.trade_id) !== trade) return;
     setBusy("annotation");
     setFeedback("");
     try {
@@ -870,7 +872,8 @@ function MechanicsReview({
           <h3>Required sample annotation</h3>
           <p>
             Reconcile each selected trade with the frozen mechanics and
-            automated checks before recording a status.
+            automated checks before recording a status. Record the external charting
+            tool, the observed entry/exit timing, and any discrepancy in your notes.
           </p>
         </div>
         {(detail.sampled_trade_ids || []).length ? (
@@ -880,6 +883,7 @@ function MechanicsReview({
                 value={status}
                 onChange={(event) => setStatus(event.target.value)}
               >
+                <option value="">Choose after checking the evidence</option>
                 {[
                   "Correct",
                   "Bug suspected",
@@ -903,7 +907,7 @@ function MechanicsReview({
             <Button
               type="submit"
               disabled={
-                busy === "annotation" ||
+                Boolean(busy) || !status || !notes.trim() ||
                 !detail.trade_evidence ||
                 !detail.trade_evidence_token ||
                 String(detail.trade_evidence.trade_id) !== trade

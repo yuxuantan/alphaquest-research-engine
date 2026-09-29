@@ -409,6 +409,7 @@ def test_committed_studio_schemas_match_owning_models(tmp_path):
         "reviewed-engineering-handoff-intent-v1.schema.json",
         "reviewed-hypothesis-v1.schema.json",
         "reviewed-source-evidence-v1.schema.json",
+        "reviewed-source-evidence-v2.schema.json",
         "result-bundle-v2.schema.json",
         "result-bundle-v3.schema.json",
         "source-evidence-bundle-v1.schema.json",

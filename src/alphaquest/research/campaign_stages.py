@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -70,8 +70,7 @@ PRE_ACCEPTANCE_STAGE_ORDER = list(_RESEARCH_POLICY.pre_acceptance_stage_order)
 DEFAULT_STAGE_ORDER = list(_RESEARCH_POLICY.stage_order)
 
 TRADE_PATH_STRESS_SKIP_REASON = (
-    "trade-path stress is globally disabled for campaign stages; "
-    "monkey gates use random-entry core-beat rates"
+    "trade-path stress is globally disabled for campaign stages; " "monkey gates use random-entry core-beat rates"
 )
 
 DEFAULT_STAGE_CRITERIA = copy.deepcopy(_RESEARCH_POLICY.stage_criteria)
@@ -158,12 +157,8 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
                     "roll_calendar_sha256": data_binding.get("roll_calendar_sha256"),
                     "execution_data": data_binding.get("execution_data"),
                 },
-                acceptance_train_months=int(
-                    _RESEARCH_POLICY.acceptance_oos.get("train_months", 24)
-                ),
-                acceptance_test_months=int(
-                    _RESEARCH_POLICY.acceptance_oos.get("test_months", 6)
-                ),
+                acceptance_train_months=int(_RESEARCH_POLICY.acceptance_oos.get("train_months", 24)),
+                acceptance_test_months=int(_RESEARCH_POLICY.acceptance_oos.get("test_months", 6)),
             )
     elif factory_binding is not None:
         raise ValueError("research_factory binding requires frozen research_objectives")
@@ -210,12 +205,8 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
             stage_cfg["retain_iteration_reports"] = bool(
                 DEFAULT_MONKEY_METHODOLOGY.get("retain_iteration_reports", False)
             )
-            stage_cfg["constraints"] = copy.deepcopy(
-                DEFAULT_MONKEY_METHODOLOGY.get("constraints") or {}
-            )
-            stage_cfg["beat_threshold"] = (
-                0.90 if stage_name == "limited_monkey_test" else 0.80
-            )
+            stage_cfg["constraints"] = copy.deepcopy(DEFAULT_MONKEY_METHODOLOGY.get("constraints") or {})
+            stage_cfg["beat_threshold"] = 0.90 if stage_name == "limited_monkey_test" else 0.80
         if stage_name == "walk_forward_analysis":
             stage_cfg.pop("data_subset", None)
             stage_cfg["data_window"] = copy.deepcopy(DEFAULT_WFA_DATA_WINDOW)
@@ -273,14 +264,48 @@ def _criteria_with_research_objectives(
 
     merged = copy.deepcopy(criteria)
     if stage_name == "walk_forward_analysis":
-        _merge_bound(merged, "summary.realized_oos_windows", "min", objectives["minimum_complete_wfa_windows"], decision_role="scientific_validity")
-        _merge_bound(merged, "summary.realized_oos_trades", "min", objectives["minimum_wfa_oos_trades"], decision_role="scientific_validity")
-        _merge_bound(merged, "stitched_oos_metrics.cagr", "min", objectives["minimum_annualized_return_fraction"], decision_role="generic_objective")
-        _merge_bound(merged, "stitched_oos_metrics.mar", "min", objectives["minimum_mar"], decision_role="generic_objective")
-        _merge_bound(merged, "stitched_oos_metrics.max_drawdown_pct", "max", objectives["maximum_drawdown_fraction"], decision_role="generic_objective")
-        _merge_bound(merged, "stitched_oos_metrics.annualization_available", "equals", True, decision_role="scientific_validity")
+        _merge_bound(
+            merged,
+            "summary.realized_oos_windows",
+            "min",
+            objectives["minimum_complete_wfa_windows"],
+            decision_role="scientific_validity",
+        )
+        _merge_bound(
+            merged,
+            "summary.realized_oos_trades",
+            "min",
+            objectives["minimum_wfa_oos_trades"],
+            decision_role="scientific_validity",
+        )
+        _merge_bound(
+            merged,
+            "stitched_oos_metrics.cagr",
+            "min",
+            objectives["minimum_annualized_return_fraction"],
+            decision_role="generic_objective",
+        )
+        _merge_bound(
+            merged, "stitched_oos_metrics.mar", "min", objectives["minimum_mar"], decision_role="generic_objective"
+        )
+        _merge_bound(
+            merged,
+            "stitched_oos_metrics.max_drawdown_pct",
+            "max",
+            objectives["maximum_drawdown_fraction"],
+            decision_role="generic_objective",
+        )
+        _merge_bound(
+            merged, "stitched_oos_metrics.annualization_available", "equals", True, decision_role="scientific_validity"
+        )
     elif stage_name == "wfa_oos_monte_carlo":
-        _merge_bound(merged, "summary.number_of_runs", "min", objectives["monte_carlo_min_runs"], decision_role="scientific_validity")
+        _merge_bound(
+            merged,
+            "summary.number_of_runs",
+            "min",
+            objectives["monte_carlo_min_runs"],
+            decision_role="scientific_validity",
+        )
         _merge_bound(
             merged,
             "summary.probability_net_profit_gt_0",
@@ -306,9 +331,21 @@ def _criteria_with_research_objectives(
             )
         )
         _merge_bound(merged, "metrics.total_trades", "min", minimum_trades, decision_role="scientific_validity")
-        _merge_bound(merged, "metrics.cagr", "min", objectives["minimum_annualized_return_fraction"], decision_role="generic_objective")
+        _merge_bound(
+            merged,
+            "metrics.cagr",
+            "min",
+            objectives["minimum_annualized_return_fraction"],
+            decision_role="generic_objective",
+        )
         _merge_bound(merged, "metrics.mar", "min", objectives["minimum_mar"], decision_role="generic_objective")
-        _merge_bound(merged, "metrics.max_drawdown_pct", "max", objectives["maximum_drawdown_fraction"], decision_role="generic_objective")
+        _merge_bound(
+            merged,
+            "metrics.max_drawdown_pct",
+            "max",
+            objectives["maximum_drawdown_fraction"],
+            decision_role="generic_objective",
+        )
         _merge_bound(merged, "metrics.annualization_available", "equals", True, decision_role="scientific_validity")
     return merged
 
@@ -352,7 +389,7 @@ def campaign_test_data_window_plan(cfg: dict) -> list[dict[str, Any]]:
     canonical = canonicalize_campaign_config(cfg)
     campaign_tests = canonical.get("campaign_tests") or {}
     rows: list[dict[str, Any]] = []
-    gate = ((canonical.get("research_metadata") or {}).get("validation_gate") or {})
+    gate = (canonical.get("research_metadata") or {}).get("validation_gate") or {}
     mechanics_subset = gate.get("data_subset") if isinstance(gate.get("data_subset"), dict) else {}
     rows.append(
         _planned_window_row(
@@ -796,9 +833,7 @@ def run_campaign_stage_tests(
         )
         if halted:
             results.append(
-                _annotate_stage_decisions(
-                    _skipped_stage(stage_name, "prior scientific-validity stage failed")
-                )
+                _annotate_stage_decisions(_skipped_stage(stage_name, "prior scientific-validity stage failed"))
             )
             _report_campaign_progress(
                 progress_callback,
@@ -846,7 +881,11 @@ def run_campaign_stage_tests(
                     context,
                 )
         except Exception as exc:
-            result = _error_stage(stage_name, exc)
+            result = _error_stage(
+                stage_name,
+                exc,
+                criteria=_criteria_for_stage(stage_name, stage_cfg),
+            )
         result = _annotate_stage_decisions(result)
         results.append(result)
         validate_stage_result_contract(result, context=f"{stage_name}/stage_result.json")
@@ -860,14 +899,10 @@ def run_campaign_stage_tests(
             percent=100.0,
             message=f"Completed {stage_label}: {result['status']}",
         )
-        if (
-            result["scientific_validity_verdict"] != "PASS"
-            and not continue_on_failure
-            and not diagnostic_reasons
-        ):
+        if result["scientific_validity_verdict"] != "PASS" and not continue_on_failure and not diagnostic_reasons:
             halted = True
 
-    created_at = datetime.now().isoformat(timespec="seconds")
+    created_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
     run_uid = ensure_run_uid(root)
     data_cfg = cfg.get("data") or {}
     research_verdict = _research_verdict(results, diagnostic_reasons)
@@ -908,14 +943,10 @@ def run_campaign_stage_tests(
         "mechanics_validation_gate": validation_gate,
         "fast_runtime_defaults": fast_runtime_defaults,
         "authoritative_parallel_workers": (
-            int(authoritative_parallel_workers)
-            if authoritative_parallel_workers is not None
-            else None
+            int(authoritative_parallel_workers) if authoritative_parallel_workers is not None else None
         ),
         "authoritative_core_grid_workers": (
-            int(authoritative_core_grid_workers)
-            if authoritative_core_grid_workers is not None
-            else None
+            int(authoritative_core_grid_workers) if authoritative_core_grid_workers is not None else None
         ),
         "submission_preflight": submission_preflight,
         "diagnostic_only": bool(diagnostic_reasons),
@@ -1138,9 +1169,7 @@ def _update_source_results_index(config_path: Path, cfg: dict, summary: dict) ->
     }
     key_fields = ("source_config_path", "symbol", "test_run_id")
     entries = [
-        item
-        for item in entries
-        if not all(str(item.get(field)) == str(entry.get(field)) for field in key_fields)
+        item for item in entries if not all(str(item.get(field)) == str(entry.get(field)) for field in key_fields)
     ]
     entries.append(entry)
     entries.sort(
@@ -1216,18 +1245,14 @@ def _scientific_validity_verdict(
         return "NEEDS MANUAL REVIEW"
     if [str(item.get("stage") or "") for item in results] != DEFAULT_STAGE_ORDER:
         return "NEEDS MANUAL REVIEW"
-    verdicts = [
-        str(item.get("scientific_validity_verdict") or "NEEDS MANUAL REVIEW")
-        for item in results
-    ]
+    verdicts = [str(item.get("scientific_validity_verdict") or "NEEDS MANUAL REVIEW") for item in results]
     unresolved = [
         item
         for item, verdict in zip(results, verdicts, strict=True)
         if verdict == "NEEDS MANUAL REVIEW"
         and not (
             str(item.get("status") or "") == "skipped"
-            and str(item.get("skip_reason") or "")
-            == "prior scientific-validity stage failed"
+            and str(item.get("skip_reason") or "") == "prior scientific-validity stage failed"
         )
     ]
     if unresolved:
@@ -1335,10 +1360,7 @@ def _candidate_strategy_report(cfg: dict, summary: dict) -> str:
         "",
     ]
     for stage in summary.get("stages", []):
-        lines.append(
-            f"- {stage.get('stage')}: {stage.get('status')} "
-            f"({stage.get('duration_seconds', 0):.1f}s)"
-        )
+        lines.append(f"- {stage.get('stage')}: {stage.get('status')} " f"({stage.get('duration_seconds', 0):.1f}s)")
     lines.extend(
         [
             "",
@@ -1462,7 +1484,7 @@ def _run_stage(
     skip_validation: bool,
     context: dict,
 ) -> dict:
-    started = datetime.now()
+    started = datetime.now(timezone.utc)
     if stage_name == "limited_core_grid_test":
         payload = _run_limited_core_grid(cfg, stage_cfg, stage_dir, skip_validation, context)
         context["limited_core_grid_results"] = payload.get("core_grid_results")
@@ -1495,19 +1517,17 @@ def _run_stage(
     criteria = _criteria_for_stage(stage_name, stage_cfg)
     criteria_results = evaluate_criteria(payload, criteria)
     passed = all(item["passed"] for item in criteria_results)
-    completed = datetime.now()
+    completed = datetime.now(timezone.utc)
     public_payload = {
-        k: v
-        for k, v in payload.items()
-        if k not in {"trades", "market", "detail", "core_grid_results", "test_config"}
+        k: v for k, v in payload.items() if k not in {"trades", "market", "detail", "core_grid_results", "test_config"}
     }
     return {
         "stage": stage_name,
         "label": STAGE_LABELS.get(stage_name, stage_name),
         "status": "passed" if passed else "failed",
         "passed": passed,
-        "started_at": started.isoformat(timespec="seconds"),
-        "completed_at": completed.isoformat(timespec="seconds"),
+        "started_at": started.isoformat(timespec="microseconds"),
+        "completed_at": completed.isoformat(timespec="microseconds"),
         "duration_seconds": (completed - started).total_seconds(),
         "criteria": criteria_results,
         **public_payload,
@@ -1858,9 +1878,7 @@ def _run_wfa_stage(
         evaluation_period=oos_evaluation_period,
     )
     summary["stitched_oos_metrics"] = stitched_metrics
-    summary["oos_evaluation_years"] = (
-        oos_evaluation_period.years if oos_evaluation_period is not None else 0.0
-    )
+    summary["oos_evaluation_years"] = oos_evaluation_period.years if oos_evaluation_period is not None else 0.0
     summary["required_oos_mar"] = length_adjusted_mar_requirement(summary["oos_evaluation_years"])
     summary["incubation_selected_params"] = _select_incubation_params(results)
     _annotate_stage_data_period(summary, subset, quality)
@@ -1916,7 +1934,9 @@ def _run_wfa_oos_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context: di
 
 
 def _run_wfa_oos_monte_carlo(cfg: dict, stage_cfg: dict, stage_dir: Path, context: dict) -> dict:
-    trades = _required_context_frame(context, "wfa_trades", "WFA OOS Monte Carlo requires walk_forward_analysis trades.")
+    trades = _required_context_frame(
+        context, "wfa_trades", "WFA OOS Monte Carlo requires walk_forward_analysis trades."
+    )
     mc_cfg = {**cfg.get("benchmarks", {}), **copy.deepcopy(cfg.get("monte_carlo", {})), **stage_cfg}
     mc_cfg["_core"] = cfg.get("core", {})
     rules_cfg = _wfa_oos_monte_carlo_rules_config(cfg, stage_cfg)
@@ -1962,16 +1982,11 @@ def _wfa_oos_monte_carlo_rules_config(cfg: dict, stage_cfg: dict) -> dict:
         if not declared_hash or hashlib.sha256(encoded).hexdigest() != declared_hash:
             raise ValueError("fully specified prop-profile hash is missing or stale")
         if isinstance(monte_carlo_rules, dict) or isinstance(stage_rules, dict):
-            raise ValueError(
-                "a fully specified Studio prop profile cannot be silently overridden by stage settings"
-            )
+            raise ValueError("a fully specified Studio prop profile cannot be silently overridden by stage settings")
         required = set(PropRules.__dataclass_fields__)
         missing = sorted(required - set(top_rules))
         if missing:
-            raise ValueError(
-                "fully specified prop profile is missing executable rules: "
-                + ", ".join(missing)
-            )
+            raise ValueError("fully specified prop profile is missing executable rules: " + ", ".join(missing))
         return {key: copy.deepcopy(top_rules[key]) for key in PropRules.__dataclass_fields__}
 
     rules_cfg = {
@@ -2240,7 +2255,9 @@ def _run_acceptance_oos(
 
 
 def _run_incubation_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context: dict) -> dict:
-    trades = _required_context_frame(context, "incubation_trades", "Incubation monkey requires simulated_incubation_core trades.")
+    trades = _required_context_frame(
+        context, "incubation_trades", "Incubation monkey requires simulated_incubation_core trades."
+    )
     market = context.get("incubation_market")
     if market is None or market.empty:
         raise ValueError("Incubation monkey requires simulated_incubation_core market data.")
@@ -2263,7 +2280,9 @@ def _run_incubation_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context:
     report_timezone = market_timezone(cfg)
     if bool(monkey_cfg.get("retain_results_csv", _retain_artifact(cfg, "monkey_iteration_results"))):
         write_report_csv(results, stage_dir / "incubation_monkey_results.csv", report_timezone, index=False)
-    write_report_csv(stress_results, stage_dir / "incubation_trade_path_stress_results.csv", report_timezone, index=False)
+    write_report_csv(
+        stress_results, stage_dir / "incubation_trade_path_stress_results.csv", report_timezone, index=False
+    )
     write_json(stage_dir / "incubation_monkey_summary.json", summary)
     write_json(stage_dir / "incubation_trade_path_stress_summary.json", stress_summary)
     return {"summary": summary, "artifacts": _stage_artifacts(stage_dir)}
@@ -2294,7 +2313,9 @@ def _prepare_stage_data(
 ) -> tuple[pd.DataFrame, pd.DataFrame | None, dict, str]:
     timeframe = config_timeframe(cfg)
     output_dir = None if skip_validation else stage_dir / "validation"
-    cache_key = _prepared_data_cache_key(cfg, subset, timeframe) if output_dir is None and data_cache is not None else None
+    cache_key = (
+        _prepared_data_cache_key(cfg, subset, timeframe) if output_dir is None and data_cache is not None else None
+    )
     if cache_key and cache_key in data_cache:
         market, detail, quality, input_hash = data_cache[cache_key]
         quality = {
@@ -2408,11 +2429,7 @@ def _annotate_stage_decisions(result: dict[str, Any]) -> dict[str, Any]:
 
     criteria = result.get("criteria") if isinstance(result.get("criteria"), list) else []
     status = str(result.get("status") or "")
-    roles = {
-        str(item.get("decision_role") or "")
-        for item in criteria
-        if isinstance(item, Mapping)
-    }
+    roles = {str(item.get("decision_role") or "") for item in criteria if isinstance(item, Mapping)}
     known_roles = {"scientific_validity", "generic_objective"}
     if status in {"error", "skipped"} or not criteria or not roles.issubset(known_roles) or "" in roles:
         validity = "NEEDS MANUAL REVIEW"
@@ -2421,14 +2438,10 @@ def _annotate_stage_decisions(result: dict[str, Any]) -> dict[str, Any]:
         validity_items = [
             item
             for item in criteria
-            if isinstance(item, Mapping)
-            and item.get("decision_role") == "scientific_validity"
+            if isinstance(item, Mapping) and item.get("decision_role") == "scientific_validity"
         ]
         generic_items = [
-            item
-            for item in criteria
-            if isinstance(item, Mapping)
-            and item.get("decision_role") == "generic_objective"
+            item for item in criteria if isinstance(item, Mapping) and item.get("decision_role") == "generic_objective"
         ]
         validity = (
             "PASS"
@@ -2437,11 +2450,7 @@ def _annotate_stage_decisions(result: dict[str, Any]) -> dict[str, Any]:
             if validity_items
             else "NEEDS MANUAL REVIEW"
         )
-        generic = (
-            "PASS"
-            if all(bool(item.get("passed")) for item in generic_items)
-            else "FAIL"
-        )
+        generic = "PASS" if all(bool(item.get("passed")) for item in generic_items) else "FAIL"
     result["scientific_validity_verdict"] = validity
     result["scientific_validity_passed"] = validity == "PASS"
     result["generic_objective_verdict"] = generic
@@ -2480,14 +2489,51 @@ def _dynamic_minimum(payload: dict, item: dict) -> float:
 
 
 def _criteria_for_stage(stage_name: str, stage_cfg: dict) -> list[dict]:
-    if stage_name in DEFAULT_STAGE_CRITERIA:
-        return copy.deepcopy(DEFAULT_STAGE_CRITERIA[stage_name])
     configured = stage_cfg.get("criteria")
     if configured:
         if isinstance(configured, dict):
-            return [{"metric": metric, **rule} for metric, rule in configured.items()]
-        return list(configured)
+            configured = [{"metric": metric, **rule} for metric, rule in configured.items()]
+        configured = copy.deepcopy(list(configured))
+        if stage_name in DEFAULT_STAGE_CRITERIA:
+            _require_criteria_not_weaker_than_defaults(stage_name, configured)
+        return configured
     return copy.deepcopy(DEFAULT_STAGE_CRITERIA.get(stage_name, []))
+
+
+def _require_criteria_not_weaker_than_defaults(stage_name: str, configured: list[dict]) -> None:
+    if not all(isinstance(item, dict) for item in configured):
+        raise ValueError(f"{stage_name} criteria must be mappings")
+    metrics = [item.get("metric") for item in configured]
+    if len(metrics) != len(set(metrics)):
+        raise ValueError(f"{stage_name} criteria contain duplicate metrics")
+    by_metric = {item.get("metric"): item for item in configured}
+    for baseline in DEFAULT_STAGE_CRITERIA[stage_name]:
+        metric = baseline["metric"]
+        observed = by_metric.get(metric)
+        if observed is None:
+            raise ValueError(f"{stage_name} criteria omit repository criterion {metric}")
+        for field, expected in baseline.items():
+            if field in {"metric", "source"}:
+                continue
+            actual = observed.get(field)
+            if field in {"min", "exclusive_min"}:
+                if (
+                    isinstance(actual, bool)
+                    or not isinstance(actual, (int, float))
+                    or not math.isfinite(float(actual))
+                    or float(actual) < float(expected)
+                ):
+                    raise ValueError(f"{stage_name} criterion {metric} weakens repository {field}")
+            elif field in {"max", "exclusive_max"}:
+                if (
+                    isinstance(actual, bool)
+                    or not isinstance(actual, (int, float))
+                    or not math.isfinite(float(actual))
+                    or float(actual) > float(expected)
+                ):
+                    raise ValueError(f"{stage_name} criterion {metric} weakens repository {field}")
+            elif actual != expected:
+                raise ValueError(f"{stage_name} criterion {metric} changes repository {field}")
 
 
 def _stage_order(campaign_tests: dict) -> list[str]:
@@ -2726,6 +2772,9 @@ def _retain_artifact(cfg: dict, key: str) -> bool:
 
 def _merged_section(cfg: dict, section: str, stage_cfg: dict) -> dict:
     out = copy.deepcopy(cfg.get(section, {}))
+    if section in {"core_grid", "wfa"} and "parameters" in stage_cfg:
+        if stage_cfg.get("parameters") != out.get("parameters"):
+            raise ValueError(f"{section} stage-local parameters must equal the published top-level parameter grid")
     overrides = {
         key: value
         for key, value in stage_cfg.items()
@@ -2820,14 +2869,11 @@ def _subset_from_window(base_subset: dict, window: dict) -> dict:
         acceptance_months = int(window.get("acceptance_test_months", 6))
         if incubation_months <= 0 or acceptance_months <= 0:
             raise ValueError(
-                "before_sequential_holdouts requires positive incubation_test_months "
-                "and acceptance_test_months."
+                "before_sequential_holdouts requires positive incubation_test_months " "and acceptance_test_months."
             )
         acceptance_start = (end - pd.DateOffset(months=acceptance_months)).normalize()
         incubation_end = acceptance_start - pd.Timedelta(days=1)
-        incubation_start = (
-            incubation_end - pd.DateOffset(months=incubation_months)
-        ).normalize()
+        incubation_start = (incubation_end - pd.DateOffset(months=incubation_months)).normalize()
         out["end_date"] = (incubation_start - pd.Timedelta(days=1)).date().isoformat()
     return out
 
@@ -2881,7 +2927,9 @@ def _select_incubation_params(wfa_results: pd.DataFrame) -> dict:
         candidates = candidates[~candidates["early_exit"].fillna(False)]
     if candidates.empty:
         return {}
-    sort_columns = [column for column in ["test_profit_factor", "test_mar", "test_net_profit"] if column in candidates.columns]
+    sort_columns = [
+        column for column in ["test_profit_factor", "test_mar", "test_net_profit"] if column in candidates.columns
+    ]
     if not sort_columns:
         row = candidates.iloc[-1]
     else:
@@ -3016,7 +3064,9 @@ def _select_core_grid_row(results: pd.DataFrame, parameters: dict, selection_cfg
     if min_trades_per_year is not None:
         if "trades_per_year" not in candidates.columns:
             return None
-        candidates = candidates[pd.to_numeric(candidates["trades_per_year"], errors="coerce") >= float(min_trades_per_year)]
+        candidates = candidates[
+            pd.to_numeric(candidates["trades_per_year"], errors="coerce") >= float(min_trades_per_year)
+        ]
         if candidates.empty:
             return None
     exclusive_min_trades_per_year = selection_cfg.get("selection_exclusive_min_trades_per_year")
@@ -3024,8 +3074,7 @@ def _select_core_grid_row(results: pd.DataFrame, parameters: dict, selection_cfg
         if "trades_per_year" not in candidates.columns:
             return None
         candidates = candidates[
-            pd.to_numeric(candidates["trades_per_year"], errors="coerce")
-            > float(exclusive_min_trades_per_year)
+            pd.to_numeric(candidates["trades_per_year"], errors="coerce") > float(exclusive_min_trades_per_year)
         ]
         if candidates.empty:
             return None
@@ -3038,7 +3087,9 @@ def _select_core_grid_row(results: pd.DataFrame, parameters: dict, selection_cfg
         "expectancy_r": "expectancy_r",
     }
     objective_column = objective_columns.get(objective, objective)
-    sort_columns = [column for column in [objective_column, "profit_factor", "net_profit"] if column in candidates.columns]
+    sort_columns = [
+        column for column in [objective_column, "profit_factor", "net_profit"] if column in candidates.columns
+    ]
     if sort_columns:
         return candidates.sort_values(sort_columns, ascending=[False] * len(sort_columns), na_position="last").iloc[0]
     return candidates.iloc[0]
@@ -3175,10 +3226,10 @@ def _skipped_stage(stage_name: str, reason: str) -> dict:
     }
 
 
-def _error_stage(stage_name: str, exc: Exception) -> dict:
+def _error_stage(stage_name: str, exc: Exception, *, criteria: list[dict] | None = None) -> dict:
     criteria = evaluate_criteria(
         {"stage": stage_name, "error": str(exc)},
-        copy.deepcopy(DEFAULT_STAGE_CRITERIA.get(stage_name, [])),
+        copy.deepcopy(criteria if criteria is not None else DEFAULT_STAGE_CRITERIA.get(stage_name, [])),
     )
     return {
         "stage": stage_name,

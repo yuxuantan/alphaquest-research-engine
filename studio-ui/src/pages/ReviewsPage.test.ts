@@ -65,7 +65,7 @@ describe("mechanics annotation form state", () => {
 
   it("starts an unreviewed sampled trade with a clean form", () => {
     expect(mechanicsAnnotationFormState({ trade_evidence: {} })).toEqual({
-      status: "Correct",
+      status: "",
       notes: "",
     });
   });

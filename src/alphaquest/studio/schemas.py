@@ -18,6 +18,7 @@ from alphaquest.studio.factory_reviews import (
     ReviewedEngineeringHandoffIntentArtifactV1,
     ReviewedHypothesisArtifactV1,
     ReviewedSourceEvidenceArtifactV1,
+    ReviewedSourceEvidenceArtifactV2,
 )
 from alphaquest.studio.codex_runtime import (
     CodexRunProvenanceV1 as RuntimeCodexRunProvenanceV1,
@@ -101,6 +102,7 @@ STUDIO_SCHEMA_MODELS = {
     "reviewed-engineering-handoff-intent-v1.schema.json": ReviewedEngineeringHandoffIntentArtifactV1,
     "reviewed-hypothesis-v1.schema.json": ReviewedHypothesisArtifactV1,
     "reviewed-source-evidence-v1.schema.json": ReviewedSourceEvidenceArtifactV1,
+    "reviewed-source-evidence-v2.schema.json": ReviewedSourceEvidenceArtifactV2,
     "result-bundle-v2.schema.json": ResultBundleV2,
     "result-bundle-v3.schema.json": ResultBundleV3,
     "source-evidence-bundle-v1.schema.json": SourceEvidenceBundleV1,

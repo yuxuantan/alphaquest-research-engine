@@ -285,9 +285,25 @@ export interface CodexTaskRecord {
     approval_granted?: boolean;
     [key: string]: unknown;
   } | null;
+  review_delivery?: {
+    status: "ADMITTED" | "COMMITTED" | "INTEGRITY_ERROR";
+    operation_id?: string;
+    proposal_id?: string;
+    payload_sha256?: string;
+    validation_sha256?: string;
+    artifact_schema?: string;
+    legacy_recovery_available?: boolean;
+  } | null;
   structured_review?: {
     status?: string;
     artifact_sha256?: string | null;
+    review_id?: string;
+    decision?: string;
+    notes?: string;
+    proposal_id?: string;
+    proposal_payload_sha256?: string;
+    proposal_validation_sha256?: string;
+    artifact?: Record<string, unknown>;
     reviewer?: string | null;
     recorded_at?: string | null;
   } | null;

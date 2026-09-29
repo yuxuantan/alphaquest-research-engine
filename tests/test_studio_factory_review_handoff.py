@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
 from alphaquest.studio.api import register_api_routes
 from alphaquest.studio.codex_runtime import (
@@ -21,15 +22,26 @@ from alphaquest.studio.codex_runtime import (
     _model_sha256,
 )
 from alphaquest.studio.drafts import DraftStore
+from alphaquest.research.literature.contracts import (
+    ActorProvenanceV1,
+    SourceCaptureRevisionV1,
+    SourceIdentityRevisionV1,
+    SourceVersionIdentityRevisionV1,
+)
+from alphaquest.research.literature.store import LiteratureStore
 from alphaquest.studio.factory_reviews import (
     EngineeringHandoffIntentHumanAcceptanceV1,
     HYPOTHESIS_REVIEW_FIELDS,
     HypothesisHumanAcceptanceV1,
     MECHANICS_REVIEW_FIELDS,
     SOURCE_METADATA_FIELDS,
+    ReviewedSourceEvidenceArtifactV2,
     SourceEvidenceHumanVerificationV1,
+    SourceEvidenceHumanVerificationV2,
+    build_reviewed_source_evidence_v2,
 )
-from alphaquest.studio.factory_service import ResearchFactoryService
+from alphaquest.studio.factory_service import ResearchFactoryService, _identity_token
+from alphaquest.studio.research_factory import CodexTaskType, SourceEvidenceBundleV1
 
 
 HASH_A = "a" * 64
@@ -110,6 +122,183 @@ def _source_proposal() -> dict[str, object]:
         "created_by": "codex_subscription",
         "confirmed": False,
     }
+
+
+def _fulltext_capture(
+    project_root: Path,
+    *,
+    suffix: str = "source",
+    source_category: str = "EXCHANGE",
+    version_kind: str = "ORIGINAL",
+    capture_status: str = "FULL_TEXT_CAPTURED",
+    start_first: bool = False,
+    locator: str | None = None,
+    work_locators: list[str] | None = None,
+    version_strong_identifiers: dict[str, str] | None = None,
+    retained_bytes: bytes | None = None,
+    extracted_representation_bytes: bytes | None = None,
+):
+    store = LiteratureStore(project_root)
+    actor = ActorProvenanceV1(
+        actor_class="HUMAN_OWNER_RESEARCHER",
+        actor_id="source-review-fixture",
+    )
+    proposal = _source_proposal()
+    source_locator = locator or str(proposal["locator"])
+    work = store.append_work(
+        {
+            "work_id": f"work.{suffix}",
+            "source_category": source_category,
+            "title": proposal["title"],
+            "authors": proposal["authors"],
+            "strong_identifiers": {},
+            "locators": work_locators or [source_locator],
+            "identity_status": "VERIFIED_STRONG",
+            "change_reason": "Test fixture identity",
+        },
+        actor=actor,
+        idempotency_key=f"work.{suffix}",
+    )
+    version = store.append_source_version(
+        {
+            "source_version_id": f"version.{suffix}",
+            "work_id": work.work_id,
+            "work_revision_sha256": work.record_sha256,
+            "version_kind": version_kind,
+            "version_label": "2025 exchange publication",
+            "strong_identifiers": version_strong_identifiers or {},
+            "public_availability": {
+                "original_value": "2025",
+                "parsed_value": None,
+                "precision": "YEAR",
+                "verification": "VERIFIED",
+                "timezone_basis": None,
+                "provenance_record_ids": [],
+            },
+            "identity_status": "VERIFIED_STRONG",
+            "change_reason": "Test fixture version",
+        },
+        actor=actor,
+        idempotency_key=f"version.{suffix}",
+    )
+    content = (
+        retained_bytes
+        if retained_bytes is not None
+        else b"Complete retained source document used by the source-review fixture."
+    )
+    extracted = (
+        extracted_representation_bytes
+        if extracted_representation_bytes is not None
+        else content
+    )
+    content_sha = store.put_artifact(content, kind="artifacts")
+    extracted_sha = store.put_artifact(extracted, kind="extracted")
+    capture_payload = {
+            "capture_id": f"capture.{suffix}",
+            "source_version_id": version.source_version_id,
+            "source_version_revision_sha256": version.record_sha256,
+            "retrieval_locator": source_locator,
+            "status": capture_status,
+            "captured_at": datetime.now(UTC),
+            "access_basis": "OWNER_PROVIDED",
+            "local_retention_permission": "ALLOWED",
+            "redistribution_permission": "RESTRICTED",
+            "external_model_processing_permission": "LOCAL_ONLY",
+            "media_type": "application/pdf",
+            "content_sha256": content_sha,
+            "content_bytes": len(content),
+            "extracted_representation_sha256": extracted_sha,
+            "extracted_bytes": len(extracted),
+            "extractor_id": "fixture-extractor",
+            "extractor_version": "1",
+            "extractor_config_sha256": hashlib.sha256(b"fixture-extractor-v1").hexdigest(),
+            "failure_reason": None,
+        }
+    if start_first:
+        store.append_capture(
+            {
+                "capture_id": capture_payload["capture_id"],
+                "source_version_id": capture_payload["source_version_id"],
+                "source_version_revision_sha256": capture_payload["source_version_revision_sha256"],
+                "retrieval_locator": capture_payload["retrieval_locator"],
+                "status": "STARTED",
+                "captured_at": capture_payload["captured_at"],
+                "access_basis": capture_payload["access_basis"],
+                "local_retention_permission": capture_payload["local_retention_permission"],
+                "redistribution_permission": capture_payload["redistribution_permission"],
+                "external_model_processing_permission": capture_payload["external_model_processing_permission"],
+                "media_type": None,
+                "content_sha256": None,
+                "content_bytes": None,
+                "extracted_representation_sha256": None,
+                "extracted_bytes": None,
+                "extractor_id": None,
+                "extractor_version": None,
+                "extractor_config_sha256": None,
+                "failure_reason": None,
+            },
+            actor=actor,
+            idempotency_key=f"capture.{suffix}.start",
+        )
+        capture_payload = {
+            key: value for key, value in capture_payload.items()
+            if key == "capture_id" or key in {
+                "status", "media_type", "content_sha256", "content_bytes",
+                "extracted_representation_sha256", "extracted_bytes", "extractor_id",
+                "extractor_version", "extractor_config_sha256", "failure_reason",
+            }
+        }
+    return store.append_capture(
+        capture_payload,
+        actor=actor,
+        idempotency_key=f"capture.{suffix}.finish" if start_first else f"capture.{suffix}",
+    )
+
+
+def _source_review_payload(capture: SourceCaptureRevisionV1) -> dict[str, object]:
+    return {
+        "review_id": "human_source_review",
+        "reviewer": "Researcher One",
+        "reviewed_at": datetime.now(UTC),
+        "verified_metadata_fields": list(SOURCE_METADATA_FIELDS),
+        "content_sha256": capture.content_sha256,
+        "retraction_status": "NOT_RETRACTED",
+        "verification_method": "Opened the exact retained document and checked publisher metadata.",
+        "claim_reviews": [
+            {"claim_id": "direct_1", "proposed_support": "DIRECT", "decision": "ACCEPT", "evidence_sha256": capture.extracted_representation_sha256, "verification_method": "Checked the retained full text.", "notes": "Direct claim verified."},
+            {"claim_id": "inference_1", "proposed_support": "INFERENCE", "decision": "REJECT", "evidence_sha256": None, "verification_method": "Checked transfer scope.", "notes": "Transfer remains unsupported."},
+        ],
+        "notes": "Human review retained all limitations.",
+    }
+
+
+def _append_version_relationship(
+    project_root: Path,
+    *,
+    relationship_id: str,
+    subject_id: str,
+    predicate: str,
+    object_id: str,
+    status: str = "ACTIVE",
+):
+    return LiteratureStore(project_root).append_source_relationship(
+        {
+            "relationship_id": relationship_id,
+            "subject_kind": "SOURCE_VERSION",
+            "subject_id": subject_id,
+            "predicate": predicate,
+            "object_kind": "SOURCE_VERSION",
+            "object_id": object_id,
+            "status": status,
+            "assertion_evidence_refs": [],
+            "superseded_by_relationship_id": None,
+            "change_reason": f"Source review fixture {predicate} {status}",
+        },
+        actor=ActorProvenanceV1(
+            actor_class="HUMAN_OWNER_RESEARCHER", actor_id="source-review-fixture"
+        ),
+        idempotency_key=f"{relationship_id}.{status.lower()}",
+    )
 
 
 class FakeRunner:
@@ -240,6 +429,7 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
     draft_path = _draft(tmp_path)
     initial_draft = draft_path.read_bytes()
     service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    capture = _fulltext_capture(tmp_path)
 
     source_task = service.enqueue_next(
         campaign_id="structured_factory",
@@ -251,7 +441,7 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
         reviewer="Researcher One",
         reviewed_at=datetime.now(UTC),
         verified_metadata_fields=list(SOURCE_METADATA_FIELDS),
-        content_sha256=HASH_A,
+        content_sha256=capture.content_sha256,
         retraction_status="NOT_RETRACTED",
         verification_method="Opened the captured PDF and checked its publisher metadata and retraction index.",
         claim_reviews=[
@@ -259,7 +449,7 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
                 "claim_id": "direct_1",
                 "proposed_support": "DIRECT",
                 "decision": "ACCEPT",
-                "evidence_sha256": HASH_B,
+                "evidence_sha256": capture.extracted_representation_sha256,
                 "verification_method": "Compared the claim to the captured page and figure.",
                 "notes": "The figure directly supports the narrower descriptive statement.",
             },
@@ -277,10 +467,17 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
     reviewed_source = service.record_reviewed_source_evidence(
         str(source_task["task_id"]),
         verification=source_review,
+        capture_revision_sha256=capture.record_sha256,
     )
     assert reviewed_source["source_evidence"]["claims"] == _source_proposal()["claims"]
     assert reviewed_source["source_evidence"]["verification_status"] == "PARTIAL"
     assert reviewed_source["human_verification"]["source_identity_status"] == "VERIFIED"
+    detail = service.get_task(str(source_task["task_id"]))
+    assert detail["structured_review"]["artifact"] == reviewed_source
+    assert detail["structured_review"]["decision"] == "ACCEPT_FOR_HYPOTHESIS"
+    assert detail["structured_review"]["proposal_payload_sha256"] == reviewed_source["proposal_payload_sha256"]
+    summary = service.public_task(service.queue.get(str(source_task["task_id"])))
+    assert "artifact" not in summary["structured_review"]
     assert draft_path.read_bytes() == initial_draft
 
     hypothesis_plan = service._discover_plan("structured_factory")
@@ -316,6 +513,7 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
     assert reviewed_hypothesis["reviewed_source_artifact_sha256s"] == [
         reviewed_source["artifact_sha256"]
     ]
+    assert service.get_task(str(hypothesis_task["task_id"]))["structured_review"]["artifact"] == reviewed_hypothesis
     assert draft_path.read_bytes() == before_hypothesis_review
 
     document = DraftStore(tmp_path).load("structured_factory")
@@ -354,6 +552,9 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
         ),
     )
     assert reviewed_mechanics["mechanics_intent"] == _mechanics_proposal(binding)
+    receipt = service.get_task(str(mechanics_task["task_id"]))["structured_review"]
+    assert receipt["artifact"] == reviewed_mechanics
+    assert receipt["decision"] == "ACCEPT_FOR_ENGINEERING_HANDOFF"
     handoff_plan = service._discover_plan("structured_factory")
     assert handoff_plan["task_type"] == "ENGINEERING_HANDOFF"
     handoff_binding = handoff_plan["artifacts"]["engineering_handoff_binding"]
@@ -399,6 +600,7 @@ def test_structured_reviews_preserve_full_proposals_and_drive_exact_next_context
 def test_source_review_is_one_shot_and_requires_every_claim(tmp_path: Path) -> None:
     _draft(tmp_path)
     service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    capture = _fulltext_capture(tmp_path)
     task = service.enqueue_next(campaign_id="structured_factory", request_id="one-shot-source-task")
     service.run_worker_once(worker_id="source-worker")
     base = {
@@ -406,7 +608,7 @@ def test_source_review_is_one_shot_and_requires_every_claim(tmp_path: Path) -> N
         "reviewer": "Researcher One",
         "reviewed_at": datetime.now(UTC),
         "verified_metadata_fields": list(SOURCE_METADATA_FIELDS),
-        "content_sha256": HASH_A,
+        "content_sha256": capture.content_sha256,
         "retraction_status": "NOT_RETRACTED",
         "verification_method": "Opened and captured the source.",
         "claim_reviews": [
@@ -414,7 +616,7 @@ def test_source_review_is_one_shot_and_requires_every_claim(tmp_path: Path) -> N
                 "claim_id": "direct_1",
                 "proposed_support": "DIRECT",
                 "decision": "ACCEPT",
-                "evidence_sha256": HASH_B,
+                "evidence_sha256": capture.extracted_representation_sha256,
                 "verification_method": "Checked the page.",
                 "notes": "Direct support is present.",
             }
@@ -422,7 +624,10 @@ def test_source_review_is_one_shot_and_requires_every_claim(tmp_path: Path) -> N
         "notes": "Human review notes.",
     }
     try:
-        service.record_reviewed_source_evidence(str(task["task_id"]), verification=base)
+        service.record_reviewed_source_evidence(
+            str(task["task_id"]), verification=base,
+            capture_revision_sha256=capture.record_sha256,
+        )
     except ValueError as exc:
         assert "every proposed claim" in str(exc)
     else:
@@ -438,9 +643,15 @@ def test_source_review_is_one_shot_and_requires_every_claim(tmp_path: Path) -> N
             "notes": "Transfer remains unsupported.",
         }
     )
-    service.record_reviewed_source_evidence(str(task["task_id"]), verification=base)
+    service.record_reviewed_source_evidence(
+        str(task["task_id"]), verification=base,
+        capture_revision_sha256=capture.record_sha256,
+    )
     try:
-        service.record_reviewed_source_evidence(str(task["task_id"]), verification=base)
+        service.record_reviewed_source_evidence(
+            str(task["task_id"]), verification=base,
+            capture_revision_sha256=capture.record_sha256,
+        )
     except RuntimeError as exc:
         assert "immutable" in str(exc)
     else:
@@ -463,6 +674,7 @@ def test_reviewed_source_api_requires_explicit_hashes_and_advances_factory(tmp_p
     draft_path = _draft(tmp_path)
     before = draft_path.read_bytes()
     service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    capture = _fulltext_capture(tmp_path)
     task = service.enqueue_next(campaign_id="structured_factory", request_id="api-source-review")
     service.run_worker_once(worker_id="api-source-worker")
     app = FastAPI()
@@ -472,7 +684,7 @@ def test_reviewed_source_api_requires_explicit_hashes_and_advances_factory(tmp_p
         "reviewer": "Researcher One",
         "notes": "Checked the captured primary source and retained the unsupported inference as rejected.",
         "verified_metadata_fields": list(SOURCE_METADATA_FIELDS),
-        "content_sha256": HASH_A,
+        "capture_revision_sha256": capture.record_sha256,
         "retraction_status": "NOT_RETRACTED",
         "verification_method": "Opened the captured source and checked publisher metadata.",
         "claim_reviews": [
@@ -480,7 +692,7 @@ def test_reviewed_source_api_requires_explicit_hashes_and_advances_factory(tmp_p
                 "claim_id": "direct_1",
                 "proposed_support": "DIRECT",
                 "decision": "ACCEPT",
-                "evidence_sha256": HASH_B,
+                "evidence_sha256": capture.extracted_representation_sha256,
                 "verification_method": "Checked page 7 and figure 2.",
                 "notes": "Direct support is present for the narrow claim.",
             },
@@ -494,7 +706,14 @@ def test_reviewed_source_api_requires_explicit_hashes_and_advances_factory(tmp_p
             },
         ],
     }
-    invalid = {**payload, "content_sha256": "not-a-hash"}
+    validation = service.get_task(str(task["task_id"]))["proposal_validation"]
+    payload["delivery"] = {
+        "operation_id": "api-source-review-delivery",
+        "proposal_id": validation["proposal_id"],
+        "payload_sha256": validation["payload_sha256"],
+        "validation_sha256": validation["validation_sha256"],
+    }
+    invalid = {**payload, "capture_revision_sha256": "not-a-hash"}
     assert client.post(
         f"/api/factory/tasks/{task['task_id']}/reviewed-source-evidence",
         json=invalid,
@@ -511,4 +730,526 @@ def test_reviewed_source_api_requires_explicit_hashes_and_advances_factory(tmp_p
     assert body["reviewed_artifact"]["source_evidence"]["verification_status"] == "PARTIAL"
     detail = client.get(f"/api/factory/tasks/{task['task_id']}").json()["task"]
     assert detail["structured_review"]["status"] == "ACCEPTED_FOR_HYPOTHESIS"
+    assert detail["structured_review"]["artifact"] == body["reviewed_artifact"]
+    assert detail["structured_review"]["notes"] == payload["notes"]
+    reopened = ResearchFactoryService(tmp_path).get_task(str(task["task_id"]))
+    assert reopened["structured_review"] == detail["structured_review"]
     assert draft_path.read_bytes() == before
+
+
+def test_source_review_readiness_requires_current_matching_fulltext_and_real_bytes(tmp_path: Path) -> None:
+    _draft(tmp_path)
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="capture-readiness")
+    service.run_worker_once(worker_id="capture-readiness-worker")
+
+    assert service.source_review_readiness(str(task["task_id"]))["status"] == "NOT_READY"
+    with pytest.raises(ValueError, match="absent"):
+        service.record_reviewed_source_evidence(
+            str(task["task_id"]), verification={}, capture_revision_sha256=HASH_A,
+        )
+
+    abstract = _fulltext_capture(
+        tmp_path, suffix="abstract", capture_status="GENUINE_ABSTRACT_CAPTURED"
+    )
+    working = _fulltext_capture(
+        tmp_path, suffix="working", source_category="WORKING_PAPER",
+        version_kind="WORKING_PAPER_REVISION",
+    )
+    case_sensitive_mismatch = _fulltext_capture(
+        tmp_path, suffix="path-case", locator="https://example.invalid/Source.pdf"
+    )
+    fulltext = _fulltext_capture(tmp_path, suffix="eligible", start_first=True)
+    readiness = service.source_review_readiness(str(task["task_id"]))
+    by_id = {item["capture_id"]: item for item in readiness["options"]}
+    assert by_id[abstract.capture_id]["issues"] == ["ABSTRACT_NOT_FULL_TEXT"]
+    assert "PUBLICATION_CATEGORY_MISMATCH" in by_id[working.capture_id]["issues"]
+    assert "LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH" in by_id[
+        case_sensitive_mismatch.capture_id
+    ]["issues"]
+    assert by_id[fulltext.capture_id]["readiness"] == "READY"
+
+    start_revision = next(
+        item for item in LiteratureStore(tmp_path).records()
+        if isinstance(item, SourceCaptureRevisionV1)
+        and item.capture_id == fulltext.capture_id and item.revision == 1
+    )
+    with pytest.raises(ValueError, match="absent"):
+        service.record_reviewed_source_evidence(
+            str(task["task_id"]), verification={},
+            capture_revision_sha256=start_revision.record_sha256,
+        )
+
+    artifact_path = (
+        tmp_path / "run-store" / "literature" / "extracted" / "sha256"
+        / str(fulltext.extracted_representation_sha256)[:2]
+        / str(fulltext.extracted_representation_sha256)
+    )
+    artifact_path.unlink()
+    changed = service.source_review_readiness(str(task["task_id"]))
+    assert "CAPTURE_ARTIFACT_UNAVAILABLE_OR_INVALID" in next(
+        item for item in changed["options"] if item["capture_id"] == fulltext.capture_id
+    )["issues"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "extracted", "expected_issues"),
+    [
+        (b"", b"inspectable extraction", ["CAPTURE_RAW_CONTENT_EMPTY"]),
+        (b"retained raw document", b"", ["CAPTURE_EXTRACTED_REPRESENTATION_EMPTY"]),
+        (
+            b"",
+            b"",
+            ["CAPTURE_EXTRACTED_REPRESENTATION_EMPTY", "CAPTURE_RAW_CONTENT_EMPTY"],
+        ),
+    ],
+    ids=("empty-raw", "empty-extraction", "both-empty"),
+)
+def test_empty_capture_artifacts_block_readiness_write_and_downstream_v2_use(
+    tmp_path: Path,
+    raw: bytes,
+    extracted: bytes,
+    expected_issues: list[str],
+) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(
+        tmp_path,
+        suffix="empty-artifact",
+        retained_bytes=raw,
+        extracted_representation_bytes=extracted,
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(
+        campaign_id="structured_factory", request_id="empty-artifact-source"
+    )
+    service.run_worker_once(worker_id="empty-artifact-worker")
+    task_id = str(task["task_id"])
+
+    readiness = service.source_review_readiness(task_id)
+    option = next(
+        item for item in readiness["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "NOT_READY"
+    assert option["issues"] == expected_issues
+    with pytest.raises(ValueError, match="CAPTURE_.*_EMPTY"):
+        service.record_reviewed_source_evidence(
+            task_id,
+            verification=_source_review_payload(capture),
+            capture_revision_sha256=capture.record_sha256,
+        )
+    review_path = service._review_artifact_path(
+        "structured_factory", "source", task_id
+    )
+    assert not review_path.exists()
+
+    # Represent a validly hashed receipt produced before this readiness rule.
+    # Its immutable bytes remain readable as history but cannot supply current
+    # downstream source authority.
+    record, campaign_id, validation, imported = service._reviewable_proposal(
+        task_id, expected_task_type=CodexTaskType.SOURCE_RESEARCH,
+    )
+    source = SourceEvidenceBundleV1.model_validate_json(
+        json.dumps(imported.validated_payload, sort_keys=True)
+    )
+    verification = SourceEvidenceHumanVerificationV2.model_validate(
+        {**_source_review_payload(capture), "capture_binding": option["binding"]}
+    )
+    artifact = build_reviewed_source_evidence_v2(
+        campaign_id=campaign_id,
+        task_id=record.task_id,
+        proposal_id=imported.proposal_id,
+        proposal_payload_sha256=imported.payload_sha256,
+        proposal_validation_sha256=validation["validation_sha256"],
+        source_evidence=source,
+        human_verification=verification,
+    )
+    service._write_review_once(
+        review_path, artifact.model_dump(mode="json", by_alias=True)
+    )
+    historical_bytes = review_path.read_bytes()
+    assert ReviewedSourceEvidenceArtifactV2.model_validate_json(historical_bytes) == artifact
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
+    assert review_path.read_bytes() == historical_bytes
+
+
+def test_nonempty_raw_and_extraction_remain_review_ready(tmp_path: Path) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(
+        tmp_path,
+        suffix="nonempty-artifacts",
+        retained_bytes=b"%PDF retained raw document",
+        extracted_representation_bytes=b"Inspectable extracted text",
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(
+        campaign_id="structured_factory", request_id="nonempty-artifact-source"
+    )
+    service.run_worker_once(worker_id="nonempty-artifact-worker")
+    task_id = str(task["task_id"])
+    option = next(
+        item for item in service.source_review_readiness(task_id)["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "READY"
+    artifact = service.record_reviewed_source_evidence(
+        task_id,
+        verification=_source_review_payload(capture),
+        capture_revision_sha256=capture.record_sha256,
+    )
+    assert artifact["schema"] == "alphaquest.reviewed-source-evidence/v2"
+
+
+def test_source_locator_matching_is_version_specific_with_two_versions_of_one_work(
+    tmp_path: Path,
+) -> None:
+    _draft(tmp_path)
+    proposal_locator = str(_source_proposal()["locator"])
+    other_locator = "https://example.invalid/other-version.pdf"
+    wrong_capture = _fulltext_capture(
+        tmp_path,
+        suffix="same-work-wrong",
+        locator=other_locator,
+        work_locators=[proposal_locator, other_locator],
+        version_strong_identifiers={"url": other_locator},
+    )
+    store = LiteratureStore(tmp_path)
+    work = store.latest(SourceIdentityRevisionV1, "work.same-work-wrong")
+    store.append_source_version(
+        {
+            "source_version_id": "version.same-work-proposed",
+            "work_id": work.work_id,
+            "work_revision_sha256": work.record_sha256,
+            "version_kind": "ORIGINAL",
+            "version_label": "Exact proposed publication",
+            "strong_identifiers": {"url": proposal_locator},
+            "public_availability": {
+                "original_value": "2025", "parsed_value": None,
+                "precision": "YEAR", "verification": "VERIFIED",
+                "timezone_basis": None, "provenance_record_ids": [],
+            },
+            "identity_status": "VERIFIED_STRONG",
+            "change_reason": "Second exact version has no captured full text",
+        },
+        actor=ActorProvenanceV1(
+            actor_class="HUMAN_OWNER_RESEARCHER", actor_id="source-review-fixture"
+        ),
+        idempotency_key="version.same-work-proposed",
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="same-work-versions")
+    service.run_worker_once(worker_id="same-work-version-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == wrong_capture.capture_id
+    )
+    assert option["readiness"] == "NOT_READY"
+    assert "LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH" in option["issues"]
+
+    doi_proposal = _source_proposal()
+    doi_proposal["locator"] = "https://doi.org/10.1234/proposed"
+    contradictory = _fulltext_capture(
+        tmp_path,
+        suffix="contradictory-version-doi",
+        locator="https://doi.org/10.1234/proposed",
+        version_strong_identifiers={"doi": "10.1234/other"},
+    )
+    doi_service = ResearchFactoryService(tmp_path, runner=FakeRunner(doi_proposal))
+    doi_task = doi_service.enqueue_next(
+        campaign_id="structured_factory", request_id="contradictory-version-doi"
+    )
+    doi_service.run_worker_once(worker_id="contradictory-version-doi-worker")
+    contradictory_option = next(
+        item for item in doi_service.source_review_readiness(str(doi_task["task_id"]))["options"]
+        if item["capture_id"] == contradictory.capture_id
+    )
+    assert contradictory_option["readiness"] == "NOT_READY"
+    assert "LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH" in contradictory_option["issues"]
+
+
+def test_doi_identity_requires_a_whole_doi_or_genuine_resolver() -> None:
+    assert _identity_token("10.1234/Source.(A)") == _identity_token(
+        "https://DOI.org/10.1234/source.(a)"
+    )
+    assert _identity_token("doi: 10.1234/source") == "doi:10.1234/source"
+    assert _identity_token("10.1234/source)") != _identity_token("10.1234/source")
+    assert _identity_token(
+        "https://unrelated.example/document?reference=10.1234/source"
+    ) != _identity_token("10.1234/source")
+
+
+@pytest.mark.parametrize(
+    ("version_identifiers", "capture_locator"),
+    [
+        (
+            {"url": "https://publisher.example/article/proposed", "doi": "10.1234/expected"},
+            "https://doi.org/10.1234/wrong",
+        ),
+        (
+            {"doi": "10.1234/wrong", "url": "https://publisher.example/article/proposed"},
+            "https://doi.org/10.1234/expected",
+        ),
+        (
+            {"url": "https://publisher.example/article/proposed", "doi_primary": "10.1234/expected", "doi_secondary": "10.1234/wrong"},
+            "https://doi.org/10.1234/expected",
+        ),
+        (
+            {"doi_secondary": "10.1234/wrong", "url": "https://publisher.example/article/proposed", "doi_primary": "10.1234/expected"},
+            "https://doi.org/10.1234/expected",
+        ),
+    ],
+    ids=("capture-doi-conflict", "version-doi-conflict", "internal-doi-conflict", "internal-doi-permutation"),
+)
+def test_doi_contradictions_block_readiness_and_review_write_independently_of_proposal_url(
+    tmp_path: Path,
+    version_identifiers: dict[str, str],
+    capture_locator: str,
+) -> None:
+    _draft(tmp_path)
+    proposal = _source_proposal()
+    proposal["locator"] = "https://publisher.example/article/proposed"
+    capture = _fulltext_capture(
+        tmp_path,
+        suffix="cross-family-doi-conflict",
+        locator=capture_locator,
+        version_strong_identifiers=version_identifiers,
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(proposal))
+    task = service.enqueue_next(
+        campaign_id="structured_factory", request_id="cross-family-doi-conflict"
+    )
+    service.run_worker_once(worker_id="cross-family-doi-conflict-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "NOT_READY"
+    assert "LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH" in option["issues"]
+    with pytest.raises(ValueError, match="LOCATOR_OR_STRONG_IDENTIFIER_MISMATCH"):
+        service.record_reviewed_source_evidence(
+            str(task["task_id"]),
+            verification=_source_review_payload(capture),
+            capture_revision_sha256=capture.record_sha256,
+        )
+    assert not service._review_artifact_path(
+        "structured_factory", "source", str(task["task_id"])
+    ).exists()
+
+
+def test_publisher_url_with_consistent_version_and_capture_doi_is_review_ready(
+    tmp_path: Path,
+) -> None:
+    _draft(tmp_path)
+    publisher_url = "https://publisher.example/article/proposed"
+    proposal = _source_proposal()
+    proposal["locator"] = publisher_url
+    capture = _fulltext_capture(
+        tmp_path,
+        suffix="consistent-cross-family-doi",
+        locator="https://doi.org/10.1234/expected",
+        version_strong_identifiers={"url": publisher_url, "doi": "10.1234/expected"},
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(proposal))
+    task = service.enqueue_next(
+        campaign_id="structured_factory", request_id="consistent-cross-family-doi"
+    )
+    service.run_worker_once(worker_id="consistent-cross-family-doi-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "READY"
+    artifact = service.record_reviewed_source_evidence(
+        str(task["task_id"]),
+        verification=_source_review_payload(capture),
+        capture_revision_sha256=capture.record_sha256,
+    )
+    assert artifact["schema"] == "alphaquest.reviewed-source-evidence/v2"
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected_issue"),
+    (("RETRACTS", "SOURCE_VERSION_RETRACTED"), ("CORRECTS", "SOURCE_VERSION_CORRECTED")),
+)
+def test_active_canonical_reliability_relationship_blocks_review_before_submission(
+    tmp_path: Path, predicate: str, expected_issue: str,
+) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(tmp_path, suffix=f"pre-{predicate.lower()}")
+    notice = _fulltext_capture(tmp_path, suffix=f"notice-{predicate.lower()}")
+    _append_version_relationship(
+        tmp_path,
+        relationship_id=f"relationship.pre-{predicate.lower()}",
+        subject_id=notice.source_version_id,
+        predicate=predicate,
+        object_id=capture.source_version_id,
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id=f"pre-{predicate.lower()}")
+    service.run_worker_once(worker_id=f"pre-{predicate.lower()}-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert option["readiness"] == "NOT_READY"
+    assert expected_issue in option["issues"]
+    with pytest.raises(ValueError, match=expected_issue):
+        service.record_reviewed_source_evidence(
+            str(task["task_id"]), verification=_source_review_payload(capture),
+            capture_revision_sha256=capture.record_sha256,
+        )
+
+
+def test_retraction_of_resolved_equivalent_version_blocks_selected_capture(tmp_path: Path) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(tmp_path, suffix="resolved-selected")
+    equivalent = _fulltext_capture(tmp_path, suffix="resolved-equivalent")
+    notice = _fulltext_capture(tmp_path, suffix="resolved-notice")
+    _append_version_relationship(
+        tmp_path, relationship_id="relationship.resolved-equivalence",
+        subject_id=equivalent.source_version_id, predicate="SAME_VERSION_AS",
+        object_id=capture.source_version_id,
+    )
+    _append_version_relationship(
+        tmp_path, relationship_id="relationship.resolved-retraction",
+        subject_id=notice.source_version_id, predicate="RETRACTS",
+        object_id=equivalent.source_version_id,
+    )
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="resolved-retraction")
+    service.run_worker_once(worker_id="resolved-retraction-worker")
+
+    option = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert "SOURCE_VERSION_RETRACTED" in option["issues"]
+
+
+def test_relationship_currentness_stales_downstream_without_rewriting_receipt(
+    tmp_path: Path,
+) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(tmp_path, suffix="relationship-currentness")
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="relationship-currentness")
+    service.run_worker_once(worker_id="relationship-currentness-worker")
+    service.record_reviewed_source_evidence(
+        str(task["task_id"]), verification=_source_review_payload(capture),
+        capture_revision_sha256=capture.record_sha256,
+    )
+    path = service._review_artifact_path("structured_factory", "source", str(task["task_id"]))
+    original = path.read_bytes()
+    notice = _fulltext_capture(tmp_path, suffix="relationship-currentness-notice")
+    relationship = _append_version_relationship(
+        tmp_path, relationship_id="relationship.currentness-retraction",
+        subject_id=notice.source_version_id, predicate="RETRACTS",
+        object_id=capture.source_version_id,
+    )
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
+    assert path.read_bytes() == original
+    assert ReviewedSourceEvidenceArtifactV2.model_validate_json(original)
+
+    _append_version_relationship(
+        tmp_path, relationship_id=relationship.relationship_id,
+        subject_id=relationship.subject_id, predicate=relationship.predicate,
+        object_id=relationship.object_id, status="RETRACTED",
+    )
+    selected = next(
+        item for item in service.source_review_readiness(str(task["task_id"]))["options"]
+        if item["capture_id"] == capture.capture_id
+    )
+    assert selected["readiness"] == "READY"
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
+    assert path.read_bytes() == original
+
+
+def test_equivalence_currentness_is_component_scoped_and_unrelated_relations_do_not_stale(
+    tmp_path: Path,
+) -> None:
+    _draft(tmp_path)
+    capture = _fulltext_capture(tmp_path, suffix="component-selected")
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="component-currentness")
+    service.run_worker_once(worker_id="component-currentness-worker")
+    service.record_reviewed_source_evidence(
+        str(task["task_id"]), verification=_source_review_payload(capture),
+        capture_revision_sha256=capture.record_sha256,
+    )
+    unrelated_a = _fulltext_capture(tmp_path, suffix="unrelated-a")
+    unrelated_b = _fulltext_capture(tmp_path, suffix="unrelated-b")
+    _append_version_relationship(
+        tmp_path, relationship_id="relationship.unrelated-equivalence",
+        subject_id=unrelated_a.source_version_id, predicate="SAME_VERSION_AS",
+        object_id=unrelated_b.source_version_id,
+    )
+    assert service._discover_plan("structured_factory")["task_type"] == "HYPOTHESIS_PROPOSAL"
+
+    equivalent = _fulltext_capture(tmp_path, suffix="component-equivalent")
+    relationship = _append_version_relationship(
+        tmp_path, relationship_id="relationship.component-equivalence",
+        subject_id=equivalent.source_version_id, predicate="SAME_VERSION_AS",
+        object_id=capture.source_version_id,
+    )
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
+    _append_version_relationship(
+        tmp_path, relationship_id=relationship.relationship_id,
+        subject_id=relationship.subject_id, predicate=relationship.predicate,
+        object_id=relationship.object_id, status="RETRACTED",
+    )
+    assert service._discover_plan("structured_factory")["label"] == "Repair reviewed factory provenance"
+
+
+def test_source_review_rejects_fake_hash_and_stale_canonical_work(tmp_path: Path) -> None:
+    _draft(tmp_path)
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    capture = _fulltext_capture(tmp_path, suffix="stale-check")
+    task = service.enqueue_next(campaign_id="structured_factory", request_id="stale-capture-review")
+    service.run_worker_once(worker_id="stale-capture-worker")
+    review = {
+        "review_id": "human_source_review",
+        "reviewer": "Researcher One",
+        "reviewed_at": datetime.now(UTC),
+        "verified_metadata_fields": list(SOURCE_METADATA_FIELDS),
+        "content_sha256": HASH_A,
+        "retraction_status": "NOT_RETRACTED",
+        "verification_method": "Opened the exact retained document and checked publisher metadata.",
+        "claim_reviews": [
+            {"claim_id": "direct_1", "proposed_support": "DIRECT", "decision": "ACCEPT", "evidence_sha256": capture.extracted_representation_sha256, "verification_method": "Checked the retained full text.", "notes": "Direct claim verified."},
+            {"claim_id": "inference_1", "proposed_support": "INFERENCE", "decision": "REJECT", "evidence_sha256": None, "verification_method": "Checked transfer scope.", "notes": "Transfer remains unsupported."},
+        ],
+        "notes": "Human review retained all limitations.",
+    }
+    with pytest.raises(ValueError, match="supplied source hash"):
+        service.record_reviewed_source_evidence(
+            str(task["task_id"]), verification=review,
+            capture_revision_sha256=capture.record_sha256,
+        )
+
+    store = LiteratureStore(tmp_path)
+    work = next(
+        item for item in store.records()
+        if isinstance(item, SourceIdentityRevisionV1) and item.work_id == "work.stale-check"
+    )
+    store.append_work(
+        {
+            "work_id": work.work_id,
+            "source_category": work.source_category,
+            "title": work.title,
+            "authors": list(work.authors),
+            "strong_identifiers": dict(work.strong_identifiers),
+            "locators": list(work.locators),
+            "identity_status": work.identity_status,
+            "change_reason": "Current head supersedes the capture's work revision.",
+        },
+        actor=ActorProvenanceV1(actor_class="HUMAN_OWNER_RESEARCHER", actor_id="source-review-fixture"),
+        idempotency_key="work.stale-check.r2",
+    )
+    stale = service.source_review_readiness(str(task["task_id"]))
+    assert "STALE_OR_MISSING_SOURCE_WORK" in next(
+        item for item in stale["options"] if item["capture_id"] == capture.capture_id
+    )["issues"]

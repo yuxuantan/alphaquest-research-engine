@@ -121,6 +121,29 @@ class SourceClaimV1(FactoryModel):
         return _nonblank(value)
 
 
+class SelectedSourceV1(FactoryModel):
+    """Explicit proposal input; selecting a capture grants no research approval."""
+
+    capture_id: str = Field(pattern=IDENTIFIER_PATTERN)
+    capture_revision_sha256: str = Field(pattern=SHA256_PATTERN)
+    work_revision_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_version_revision_sha256: str = Field(pattern=SHA256_PATTERN)
+    content_sha256: str = Field(pattern=SHA256_PATTERN)
+    extracted_representation_sha256: str = Field(pattern=SHA256_PATTERN)
+    version_resolution_sha256: str = Field(pattern=SHA256_PATTERN)
+    reliability_sha256: str = Field(pattern=SHA256_PATTERN)
+    proposed_year: int = Field(ge=1800, le=2100)
+    locator: str = Field(min_length=4)
+
+    @field_validator("locator")
+    @classmethod
+    def _locator(cls, value: str) -> str:
+        value = _nonblank(value)
+        if len(value) < 4:
+            raise ValueError("selected locator must contain at least four non-padding characters")
+        return value
+
+
 class SourceEvidenceBundleV1(FactoryModel):
     """Verified source identity plus claim-level support; never a campaign."""
 
@@ -834,6 +857,7 @@ class InformationCategory(str, Enum):
 
 
 class InformationGranularity(str, Enum):
+    SOURCE_TEXT = "SOURCE_TEXT"
     METADATA = "METADATA"
     AGGREGATE = "AGGREGATE"
     TRADE_LEVEL = "TRADE_LEVEL"
@@ -1741,6 +1765,7 @@ __all__ = [
     "ResultSummaryV1",
     "SourceClaimV1",
     "SourceEvidenceBundleV1",
+    "SelectedSourceV1",
     "StageKind",
     "StaleProposalError",
     "append_information_access",
