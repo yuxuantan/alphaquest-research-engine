@@ -107,6 +107,7 @@ beforeEach(() => {
       content_sha256: "a".repeat(64), retrieval_locator: "https://example.test/source",
       readiness: "READY", issues: [], title: "Captured source", authors: ["Researcher"],
       source_category: "ACADEMIC", version_kind: "ORIGINAL", version_label: "Published version",
+      claim_evidence: [{ claim_id: "claim_1", status: "BOUND", evidence_sha256: "b".repeat(64), evidence_kind: "EXTRACTED_TEXT", reason: null }],
     }],
   });
   mocks.recordFactoryReviewedHypothesis.mockResolvedValue({ reviewed_artifact: {} });
@@ -357,15 +358,16 @@ describe("Codex research factory UI", () => {
     fireEvent.change(screen.getByLabelText("Human claim decision"), {
       target: { value: "ACCEPT" },
     });
-    fireEvent.change(screen.getByLabelText("Claim evidence SHA-256"), {
-      target: { value: "b".repeat(64) },
-    });
+    expect(screen.getByLabelText("Claim evidence SHA-256")).toHaveValue("b".repeat(64));
+    expect(screen.getByLabelText("Claim evidence SHA-256")).toHaveAttribute("readonly");
     fireEvent.change(screen.getByLabelText("Claim verification method"), {
-      target: { value: "Checked page 7 against the captured PDF." },
+      target: { value: "READ_PASSAGE" },
     });
-    fireEvent.change(screen.getByLabelText("Claim review notes"), {
+    fireEvent.change(screen.getByLabelText("What I found"), {
       target: { value: "The captured passage directly supports the narrow claim." },
     });
+    fireEvent.change(screen.getByLabelText("Decision rationale"), { target: { value: "The source states the same result." } });
+    fireEvent.change(screen.getByLabelText("Limitations or discrepancies"), { target: { value: "No transfer claim accepted." } });
     await waitFor(() => expect(submit).toBeEnabled());
     fireEvent.click(submit);
 

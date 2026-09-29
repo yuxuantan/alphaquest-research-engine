@@ -33,6 +33,13 @@ export interface SourceReviewCaptureOption {
   source_category: string | null;
   version_kind: string | null;
   version_label: string | null;
+  claim_evidence?: {
+    claim_id: string;
+    status: "BOUND" | "UNBOUND";
+    evidence_sha256: string | null;
+    evidence_kind: "SOURCE_DOCUMENT" | "EXTRACTED_TEXT" | null;
+    reason: string | null;
+  }[];
 }
 
 export interface SourceReviewReadiness {

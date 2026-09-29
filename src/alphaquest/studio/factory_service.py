@@ -130,6 +130,34 @@ DEFAULT_FORBIDDEN_INFORMATION = (
 )
 
 
+def _source_claim_evidence(
+    source: SourceEvidenceBundleV1, binding: SourceFullTextCaptureBindingV1,
+) -> list[dict[str, Any]]:
+    """Resolve evidence identities, never human decisions, from retained bytes.
+
+    An un-hashed proposal can be reviewed against the selected full text. An
+    explicit reference to different bytes must not be silently substituted.
+    This rule applies to new writes; historical reviewed artifacts are unchanged.
+    """
+    artifacts = {
+        binding.content_sha256: "SOURCE_DOCUMENT",
+        binding.extracted_representation_sha256: "EXTRACTED_TEXT",
+    }
+    result = []
+    for claim in source.claims:
+        evidence_hash = claim.evidence_sha256 or binding.extracted_representation_sha256
+        kind = artifacts.get(evidence_hash)
+        result.append({
+            "claim_id": claim.claim_id,
+            "status": "BOUND" if kind else "UNBOUND",
+            "evidence_sha256": evidence_hash if kind else None,
+            "evidence_kind": kind,
+            "basis": "PROPOSAL_MATCH" if claim.evidence_sha256 else "SELECTED_EXTRACTION_FALLBACK",
+            "reason": None if kind else "PROPOSED_EVIDENCE_OUTSIDE_SELECTED_CAPTURE",
+        })
+    return result
+
+
 def _identity_text(value: str) -> str:
     return " ".join(value.casefold().split())
 
@@ -888,6 +916,28 @@ class ResearchFactoryService:
                     raise ValueError("supplied source binding does not match the selected canonical capture")
                 review_payload["content_sha256"] = binding.content_sha256
                 review_payload["capture_binding"] = binding.model_dump(mode="python")
+                path = self._review_artifact_path(campaign_id, "source", task_id)
+                # Historical exact replays retain their original bytes. The commit
+                # helper still compares the operation and every substantive field.
+                replay = self._review_delivery_path(task_id).exists() or path.exists()
+                evidence = {
+                    item["claim_id"]: item
+                    for item in _source_claim_evidence(source, binding)
+                }
+                claim_reviews = []
+                for supplied in review_payload.get("claim_reviews", []):
+                    claim_review = dict(supplied)
+                    if claim_review.get("decision") == "ACCEPT" and (not replay or claim_review.get("evidence_sha256") is None):
+                        bound = evidence.get(claim_review.get("claim_id"))
+                        if bound is None or bound["status"] != "BOUND":
+                            raise ValueError("accepted claim evidence is not bound to the selected capture")
+                        if claim_review.get("evidence_sha256") not in {None, bound["evidence_sha256"]}:
+                            raise ValueError("claim evidence hash does not match the selected capture evidence")
+                        claim_review["evidence_sha256"] = bound["evidence_sha256"]
+                    elif claim_review.get("decision") == "REJECT" and not replay:
+                        claim_review["evidence_sha256"] = None
+                    claim_reviews.append(claim_review)
+                review_payload["claim_reviews"] = claim_reviews
                 review = SourceEvidenceHumanVerificationV2.model_validate(review_payload)
                 artifact = build_reviewed_source_evidence_v2(
                     campaign_id=campaign_id,
@@ -916,6 +966,7 @@ class ResearchFactoryService:
             task_id, campaign_id, validation, imported
         )
         for item in options:
+            item["claim_evidence"] = []
             if item["binding"] is not None:
                 try:
                     self._assert_selected_source_review_binding(
@@ -924,6 +975,10 @@ class ResearchFactoryService:
                 except StaleProposalError:
                     item["readiness"] = "NOT_READY"
                     item["issues"] = sorted(set(item["issues"]) | {"DIFFERS_FROM_TASK_SELECTED_SOURCE"})
+                if item["readiness"] == "READY":
+                    item["claim_evidence"] = _source_claim_evidence(
+                        source, SourceFullTextCaptureBindingV1.model_validate(item["binding"])
+                    )
             item["legacy_recovery_match"] = bool(
                 legacy_hash is not None
                 and item["readiness"] == "READY"

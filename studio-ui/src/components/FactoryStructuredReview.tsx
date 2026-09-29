@@ -3,6 +3,8 @@ import { api, type ReviewDelivery, type SourceReviewReadiness } from "../api";
 import type { CodexTaskRecord } from "../types";
 import { ProposalValue } from "./FactoryReviewRecord";
 import { Button, Notice } from "./UI";
+import { CLAIM_VERIFICATION_METHODS, claimVerificationComplete, newClaimVerification,
+  serializeClaimVerification, type ClaimVerification } from "../sourceClaimReview";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const SOURCE_METADATA_FIELDS = [
@@ -316,9 +318,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
   const [retractionStatus, setRetractionStatus] = useState<"" | "NOT_RETRACTED" | "CORRECTED">("");
   const [method, setMethod] = useState("");
   const [decisions, setDecisions] = useState<Record<string, "" | "ACCEPT" | "REJECT">>({});
-  const [evidenceHashes, setEvidenceHashes] = useState<Record<string, string>>({});
-  const [claimMethods, setClaimMethods] = useState<Record<string, string>>({});
-  const [claimNotes, setClaimNotes] = useState<Record<string, string>>({});
+  const [claimVerifications, setClaimVerifications] = useState<Record<string, ClaimVerification>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uncertain, setUncertain] = usePendingReview(task, onDeliveryPending);
@@ -334,9 +334,8 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
     setRetractionStatus("");
     setMethod("");
     setDecisions({});
-    setEvidenceHashes({});
-    setClaimNotes({});
-    setClaimMethods({});
+    setClaimVerifications(Object.fromEntries(claimsFrom(task).map((claim) =>
+      [claim.claim_id, newClaimVerification(claim.source_location)])));
     setError("");
     let current = true;
     api.factorySourceReviewReadiness(task.task_id).then((value) => {
@@ -355,11 +354,28 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
     !legacyRecovery || item.legacy_recovery_match === true);
   const selectedOption = selectableOptions.find((item) => item.capture_revision_sha256 === selectedCapture);
   const contentHash = selectedOption?.content_sha256 || "";
+  const evidenceByClaim = Object.fromEntries((selectedOption?.claim_evidence || []).map((item) => [item.claim_id, item]));
+  function setClaimField(claim: Claim, field: keyof ClaimVerification, value: string) {
+    setClaimVerifications((current) => ({ ...current, [claim.claim_id]: {
+      ...(current[claim.claim_id] || newClaimVerification(claim.source_location)), [field]: value,
+    } }));
+  }
+  function selectCapture(value: string) {
+    setSelectedCapture(value);
+    // A decision about one source version must never carry over to another.
+    setDecisions({});
+    setMetadataFields([]);
+    setMethod("");
+    setRetractionStatus("");
+    setClaimVerifications(Object.fromEntries(claims.map((claim) =>
+      [claim.claim_id, newClaimVerification(claim.source_location)])));
+  }
   const complete = Boolean(
     reviewer.trim() && notes.trim() && method.trim() && selectedCapture && SHA256.test(contentHash) &&
     retractionStatus && metadataFields.length === SOURCE_METADATA_FIELDS.length && claims.length &&
-    claims.every((claim) => decisions[claim.claim_id] && claimNotes[claim.claim_id]?.trim() && claimMethods[claim.claim_id]?.trim() &&
-      (decisions[claim.claim_id] === "REJECT" || SHA256.test(evidenceHashes[claim.claim_id] || ""))) &&
+    claims.every((claim) => decisions[claim.claim_id] && claimVerificationComplete(claimVerifications[claim.claim_id]) &&
+      (decisions[claim.claim_id] === "REJECT" || (evidenceByClaim[claim.claim_id]?.status === "BOUND" &&
+        SHA256.test(evidenceByClaim[claim.claim_id]?.evidence_sha256 || "")))) &&
     claims.some((claim) => decisions[claim.claim_id] === "ACCEPT"),
   );
   async function submit() {
@@ -383,10 +399,9 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
           proposed_support: claim.support,
           decision: decisions[claim.claim_id] as "ACCEPT" | "REJECT",
           evidence_sha256: decisions[claim.claim_id] === "ACCEPT"
-            ? evidenceHashes[claim.claim_id]
+            ? evidenceByClaim[claim.claim_id].evidence_sha256
             : null,
-          verification_method: claimMethods[claim.claim_id].trim(),
-          notes: claimNotes[claim.claim_id].trim(),
+          ...serializeClaimVerification(claimVerifications[claim.claim_id]),
         })),
       });
       markReviewSaved(task, setSaved);
@@ -466,7 +481,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
       </Notice>
       <label className="field">
         <span className="field-label">Canonical full-text capture</span>
-        <select aria-label="Canonical full-text capture" value={selectedCapture} onChange={(event) => setSelectedCapture(event.target.value)} disabled={!readiness || selectableOptions.length === 0}>
+        <select aria-label="Canonical full-text capture" value={selectedCapture} onChange={(event) => selectCapture(event.target.value)} disabled={!readiness || selectableOptions.length === 0}>
           <option value="">Choose a compatible captured document</option>
           {selectableOptions.map((item) => (
             <option value={item.capture_revision_sha256} key={item.capture_revision_sha256}>
@@ -525,27 +540,45 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
             <span className="field-label">Human claim decision</span>
             <select value={decisions[claim.claim_id] || ""} onChange={(event) => setDecisions((current) => ({ ...current, [claim.claim_id]: event.target.value as "" | "ACCEPT" | "REJECT" }))}>
               <option value="">Choose</option>
-              <option value="ACCEPT">Accept with captured evidence</option>
+              <option value="ACCEPT" disabled={evidenceByClaim[claim.claim_id]?.status !== "BOUND"}>Accept with captured evidence</option>
               <option value="REJECT">Reject claim</option>
             </select>
           </label>
-          {decisions[claim.claim_id] === "ACCEPT" && (
+          {evidenceByClaim[claim.claim_id]?.status === "BOUND" ? (
             <label className="field">
               <span className="field-label">Claim evidence SHA-256</span>
-              <input value={evidenceHashes[claim.claim_id] || ""} onChange={(event) => setEvidenceHashes((current) => ({ ...current, [claim.claim_id]: event.target.value.trim().toLowerCase() }))} placeholder="Hash of the captured excerpt or evidence record" />
+              <input aria-label="Claim evidence SHA-256" value={evidenceByClaim[claim.claim_id].evidence_sha256 || ""} readOnly />
+              <small>Bound automatically to the selected capture’s {evidenceByClaim[claim.claim_id].evidence_kind === "EXTRACTED_TEXT" ? "text extraction" : "source document"}. This identifies the evidence; it does not approve the claim.</small>
             </label>
-          )}
+          ) : <Notice tone="warning">This claim’s evidence cannot be bound to the selected capture. Acceptance is unavailable. You may reject the claim or leave the review pending.</Notice>}
           <label className="field">
             <span className="field-label">Claim verification method</span>
-            <input value={claimMethods[claim.claim_id] || ""} onChange={(event) => setClaimMethods((current) => ({ ...current, [claim.claim_id]: event.target.value }))} placeholder="Document location and how this claim was checked" />
+            <select value={claimVerifications[claim.claim_id]?.method || ""} onChange={(event) => setClaimField(claim, "method", event.target.value)}>
+              <option value="">Choose how you checked this claim</option>
+              {Object.entries(CLAIM_VERIFICATION_METHODS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
           </label>
           <label className="field">
-            <span className="field-label">Claim review notes</span>
-            <textarea rows={2} value={claimNotes[claim.claim_id] || ""} onChange={(event) => setClaimNotes((current) => ({ ...current, [claim.claim_id]: event.target.value }))} />
+            <span className="field-label">Evidence location</span>
+            <input aria-label="Evidence location" value={claimVerifications[claim.claim_id]?.location || ""} onChange={(event) => setClaimField(claim, "location", event.target.value)} />
+            <small>Suggested from the proposal. Confirm or correct the page, section or table you actually checked.</small>
           </label>
+          {([
+            ["finding", "What I found", "Describe the passage or values you checked."],
+            ["rationale", "Decision rationale", "Explain why the evidence supports your accept or reject decision."],
+            ["limitations", "Limitations or discrepancies", "Record caveats, conflicts or uncertainty; explicitly state if you found none."],
+          ] as const).map(([field, label, placeholder]) => <label className="field" key={field}>
+            <span className="field-label">{label}</span>
+            <textarea rows={2} value={claimVerifications[claim.claim_id]?.[field] || ""}
+              onChange={(event) => setClaimField(claim, field, event.target.value)} placeholder={placeholder} />
+          </label>)}
+          <details>
+            <summary>Claim review notes template</summary>
+            <pre>{`Finding: ${claimVerifications[claim.claim_id]?.finding || "[your observation]"}\nDecision rationale: ${claimVerifications[claim.claim_id]?.rationale || "[your reasoning]"}\nLimitations or discrepancies: ${claimVerifications[claim.claim_id]?.limitations || "[your limitations check]"}`}</pre>
+          </details>
         </fieldset>
       ))}
-      {!complete && <p className="factory-proposal-requirement">Verify all metadata, enter valid hashes, decide every claim, accept at least one claim, and complete reviewer notes.</p>}
+      {!complete && <p className="factory-proposal-requirement">Verify all metadata, decide every claim, accept at least one claim with bound evidence, and complete each verification field.</p>}
       </>}
       {uncertain && !saved && !legacyRecovery && <ReviewRecovery task={task} onComplete={onComplete} disabled={busy}
         setSaved={setSaved} setUncertain={setUncertain} setError={setError} />}

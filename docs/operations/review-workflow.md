@@ -15,9 +15,11 @@ out already authorized work; the human supplies the substantive judgments.
    values, conflicts and unresolved questions. Values are shown beside their
    acknowledgement controls; the complete validated JSON remains available.
 3. Check each required field and criterion. Source review additionally requires
-   selecting a compatible canonical full-text capture, accepted-claim hashes, a
-   retraction check, a decision for every claim, and each claim's verification
-   method and notes. A rejected claim stays in the record; at least one accepted
+   selecting a compatible canonical full-text capture, a retraction check, a
+   decision for every claim, and each claim's structured verification fields.
+   Studio displays each claim's evidence hash automatically from the selected
+   retained document or text extraction; there is no hash to calculate or type.
+   A rejected claim stays in the record; at least one accepted
    claim is required to proceed.
 4. Enter your reviewer identity and notes, then submit the specific acceptance
    action. The configured identity is a local attribution label, not an
@@ -26,6 +28,44 @@ out already authorized work; the human supplies the substantive judgments.
    notes, proposal/validation/artifact hashes and the complete downloadable JSON
    artifact. Reopening the task retrieves the stored record through the existing
    verification service. Codex should read that record before resuming work.
+
+## Claim verification fields
+
+For each claim, choose the method you actually used: reading a source passage,
+comparing table values, comparing conflicting passages/results, or assessing an
+inference against source evidence. Confirm or correct the suggested evidence
+location, then fill **What I found**, **Decision rationale**, and **Limitations or
+discrepancies**. These fields start with no human judgment. If you found no
+additional limitation, state that explicitly. Rejecting a claim also requires
+the verification fields so its reason is retained.
+
+The form previews a consistent notes template and stores the entries in the
+existing `verification_method` and `notes` fields:
+
+```text
+Method: Compared table values
+Location: PDF page 8, Table 2
+
+Finding: [what you observed]
+Decision rationale: [why you accepted or rejected the claim]
+Limitations or discrepancies: [caveats, conflicts, or your explicit none finding]
+```
+
+The server resolves evidence against the exact current selected capture. A
+proposed hash matching the retained PDF/document or text extraction keeps that
+identity. If the proposal has no evidence hash, human review uses the selected
+text extraction. A proposed hash referring to different bytes cannot be silently
+replaced: acceptance of that claim is unavailable, but it can be rejected. The
+hash identifies bytes; it does not establish claim correctness. The service
+rechecks the binding when saving and rejects an inconsistent submitted hash.
+Changing capture clears the capture-specific decisions and verification entries;
+the proposal's suggested page reference is shown again for confirmation.
+
+Existing V1/V2 receipts remain unchanged. An exact replay of an already admitted
+V2 review retains its original evidence values and operation; it cannot be used
+to change the decision. New reviews use the automatic binding above. The
+structured fields are a Studio authoring format over existing string contracts,
+not a new scientific approval contract or an automated evidence assessment.
 
 If Studio shows **Recover admitted V1 review**, the service already retained an
 exact pre-upgrade V1 decision but did not finish its immutable receipt write.

@@ -29,7 +29,7 @@ function checkAll() {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); });
 
-beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001"); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); mocks.legacy.mockResolvedValue({}); mocks.readiness.mockResolvedValue({ status: "READY", eligible_capture_count: 1, options: [{ capture_id: "capture.source", capture_revision_sha256: "c".repeat(64), source_version_id: "version.source", status: "FULL_TEXT_CAPTURED", content_sha256: "a".repeat(64), retrieval_locator: "https://example.test/source", readiness: "READY", issues: [], legacy_recovery_match: true, title: "Captured source", authors: ["Researcher"], source_category: "ACADEMIC", version_kind: "ORIGINAL", version_label: "Published version" }] }); });
+beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001"); mocks.hypothesis.mockResolvedValue({}); mocks.engineering.mockResolvedValue({}); mocks.legacy.mockResolvedValue({}); mocks.readiness.mockResolvedValue({ status: "READY", eligible_capture_count: 1, options: [{ capture_id: "capture.source", capture_revision_sha256: "c".repeat(64), source_version_id: "version.source", status: "FULL_TEXT_CAPTURED", content_sha256: "a".repeat(64), retrieval_locator: "https://example.test/source", readiness: "READY", issues: [], legacy_recovery_match: true, title: "Captured source", authors: ["Researcher"], source_category: "ACADEMIC", version_kind: "ORIGINAL", version_label: "Published version", claim_evidence: [{ claim_id: "claim", status: "BOUND", evidence_sha256: "b".repeat(64), evidence_kind: "EXTRACTED_TEXT", reason: null }] }] }); });
 
 describe("structured review experience", () => {
   it("recovers a server-admitted V1 source review from empty browser storage", async () => {
@@ -154,6 +154,67 @@ describe("structured review experience", () => {
     expect(mocks.source).not.toHaveBeenCalled();
   });
 
+  it("displays the bound hash without manual entry and saves the structured notes template", async () => {
+    const sourceTask = { ...task, task_type: "SOURCE_RESEARCH", proposal: {
+      claims: [{ claim_id: "claim", support: "DIRECT", statement: "Reported values", source_location: "PDF page 8, Table 2" }],
+    } };
+    mocks.source.mockResolvedValue({});
+    render(<FactoryStructuredReview task={sourceTask} reviewer="Researcher" notes="Overall notes" onComplete={vi.fn()} />);
+    const hash = await screen.findByLabelText("Claim evidence SHA-256");
+    expect(hash).toHaveValue("b".repeat(64));
+    expect(hash).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Human claim decision")).toHaveValue("");
+    expect(screen.getByLabelText("Claim verification method")).toHaveValue("");
+    expect(screen.getByLabelText("What I found")).toHaveValue("");
+    checkAll();
+    for (const [label, value] of [
+      ["Human verification method", "Checked full text and catalog"],
+      ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
+      ["Claim verification method", "COMPARE_TABLE"], ["Evidence location", "PDF page 8, Table 2"],
+      ["What I found", "Both directions have positive reported means."],
+      ["Decision rationale", "The table supports the narrow reported-results claim."],
+    ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    const submit = screen.getByRole("button", { name: "ACCEPT REVIEWED SOURCE EVIDENCE" });
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Limitations or discrepancies"), { target: { value: "Not independently reproduced." } });
+    fireEvent.click(submit);
+    await waitFor(() => expect(mocks.source).toHaveBeenCalledTimes(1));
+    expect(mocks.source.mock.calls[0][1].claim_reviews).toEqual([{
+      claim_id: "claim", proposed_support: "DIRECT", decision: "ACCEPT", evidence_sha256: "b".repeat(64),
+      verification_method: "Method: Compared table values\nLocation: PDF page 8, Table 2",
+      notes: "Finding: Both directions have positive reported means.\nDecision rationale: The table supports the narrow reported-results claim.\nLimitations or discrepancies: Not independently reproduced.",
+    }]);
+  });
+
+  it("clears capture-specific judgments when changing capture and blocks unbound claim acceptance", async () => {
+    const first = (await mocks.readiness())["options"][0];
+    mocks.readiness.mockResolvedValue({ status: "READY", eligible_capture_count: 2, options: [first, {
+      ...first, capture_id: "capture.other", capture_revision_sha256: "e".repeat(64),
+      claim_evidence: [{ claim_id: "claim", status: "UNBOUND", evidence_sha256: null, evidence_kind: null,
+        reason: "PROPOSED_EVIDENCE_OUTSIDE_SELECTED_CAPTURE" }],
+    }] });
+    render(<FactoryStructuredReview task={{ ...task, task_type: "SOURCE_RESEARCH", proposal: {
+      claims: [{ claim_id: "claim", support: "DIRECT", statement: "Claim", source_location: "Page 1" }],
+    } }} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
+    const capture = screen.getByLabelText("Canonical full-text capture");
+    await waitFor(() => expect(capture).toBeEnabled());
+    fireEvent.change(capture, { target: { value: "c".repeat(64) } });
+    checkAll();
+    fireEvent.change(screen.getByLabelText("Human claim decision"), { target: { value: "ACCEPT" } });
+    fireEvent.change(screen.getByLabelText("Claim verification method"), { target: { value: "READ_PASSAGE" } });
+    fireEvent.change(screen.getByLabelText("What I found"), { target: { value: "Capture-specific observation" } });
+    fireEvent.change(capture, { target: { value: "e".repeat(64) } });
+    expect(screen.getByLabelText("Human claim decision")).toHaveValue("");
+    expect(screen.getByLabelText("Claim verification method")).toHaveValue("");
+    expect(screen.getByLabelText("What I found")).toHaveValue("");
+    expect(screen.getAllByRole("checkbox").every((box) => !(box as HTMLInputElement).checked)).toBe(true);
+    expect(screen.getByRole("option", { name: "Accept with captured evidence" })).toBeDisabled();
+    expect(screen.getByRole("option", { name: "Reject claim" })).toBeEnabled();
+    expect(screen.queryByLabelText("Claim evidence SHA-256")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ACCEPT REVIEWED SOURCE EVIDENCE" })).toBeDisabled();
+    expect(mocks.source).not.toHaveBeenCalled();
+  });
+
   it.each(["SOURCE_RESEARCH", "HYPOTHESIS_PROPOSAL", "MECHANICS_INTENT"])(
     "locks %s from server admission with empty origin-local storage",
     async (taskType) => {
@@ -168,7 +229,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Confirmed"],
+          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       expect(localStorage.length).toBe(0);
@@ -216,7 +277,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Confirmed"],
+          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       const button = screen.getByRole("button");
@@ -280,7 +341,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked publisher metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
+          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Direct support confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       const button = screen.getByRole("button");
@@ -316,7 +377,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
+          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Direct support confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       let submit = screen.getByRole("button");
@@ -334,7 +395,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim evidence SHA-256", "b".repeat(64)], ["Claim verification method", "Read page 1"], ["Claim review notes", "Direct support confirmed"],
+          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Direct support confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       const acceptLabel = taskType === "SOURCE_RESEARCH" ? "ACCEPT REVIEWED SOURCE EVIDENCE"
