@@ -33,8 +33,8 @@ out already authorized work; the human supplies the substantive judgments.
 
 For each claim, choose the method you actually used: reading a source passage,
 comparing table values, comparing conflicting passages/results, or assessing an
-inference against source evidence. Confirm or correct the suggested evidence
-location, then fill **What I found**, **Decision rationale**, and **Limitations or
+inference against source evidence. Enter the evidence location you actually
+checked, then fill **What I found**, **Decision rationale**, and **Limitations or
 discrepancies**. These fields start with no human judgment. If you found no
 additional limitation, state that explicitly. Rejecting a claim also requires
 the verification fields so its reason is retained.
@@ -58,8 +58,9 @@ text extraction. A proposed hash referring to different bytes cannot be silently
 replaced: acceptance of that claim is unavailable, but it can be rejected. The
 hash identifies bytes; it does not establish claim correctness. The service
 rechecks the binding when saving and rejects an inconsistent submitted hash.
-Changing capture clears the capture-specific decisions and verification entries;
-the proposal's suggested page reference is shown again for confirmation.
+Changing capture clears the capture-specific decisions, verification entries,
+and overall review notes. The proposal's suggested page reference remains visible
+as guidance; the human location field stays blank until you enter it.
 
 Existing V1/V2 receipts remain unchanged. An exact replay of an already admitted
 V2 review retains its original evidence values and operation; it cannot be used

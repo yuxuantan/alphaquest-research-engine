@@ -166,17 +166,22 @@ describe("structured review experience", () => {
     expect(screen.getByLabelText("Human claim decision")).toHaveValue("");
     expect(screen.getByLabelText("Claim verification method")).toHaveValue("");
     expect(screen.getByLabelText("What I found")).toHaveValue("");
+    expect(screen.getByLabelText("Evidence location")).toHaveValue("");
+    expect(screen.getByLabelText("Evidence location")).toHaveAttribute("placeholder", "PDF page 8, Table 2");
     checkAll();
     for (const [label, value] of [
       ["Human verification method", "Checked full text and catalog"],
       ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-      ["Claim verification method", "COMPARE_TABLE"], ["Evidence location", "PDF page 8, Table 2"],
+      ["Claim verification method", "COMPARE_TABLE"],
       ["What I found", "Both directions have positive reported means."],
       ["Decision rationale", "The table supports the narrow reported-results claim."],
     ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
     const submit = screen.getByRole("button", { name: "ACCEPT REVIEWED SOURCE EVIDENCE" });
     expect(submit).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Limitations or discrepancies"), { target: { value: "Not independently reproduced." } });
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Evidence location"), { target: { value: "PDF page 8, Table 2" } });
+    expect(submit).toBeEnabled();
     fireEvent.click(submit);
     await waitFor(() => expect(mocks.source).toHaveBeenCalledTimes(1));
     expect(mocks.source.mock.calls[0][1].claim_reviews).toEqual([{
@@ -187,6 +192,7 @@ describe("structured review experience", () => {
   });
 
   it("clears capture-specific judgments when changing capture and blocks unbound claim acceptance", async () => {
+    const onSourceCaptureChange = vi.fn();
     const first = (await mocks.readiness())["options"][0];
     mocks.readiness.mockResolvedValue({ status: "READY", eligible_capture_count: 2, options: [first, {
       ...first, capture_id: "capture.other", capture_revision_sha256: "e".repeat(64),
@@ -195,7 +201,7 @@ describe("structured review experience", () => {
     }] });
     render(<FactoryStructuredReview task={{ ...task, task_type: "SOURCE_RESEARCH", proposal: {
       claims: [{ claim_id: "claim", support: "DIRECT", statement: "Claim", source_location: "Page 1" }],
-    } }} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} />);
+    } }} reviewer="Researcher" notes="Checked" onComplete={vi.fn()} onSourceCaptureChange={onSourceCaptureChange} />);
     const capture = screen.getByLabelText("Canonical full-text capture");
     await waitFor(() => expect(capture).toBeEnabled());
     fireEvent.change(capture, { target: { value: "c".repeat(64) } });
@@ -203,10 +209,14 @@ describe("structured review experience", () => {
     fireEvent.change(screen.getByLabelText("Human claim decision"), { target: { value: "ACCEPT" } });
     fireEvent.change(screen.getByLabelText("Claim verification method"), { target: { value: "READ_PASSAGE" } });
     fireEvent.change(screen.getByLabelText("What I found"), { target: { value: "Capture-specific observation" } });
+    fireEvent.change(screen.getByLabelText("Evidence location"), { target: { value: "Page 2 checked" } });
     fireEvent.change(capture, { target: { value: "e".repeat(64) } });
     expect(screen.getByLabelText("Human claim decision")).toHaveValue("");
     expect(screen.getByLabelText("Claim verification method")).toHaveValue("");
     expect(screen.getByLabelText("What I found")).toHaveValue("");
+    expect(screen.getByLabelText("Evidence location")).toHaveValue("");
+    expect(onSourceCaptureChange).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Clear and re-enter the overall review notes for this capture.")).toBeVisible();
     expect(screen.getAllByRole("checkbox").every((box) => !(box as HTMLInputElement).checked)).toBe(true);
     expect(screen.getByRole("option", { name: "Accept with captured evidence" })).toBeDisabled();
     expect(screen.getByRole("option", { name: "Reject claim" })).toBeEnabled();
@@ -229,7 +239,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
+          ["Claim verification method", "READ_PASSAGE"], ["Evidence location", "Page 1"], ["What I found", "Confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       expect(localStorage.length).toBe(0);
@@ -277,7 +287,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
+          ["Claim verification method", "READ_PASSAGE"], ["Evidence location", "Page 1"], ["What I found", "Confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       const button = screen.getByRole("button");
@@ -341,7 +351,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked publisher metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Direct support confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
+          ["Claim verification method", "READ_PASSAGE"], ["Evidence location", "Page 1"], ["What I found", "Direct support confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       const button = screen.getByRole("button");
@@ -377,7 +387,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Direct support confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
+          ["Claim verification method", "READ_PASSAGE"], ["Evidence location", "Page 1"], ["What I found", "Direct support confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       let submit = screen.getByRole("button");
@@ -395,7 +405,7 @@ describe("structured review experience", () => {
         for (const [label, value] of [
           ["Human verification method", "Checked metadata"],
           ["Retraction/correction check", "NOT_RETRACTED"], ["Human claim decision", "ACCEPT"],
-          ["Claim verification method", "READ_PASSAGE"], ["What I found", "Direct support confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
+          ["Claim verification method", "READ_PASSAGE"], ["Evidence location", "Page 1"], ["What I found", "Direct support confirmed"], ["Decision rationale", "The passage supports the claim"], ["Limitations or discrepancies", "No additional limitations identified"],
         ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
       }
       const acceptLabel = taskType === "SOURCE_RESEARCH" ? "ACCEPT REVIEWED SOURCE EVIDENCE"

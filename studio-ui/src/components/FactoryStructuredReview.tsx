@@ -144,6 +144,7 @@ export function FactoryStructuredReview({
   disabled,
   onComplete,
   onDeliveryPending,
+  onSourceCaptureChange,
 }: {
   task: CodexTaskRecord;
   reviewer: string;
@@ -151,10 +152,11 @@ export function FactoryStructuredReview({
   disabled?: boolean;
   onComplete: (message: string) => Promise<void>;
   onDeliveryPending?: (taskId: string) => void;
+  onSourceCaptureChange?: () => void;
 }) {
   const revision = `${task.task_id}:${task.proposal_validation?.payload_sha256 || ""}:${task.proposal_validation?.validation_sha256 || ""}`;
   if (task.task_type === "SOURCE_RESEARCH") {
-    return <SourceReview key={revision} task={task} reviewer={reviewer} notes={notes} disabled={disabled} onComplete={onComplete} onDeliveryPending={onDeliveryPending} />;
+    return <SourceReview key={revision} task={task} reviewer={reviewer} notes={notes} disabled={disabled} onComplete={onComplete} onDeliveryPending={onDeliveryPending} onSourceCaptureChange={onSourceCaptureChange} />;
   }
   if (task.task_type === "HYPOTHESIS_PROPOSAL") {
     return <HypothesisReview key={revision} task={task} reviewer={reviewer} notes={notes} disabled={disabled} onComplete={onComplete} onDeliveryPending={onDeliveryPending} />;
@@ -309,7 +311,7 @@ function ReviewRecovery({ task, onComplete, disabled, setSaved, setUncertain, se
   </>;
 }
 
-function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryPending }: ReviewProps) {
+function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryPending, onSourceCaptureChange }: ReviewProps) {
   const claims = useMemo(() => claimsFrom(task), [task.proposal]);
   const [metadataFields, setMetadataFields] = useState<string[]>([]);
   const [readiness, setReadiness] = useState<SourceReviewReadiness | null>(null);
@@ -318,6 +320,8 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
   const [retractionStatus, setRetractionStatus] = useState<"" | "NOT_RETRACTED" | "CORRECTED">("");
   const [method, setMethod] = useState("");
   const [decisions, setDecisions] = useState<Record<string, "" | "ACCEPT" | "REJECT">>({});
+  const [notesMustBeCleared, setNotesMustBeCleared] = useState(false);
+  useEffect(() => { if (!notes.trim()) setNotesMustBeCleared(false); }, [notes]);
   const [claimVerifications, setClaimVerifications] = useState<Record<string, ClaimVerification>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -335,7 +339,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
     setMethod("");
     setDecisions({});
     setClaimVerifications(Object.fromEntries(claimsFrom(task).map((claim) =>
-      [claim.claim_id, newClaimVerification(claim.source_location)])));
+      [claim.claim_id, newClaimVerification()])));
     setError("");
     let current = true;
     api.factorySourceReviewReadiness(task.task_id).then((value) => {
@@ -357,10 +361,15 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
   const evidenceByClaim = Object.fromEntries((selectedOption?.claim_evidence || []).map((item) => [item.claim_id, item]));
   function setClaimField(claim: Claim, field: keyof ClaimVerification, value: string) {
     setClaimVerifications((current) => ({ ...current, [claim.claim_id]: {
-      ...(current[claim.claim_id] || newClaimVerification(claim.source_location)), [field]: value,
+      ...(current[claim.claim_id] || newClaimVerification()), [field]: value,
     } }));
   }
   function selectCapture(value: string) {
+    if (value === selectedCapture) return;
+    if (selectedCapture) {
+      setNotesMustBeCleared(Boolean(notes.trim()));
+      onSourceCaptureChange?.();
+    }
     setSelectedCapture(value);
     // A decision about one source version must never carry over to another.
     setDecisions({});
@@ -368,10 +377,10 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
     setMethod("");
     setRetractionStatus("");
     setClaimVerifications(Object.fromEntries(claims.map((claim) =>
-      [claim.claim_id, newClaimVerification(claim.source_location)])));
+      [claim.claim_id, newClaimVerification()])));
   }
   const complete = Boolean(
-    reviewer.trim() && notes.trim() && method.trim() && selectedCapture && SHA256.test(contentHash) &&
+    !notesMustBeCleared && reviewer.trim() && notes.trim() && method.trim() && selectedCapture && SHA256.test(contentHash) &&
     retractionStatus && metadataFields.length === SOURCE_METADATA_FIELDS.length && claims.length &&
     claims.every((claim) => decisions[claim.claim_id] && claimVerificationComplete(claimVerifications[claim.claim_id]) &&
       (decisions[claim.claim_id] === "REJECT" || (evidenceByClaim[claim.claim_id]?.status === "BOUND" &&
@@ -560,8 +569,8 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
           </label>
           <label className="field">
             <span className="field-label">Evidence location</span>
-            <input aria-label="Evidence location" value={claimVerifications[claim.claim_id]?.location || ""} onChange={(event) => setClaimField(claim, "location", event.target.value)} />
-            <small>Suggested from the proposal. Confirm or correct the page, section or table you actually checked.</small>
+            <input aria-label="Evidence location" placeholder={claim.source_location} value={claimVerifications[claim.claim_id]?.location || ""} onChange={(event) => setClaimField(claim, "location", event.target.value)} />
+            <small>Enter the page, section or table you actually checked. The suggested location above is not a human confirmation.</small>
           </label>
           {([
             ["finding", "What I found", "Describe the passage or values you checked."],
@@ -578,6 +587,7 @@ function SourceReview({ task, reviewer, notes, disabled, onComplete, onDeliveryP
           </details>
         </fieldset>
       ))}
+      {notesMustBeCleared && <Notice tone="warning">Clear and re-enter the overall review notes for this capture.</Notice>}
       {!complete && <p className="factory-proposal-requirement">Verify all metadata, decide every claim, accept at least one claim with bound evidence, and complete each verification field.</p>}
       </>}
       {uncertain && !saved && !legacyRecovery && <ReviewRecovery task={task} onComplete={onComplete} disabled={busy}
@@ -708,5 +718,6 @@ interface ReviewProps {
   notes: string;
   disabled?: boolean;
   onDeliveryPending?: (taskId: string) => void;
+  onSourceCaptureChange?: () => void;
   onComplete: (message: string) => Promise<void>;
 }

@@ -297,6 +297,10 @@ describe("Codex research factory UI", () => {
   });
 
   it("records source verification only after hashes and every claim decision are complete", async () => {
+    const readiness = await mocks.factorySourceReviewReadiness();
+    mocks.factorySourceReviewReadiness.mockResolvedValue({ ...readiness, eligible_capture_count: 2,
+      options: [...readiness.options, { ...readiness.options[0], capture_id: "capture.other", capture_revision_sha256: "e".repeat(64) }],
+    });
     const proposalTask = {
       task_id: "codex-source-review",
       state: "PROPOSAL_READY",
@@ -342,8 +346,16 @@ describe("Codex research factory UI", () => {
     expect(screen.queryByRole("button", { name: "ACKNOWLEDGE FOR HUMAN TRANSFER" }))
       .not.toBeInTheDocument();
     expect(submit).toBeDisabled();
+    const captureChoice = screen.getByLabelText("Canonical full-text capture");
+    await waitFor(() => expect(captureChoice).toBeEnabled());
+    fireEvent.change(captureChoice, { target: { value: "e".repeat(64) } });
     fireEvent.change(screen.getByLabelText("Required review notes"), {
       target: { value: "Checked the original source and every claim." },
+    });
+    fireEvent.change(captureChoice, { target: { value: "c".repeat(64) } });
+    expect(screen.getByLabelText("Required review notes")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("Required review notes"), {
+      target: { value: "Rechecked the newly selected source and every claim." },
     });
     await waitFor(() => expect(screen.getByLabelText("Captured source content SHA-256")).toHaveValue("a".repeat(64)));
     fireEvent.change(screen.getByLabelText("Human verification method"), {
@@ -363,6 +375,7 @@ describe("Codex research factory UI", () => {
     fireEvent.change(screen.getByLabelText("Claim verification method"), {
       target: { value: "READ_PASSAGE" },
     });
+    fireEvent.change(screen.getByLabelText("Evidence location"), { target: { value: "Page 7" } });
     fireEvent.change(screen.getByLabelText("What I found"), {
       target: { value: "The captured passage directly supports the narrow claim." },
     });

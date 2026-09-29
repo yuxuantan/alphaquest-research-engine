@@ -888,6 +888,7 @@ export function WorkflowPage() {
                     notes={proposalNotes}
                     disabled={factoryBusy}
                     onDeliveryPending={noteReviewDeliveryPending}
+                    onSourceCaptureChange={() => setProposalNotes("")}
                     onComplete={(message) =>
                       completeStructuredReview(validatedProposalTask.task_id, message)
                     }

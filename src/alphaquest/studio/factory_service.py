@@ -934,8 +934,8 @@ class ResearchFactoryService:
                         if claim_review.get("evidence_sha256") not in {None, bound["evidence_sha256"]}:
                             raise ValueError("claim evidence hash does not match the selected capture evidence")
                         claim_review["evidence_sha256"] = bound["evidence_sha256"]
-                    elif claim_review.get("decision") == "REJECT" and not replay:
-                        claim_review["evidence_sha256"] = None
+                    elif claim_review.get("decision") == "REJECT" and not replay and claim_review.get("evidence_sha256") is not None:
+                        raise ValueError("rejected claims must omit the evidence hash")
                     claim_reviews.append(claim_review)
                 review_payload["claim_reviews"] = claim_reviews
                 review = SourceEvidenceHumanVerificationV2.model_validate(review_payload)

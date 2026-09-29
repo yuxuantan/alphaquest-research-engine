@@ -14,8 +14,8 @@ export interface ClaimVerification {
   limitations: string;
 }
 
-export function newClaimVerification(location: string): ClaimVerification {
-  return { method: "", location, finding: "", rationale: "", limitations: "" };
+export function newClaimVerification(): ClaimVerification {
+  return { method: "", location: "", finding: "", rationale: "", limitations: "" };
 }
 
 export function claimVerificationComplete(review: ClaimVerification | undefined): boolean {

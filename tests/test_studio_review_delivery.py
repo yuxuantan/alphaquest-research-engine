@@ -37,7 +37,6 @@ from alphaquest.studio.research_factory import SourceEvidenceBundleV1
 from tests.test_studio_factory_review_handoff import (
     FakeRunner,
     HASH_A,
-    HASH_B,
     _append_version_relationship,
     _draft,
     _hypothesis_proposal,
@@ -82,7 +81,7 @@ def _source_review(
                 "claim_id": "direct_1",
                 "proposed_support": "DIRECT",
                 "decision": "ACCEPT",
-                "evidence_sha256": HASH_B,
+                "evidence_sha256": content_sha256,
                 "verification_method": "Checked page 7 and figure 2.",
                 "notes": "Direct support is present for the narrow claim.",
             },

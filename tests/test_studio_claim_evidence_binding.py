@@ -70,6 +70,7 @@ def test_unrelated_proposed_evidence_can_be_rejected_but_not_accepted(tmp_path):
     with pytest.raises(ValueError, match="not bound to the selected capture"):
         service.record_reviewed_source_evidence(task_id, verification=review, capture_revision_sha256=capture.record_sha256)
     review["claim_reviews"][0]["decision"] = "REJECT"
+    review["claim_reviews"][0]["evidence_sha256"] = None
     review["claim_reviews"][1]["decision"] = "ACCEPT"
     # Human acceptance of the inference is explicit; its null proposal hash
     # binds the selected extraction. The unrelated claim remains rejected.
@@ -89,12 +90,23 @@ def test_omitted_automatically_bound_hash_can_be_replayed_exactly(tmp_path):
     assert service.record_reviewed_source_evidence(task_id, verification=review, capture_revision_sha256=capture.record_sha256, delivery=delivery) == first
 
 
+def test_new_rejected_claim_hash_is_rejected_before_admission_without_normalization(tmp_path):
+    service, capture, task_id, _ = prepared(tmp_path)
+    review = _source_review_payload(capture)
+    review["claim_reviews"][1]["evidence_sha256"] = "b" * 64
+    with pytest.raises(ValueError, match="rejected claims must omit"):
+        service.record_reviewed_source_evidence(task_id, verification=review, capture_revision_sha256=capture.record_sha256)
+    assert not service._review_delivery_path(task_id).exists()
+    assert service.get_task(task_id)["structured_review"] is None
+
+
 @pytest.mark.parametrize("admitted_only", [False, True])
 def test_pre_upgrade_v2_exact_replay_preserves_original_hash_and_decision(tmp_path, admitted_only):
     service, capture, task_id, source = prepared(tmp_path, "missing")
     validation = service.get_task(task_id)["proposal_validation"]
     review = _source_review_payload(capture)
     review["claim_reviews"][0]["evidence_sha256"] = "b" * 64
+    review["claim_reviews"][1]["evidence_sha256"] = "f" * 64
     review["capture_binding"] = service.source_review_readiness(task_id)["options"][0]["binding"]
     artifact = build_reviewed_source_evidence_v2(
         campaign_id="structured_factory", task_id=task_id,
@@ -115,6 +127,7 @@ def test_pre_upgrade_v2_exact_replay_preserves_original_hash_and_decision(tmp_pa
     )
     assert replay == original
     assert replay["human_verification"]["claim_reviews"][0]["evidence_sha256"] == "b" * 64
+    assert replay["human_verification"]["claim_reviews"][1]["evidence_sha256"] == "f" * 64
     changed = deepcopy(review)
     changed["claim_reviews"][0]["notes"] = "Changed human decision rationale"
     with pytest.raises(RuntimeError, match="different review decision"):

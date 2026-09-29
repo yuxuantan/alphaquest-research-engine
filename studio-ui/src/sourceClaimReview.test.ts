@@ -3,7 +3,7 @@ import { claimVerificationComplete, newClaimVerification, serializeClaimVerifica
 
 describe("claim verification serialization", () => {
   it("leaves judgments blank and requires all structured fields", () => {
-    const empty = newClaimVerification("Page 8");
+    const empty = newClaimVerification();
     expect(claimVerificationComplete(empty)).toBe(false);
     expect(empty.method).toBe("");
     expect(() => serializeClaimVerification(empty)).toThrow(/Complete every/);

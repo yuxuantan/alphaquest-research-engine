@@ -456,8 +456,11 @@ caller request a new V1 decision; all genuinely new source reviews remain V2.
 This prerequisite does not make a scientific decision. Reviewer identity and
 notes, all six metadata checks, retraction or correction status, every claim
 decision, each verification method, and claim notes remain mandatory. Claim
-evidence hashes continue to be separate human attestations; a future canonical
-claim-extraction bridge is outside this slice. No document upload, arbitrary path,
+evidence hashes are resolved automatically from the selected retained document
+or text extraction and displayed read-only. A mismatched proposed evidence hash
+blocks acceptance of that claim. Human methods, checked locations, findings,
+rationales and limitations remain explicit; see the [review form](review-workflow.md).
+This binding adds no automatic claim extraction or judgment. No document upload, arbitrary path,
 network fetch, paid source access, automated source selection, admission compiler,
 campaign write, mechanics approval, performance test, holdout access, or trading
 authority is added.
