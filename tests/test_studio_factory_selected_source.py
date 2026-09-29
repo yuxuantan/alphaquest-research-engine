@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from alphaquest.research.literature.contracts import ActorProvenanceV1, SourceIdentityRevisionV1, SourceVersionIdentityRevisionV1
+from alphaquest.research.literature.contracts import ActorProvenanceV1, SourceIdentityRevisionV1, SourceVersionIdentityRevisionV1, SourceCaptureRevisionV1
 from alphaquest.research.literature.store import LiteratureStore
 from alphaquest.studio.api import FactoryRunNextRequest
 from alphaquest.studio.factory_service import ResearchFactoryService, _source_relationship_state
 from alphaquest.studio.research_factory import SelectedSourceV1
 from tests.test_studio_factory_service import FakeRunner, _draft
-from tests.test_studio_factory_review_handoff import _fulltext_capture, _source_proposal, _append_version_relationship
+from tests.test_studio_factory_review_handoff import _fulltext_capture, _source_proposal, _append_version_relationship, _source_review_payload
 
 
 def _selection(root: Path, *, permission: str = "ALLOWED_EXTERNAL_PROCESSOR", **capture_kwargs) -> dict:
@@ -261,3 +261,49 @@ def test_relationship_drift_is_not_silently_adopted(tmp_path: Path, when: str) -
     else:
         assert result["proposal_validation"]["status"] == "REJECTED_NOT_APPLIED"
         assert runner.run_calls == (1 if when == "during_worker" else 0)
+
+
+@pytest.mark.parametrize("predicate,status", [("SAME_VERSION_AS", "ACTIVE"), ("RETRACTS", "RETRACTED")])
+def test_review_snapshot_drift_cannot_be_adopted_after_freshness_check(tmp_path: Path, monkeypatch, predicate: str, status: str) -> None:
+    _draft(tmp_path)
+    selection = _selection(tmp_path)
+    other = _fulltext_capture(tmp_path, suffix="review-race")
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="factory_example", request_id="selected-review-snapshot", selected_source=selection)
+    service.run_worker_once(worker_id="selected-review-snapshot-worker")
+    capture = LiteratureStore(tmp_path).latest(SourceCaptureRevisionV1, selection["capture_id"])
+    original = service._current_review_context
+    def change_after_check(record):
+        result = original(record)
+        if status == "RETRACTED":
+            _append_version_relationship(tmp_path, relationship_id="relationship.review-race",
+                                         subject_id=other.source_version_id, predicate=predicate,
+                                         object_id="version.source", status="ACTIVE")
+        _append_version_relationship(tmp_path, relationship_id="relationship.review-race",
+                                     subject_id=other.source_version_id, predicate=predicate,
+                                     object_id="version.source", status=status)
+        return result
+    monkeypatch.setattr(service, "_current_review_context", change_after_check)
+    with pytest.raises((ValueError, RuntimeError), match="selected source snapshot"):
+        service.record_reviewed_source_evidence(task["task_id"], verification=_source_review_payload(capture), capture_revision_sha256=capture.record_sha256)
+    assert not service._review_artifact_path("factory_example", "source", task["task_id"]).exists()
+    assert not service._review_delivery_path(task["task_id"]).exists()
+
+
+def test_review_is_bound_to_selected_capture_not_another_compatible_copy(tmp_path: Path) -> None:
+    _draft(tmp_path)
+    selection = _selection(tmp_path)
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="factory_example", request_id="selected-capture-review", selected_source=selection)
+    service.run_worker_once(worker_id="selected-capture-review-worker")
+    readiness = service.source_review_readiness(task["task_id"])
+    assert readiness["eligible_capture_count"] == 1
+    assert [x["capture_id"] for x in readiness["options"] if x["readiness"] == "READY"] == [selection["capture_id"]]
+    other = LiteratureStore(tmp_path).latest(SourceCaptureRevisionV1, "capture.source")
+    with pytest.raises((ValueError, RuntimeError), match="selected source snapshot"):
+        service.record_reviewed_source_evidence(task["task_id"], verification=_source_review_payload(other), capture_revision_sha256=other.record_sha256)
+    assert not service._review_artifact_path("factory_example", "source", task["task_id"]).exists()
+    selected = LiteratureStore(tmp_path).latest(SourceCaptureRevisionV1, selection["capture_id"])
+    service.record_reviewed_source_evidence(task["task_id"], verification=_source_review_payload(selected), capture_revision_sha256=selected.record_sha256)
+    artifact = json.loads(service._review_artifact_path("factory_example", "source", task["task_id"]).read_text())
+    assert artifact["human_verification"]["capture_binding"]["capture_revision_sha256"] == selected.record_sha256

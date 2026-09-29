@@ -870,6 +870,9 @@ class ResearchFactoryService:
                     literature=literature,
                     records=records,
                 )
+                # Compare the frozen selection against the very snapshot held
+                # stable through receipt publication, not only the earlier check.
+                self._assert_selected_source_review_binding(record, binding)
                 review_payload = (
                     verification.model_dump(mode="python")
                     if isinstance(verification, SourceEvidenceHumanVerificationV1)
@@ -913,6 +916,14 @@ class ResearchFactoryService:
             task_id, campaign_id, validation, imported
         )
         for item in options:
+            if item["binding"] is not None:
+                try:
+                    self._assert_selected_source_review_binding(
+                        record, SourceFullTextCaptureBindingV1.model_validate(item["binding"])
+                    )
+                except StaleProposalError:
+                    item["readiness"] = "NOT_READY"
+                    item["issues"] = sorted(set(item["issues"]) | {"DIFFERS_FROM_TASK_SELECTED_SOURCE"})
             item["legacy_recovery_match"] = bool(
                 legacy_hash is not None
                 and item["readiness"] == "READY"
@@ -3372,6 +3383,31 @@ class ResearchFactoryService:
                 + ", ".join(selected["issues"])
             )
         return SourceFullTextCaptureBindingV1.model_validate(selected["binding"])
+
+    def _assert_selected_source_review_binding(
+        self, record: CodexTaskRecordV1, binding: SourceFullTextCaptureBindingV1,
+    ) -> None:
+        """Require the review receipt to retain the task's exact selected snapshot."""
+
+        selected = self._task_metadata(record).get("selected_source")
+        if selected is None:
+            return
+        selection = SelectedSourceV1.model_validate(selected)
+        fields = {
+            "capture_id": "capture_id",
+            "capture_revision_sha256": "capture_revision_sha256",
+            "work_revision_sha256": "work_revision_sha256",
+            "source_version_revision_sha256": "source_version_revision_sha256",
+            "content_sha256": "content_sha256",
+            "extracted_representation_sha256": "extracted_representation_sha256",
+            "version_resolution_sha256": "source_version_resolution_sha256",
+            "reliability_sha256": "source_reliability_state_sha256",
+        }
+        if any(getattr(selection, selected_key) != getattr(binding, bound_key)
+               for selected_key, bound_key in fields.items()):
+            raise StaleProposalError(
+                "review capture differs from the task's selected source snapshot; prepare a new selected task"
+            )
 
     def _selected_source_artifact(self, selection: Any) -> dict[str, Any]:
         """Read a selected capture without granting admission or changing its identity."""

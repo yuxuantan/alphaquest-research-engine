@@ -517,6 +517,9 @@ extractions over 250,000 bytes fail rather than being silently truncated.
 The context binds current work/version/capture revisions, document and extraction
 hashes, and version-resolution and correction/retraction state. These inputs are
 rechecked before the worker starts, when its output is imported, and before review.
+The final review compares those frozen pins against the same canonical snapshot
+held under the source-store read lock through receipt publication. A compatible
+but different capture cannot replace the task's selected capture at review.
 A change requires a new explicitly selected task; it does not carry an approval.
 Document text is source material, not worker instructions.
 
