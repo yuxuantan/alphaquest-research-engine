@@ -461,3 +461,53 @@ claim-extraction bridge is outside this slice. No document upload, arbitrary pat
 network fetch, paid source access, automated source selection, admission compiler,
 campaign write, mechanics approval, performance test, holdout access, or trading
 authority is added.
+
+### Prepare a proposal from an explicitly selected captured paper
+
+`factory run-next` accepts an optional `--selected-source selection.json` for a
+mutable draft whose next step is source research. The same object is accepted as
+`selected_source` by `POST /api/factory/run-next`. This selects one existing
+canonical capture; it does not upload a document or approve its claims.
+
+```json
+{
+  "capture_id": "owner-selected-capture",
+  "capture_revision_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "proposed_year": 2012,
+  "locator": "https://example.org/exact-version"
+}
+```
+
+Replace the example values with the actual current capture ID/revision, proposed
+bibliographic year and a locator present on that capture or its version's strong
+identifiers. Then run:
+
+```bash
+alphaquest factory run-next --project-root . --campaign-id my_research \
+  --request-id selected-paper-001 --selected-source selection.json --json
+```
+
+The existing worker still performs the genuine subscription run and imports an
+unconfirmed proposal for human review. This route disables web search and rejects
+output that changes the selected title, ordered authors, year, publication category
+or locator. A repeated request ID must select the same campaign and source.
+
+Before a context is constructed, the capture must allow local retention and
+`ALLOWED_EXTERNAL_PROCESSOR` processing. `UNKNOWN`, `LOCAL_ONLY` and `PROHIBITED`
+block this route. Permission is not inferred from a request to select a paper.
+Existing immutable captures are never rewritten to add permission. The retained
+full text and UTF-8 extraction must be nonempty, hash-valid and byte-count-valid;
+extractions over 250,000 bytes fail rather than being silently truncated.
+
+The context binds current work/version/capture revisions, document and extraction
+hashes, and version-resolution and correction/retraction state. These inputs are
+rechecked before the worker starts, when its output is imported, and before review.
+A change requires a new explicitly selected task; it does not carry an approval.
+Document text is source material, not worker instructions.
+
+Provisional identity may enter this proposal-only path when processing permission
+is valid. It remains provisional: selecting a capture or proposing a year does
+not verify identity, bibliographic year, claims or applicability to a strategy.
+The existing strong-identity, full-text and human source-review requirements still
+control admission. This route creates no canonical claims, reviewed source,
+campaign, mechanics approval, performance test, or holdout access.

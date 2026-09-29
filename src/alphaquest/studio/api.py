@@ -45,6 +45,7 @@ from alphaquest.research.storage import (
     resolve_campaign_context,
     resolve_recorded_path,
 )
+from alphaquest.studio.research_factory import SelectedSourceV1
 from alphaquest.studio.data_import import DataImportSpec, DatasetImporter
 from alphaquest.studio.analysis import (
     governed_chart_snapshot,
@@ -335,6 +336,7 @@ class FactoryRunNextRequest(APIModel):
 
     campaign_id: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_]*$")
     request_id: str = Field(min_length=8, max_length=120)
+    selected_source: SelectedSourceV1 | None = None
 
 
 class FactoryProposalDispositionRequest(APIModel):
@@ -1969,6 +1971,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         task = ResearchFactoryService(root).enqueue_next(
             campaign_id=value.campaign_id,
             request_id=value.request_id,
+            **({"selected_source": value.selected_source} if value.selected_source is not None else {}),
         )
         return {
             "task": task,

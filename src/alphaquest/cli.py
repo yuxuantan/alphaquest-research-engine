@@ -590,6 +590,7 @@ def _parser() -> argparse.ArgumentParser:
     factory_run_next.add_argument("--project-root", default=".")
     factory_run_next.add_argument("--campaign-id")
     factory_run_next.add_argument("--request-id", required=True)
+    factory_run_next.add_argument("--selected-source", help="JSON file identifying one canonical capture for proposal preparation")
     factory_run_next.add_argument("--json", action="store_true")
     factory_run_next.set_defaults(handler=_factory_run_next)
     factory_worker = factory_commands.add_parser(
@@ -1065,9 +1066,11 @@ def _factory_tasks(args: argparse.Namespace) -> int:
 def _factory_run_next(args: argparse.Namespace) -> int:
     from alphaquest.studio.factory_service import ResearchFactoryService
 
+    selected = json.loads(Path(args.selected_source).read_text(encoding="utf-8")) if args.selected_source else None
     task = ResearchFactoryService(args.project_root).enqueue_next(
         campaign_id=args.campaign_id,
         request_id=args.request_id,
+        **({"selected_source": selected} if selected is not None else {}),
     )
     payload = {"task": task, "queued_only": True, "codex_invoked_inline": False}
     if args.json:
