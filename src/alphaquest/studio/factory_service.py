@@ -1486,7 +1486,12 @@ class ResearchFactoryService:
             produced_at=runtime_provenance.finished_at,
             provenance=provenance,
         )
-        current_artifacts = self._current_artifacts(context, metadata)
+        try:
+            current_artifacts = self._current_artifacts(context, metadata)
+        except (OSError, ValueError, RuntimeError) as exc:
+            error = StaleProposalError("authoritative proposal inputs are unavailable or changed")
+            self._record_validation_rejection(record, error)
+            raise error from exc
         destination = self.proposal_root / record.task_id
         destination.mkdir(parents=True, exist_ok=True)
         try:
@@ -3392,8 +3397,10 @@ class ResearchFactoryService:
                 or version.record_sha256 != capture.source_version_revision_sha256
                 or work.record_sha256 != version.work_revision_sha256):
                 raise ValueError("selected source work/version binding is stale")
-            anchors = {capture.retrieval_locator, *version.strong_identifiers.values()}
-            if selected.locator not in anchors:
+            anchors = {_identity_token(value) for value in (
+                capture.retrieval_locator, *version.strong_identifiers.values()
+            )}
+            if _identity_token(selected.locator) not in anchors:
                 raise ValueError("selected locator must identify the captured version")
             category = {"ACADEMIC": "PEER_REVIEWED", "WORKING_PAPER": "WORKING_PAPER",
                         "EXCHANGE": "EXCHANGE_RESEARCH", "PRACTITIONER": "PRACTITIONER_RESEARCH",
@@ -3410,6 +3417,16 @@ class ResearchFactoryService:
             )
             if issues:
                 raise ValueError("selected source has unresolved correction or retraction: " + ", ".join(issues))
+            expected = {
+                "work_revision_sha256": work.record_sha256,
+                "source_version_revision_sha256": version.record_sha256,
+                "content_sha256": capture.content_sha256,
+                "extracted_representation_sha256": capture.extracted_representation_sha256,
+                "version_resolution_sha256": resolution,
+                "reliability_sha256": reliability,
+            }
+            if any(getattr(selected, key) != value for key, value in expected.items()):
+                raise ValueError("selected source bindings changed since selection; prepare a new selection")
             raw = store._verify_artifact_unlocked(str(capture.content_sha256), kind="artifacts")
             text = store._verify_artifact_unlocked(str(capture.extracted_representation_sha256), kind="extracted")
             if not raw or len(raw) != capture.content_bytes or not text or len(text) != capture.extracted_bytes:
@@ -4439,6 +4456,11 @@ def _validate_proposal_semantics(
 
     artifacts = {artifact.artifact_name: artifact.content for artifact in context.artifacts}
     if task_type == CodexTaskType.SOURCE_RESEARCH and "selected_source" in artifacts:
+        if (proposal.get("verification_status") != "PARTIAL"
+            or proposal.get("retraction_status") != "UNKNOWN"
+            or proposal.get("content_sha256") is not None
+            or proposal.get("confirmed") is not False):
+            raise ValueError("selected source output must remain an unconfirmed PARTIAL proposal with UNKNOWN retraction and no verified content hash")
         selected = artifacts["selected_source"]
         if not isinstance(selected, Mapping) or any(
             proposal.get(key) != selected.get(key)

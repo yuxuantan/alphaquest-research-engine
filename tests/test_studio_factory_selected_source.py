@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from alphaquest.research.literature.contracts import ActorProvenanceV1, SourceIdentityRevisionV1
+from alphaquest.research.literature.contracts import ActorProvenanceV1, SourceIdentityRevisionV1, SourceVersionIdentityRevisionV1
 from alphaquest.research.literature.store import LiteratureStore
 from alphaquest.studio.api import FactoryRunNextRequest
-from alphaquest.studio.factory_service import ResearchFactoryService
+from alphaquest.studio.factory_service import ResearchFactoryService, _source_relationship_state
 from alphaquest.studio.research_factory import SelectedSourceV1
 from tests.test_studio_factory_service import FakeRunner, _draft
-from tests.test_studio_factory_review_handoff import _fulltext_capture, _source_proposal
+from tests.test_studio_factory_review_handoff import _fulltext_capture, _source_proposal, _append_version_relationship
 
 
 def _selection(root: Path, *, permission: str = "ALLOWED_EXTERNAL_PROCESSOR", **capture_kwargs) -> dict:
@@ -29,7 +29,17 @@ def _selection(root: Path, *, permission: str = "ALLOWED_EXTERNAL_PROCESSOR", **
         payload, actor=ActorProvenanceV1(actor_class="HUMAN_OWNER_RESEARCHER", actor_id="test-owner"),
         idempotency_key="capture.selected",
     )
+    version = LiteratureStore(root).latest(
+        SourceVersionIdentityRevisionV1,
+        capture.source_version_id,
+    )
+    resolution, reliability, _ = _source_relationship_state(capture.source_version_id, [])
     return {
+        "work_revision_sha256": version.work_revision_sha256,
+        "source_version_revision_sha256": capture.source_version_revision_sha256,
+        "content_sha256": capture.content_sha256,
+        "extracted_representation_sha256": capture.extracted_representation_sha256,
+        "version_resolution_sha256": resolution, "reliability_sha256": reliability,
         "capture_id": capture.capture_id, "capture_revision_sha256": capture.record_sha256,
         "proposed_year": 2025, "locator": capture.retrieval_locator,
     }
@@ -114,7 +124,8 @@ def test_request_id_cannot_switch_source_selection(tmp_path: Path) -> None:
 
 def test_selected_source_has_no_arbitrary_path_or_prompt_fields() -> None:
     valid = {"capture_id": "capture.selected", "capture_revision_sha256": "a" * 64,
-             "proposed_year": 2012, "locator": "https://example.invalid/paper"}
+             "proposed_year": 2012, "locator": "https://example.invalid/paper",
+             **{key: "a" * 64 for key in ("work_revision_sha256", "source_version_revision_sha256", "content_sha256", "extracted_representation_sha256", "version_resolution_sha256", "reliability_sha256")}}
     assert FactoryRunNextRequest(campaign_id="example", request_id="selected-api-test", selected_source=valid).selected_source.proposed_year == 2012
     for extra in ("prompt", "path", "web_search", "external_model_processing_permission"):
         with pytest.raises(ValueError):
@@ -145,7 +156,8 @@ def test_cli_and_api_forward_only_structured_selection(tmp_path: Path, monkeypat
     from alphaquest.cli import main
     from alphaquest.studio.api import register_api_routes
     selection = {"capture_id": "capture.selected", "capture_revision_sha256": "a" * 64,
-                 "proposed_year": 2012, "locator": "https://example.invalid/paper"}
+                 "proposed_year": 2012, "locator": "https://example.invalid/paper",
+             **{key: "a" * 64 for key in ("work_revision_sha256", "source_version_revision_sha256", "content_sha256", "extracted_representation_sha256", "version_resolution_sha256", "reliability_sha256")}}
     received = []
     def enqueue(self, **kwargs):
         received.append(kwargs)
@@ -162,3 +174,90 @@ def test_cli_and_api_forward_only_structured_selection(tmp_path: Path, monkeypat
     response = TestClient(app).post("/api/factory/run-next", json={"campaign_id": "example", "request_id": "selected-api-test", "selected_source": selection})
     assert response.status_code == 202
     assert received[-1]["selected_source"].model_dump() == selection
+
+
+@pytest.mark.parametrize("retraction", ["UNKNOWN", "NOT_RETRACTED", "RETRACTED", "CORRECTED"])
+def test_rejected_or_model_verified_output_cannot_be_imported(tmp_path: Path, retraction: str) -> None:
+    _draft(tmp_path)
+    selection = _selection(tmp_path)
+    proposal = {**_source_proposal(), "verification_status": "REJECTED", "retraction_status": retraction, "content_sha256": "a" * 64}
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(proposal))
+    queued = service.enqueue_next(campaign_id="factory_example", request_id="selected-assurance-test", selected_source=selection)
+    result = service.run_worker_once(worker_id="selected-assurance-worker")
+    assert result["proposal_validation"]["status"] == "REJECTED_NOT_APPLIED"
+    with pytest.raises(RuntimeError, match="validated-not-applied"):
+        service.source_review_readiness(queued["task_id"])
+
+
+@pytest.mark.parametrize("year,valid", [(1799, False), (1800, True), (2100, True), (2101, False)])
+def test_selected_year_matches_output_domain(tmp_path: Path, year: int, valid: bool) -> None:
+    selection = {**_selection(tmp_path), "proposed_year": year}
+    if valid:
+        assert SelectedSourceV1.model_validate(selection).proposed_year == year
+    else:
+        with pytest.raises(ValueError):
+            SelectedSourceV1.model_validate(selection)
+
+
+@pytest.mark.parametrize("key", ["work_revision_sha256", "source_version_revision_sha256", "content_sha256", "extracted_representation_sha256", "version_resolution_sha256", "reliability_sha256"])
+def test_selected_canonical_bindings_are_checked_before_enqueue(tmp_path: Path, key: str) -> None:
+    _draft(tmp_path)
+    selection = {**_selection(tmp_path), key: "0" * 64}
+    runner = FakeRunner(_source_proposal())
+    service = ResearchFactoryService(tmp_path, runner=runner)
+    with pytest.raises(ValueError, match="bindings changed"):
+        service.enqueue_next(campaign_id="factory_example", request_id="selected-before-enqueue", selected_source=selection)
+    assert not service.queue.list_tasks()
+    assert runner.run_calls == 0
+
+
+def test_normalized_equivalent_locator_is_usable(tmp_path: Path) -> None:
+    _draft(tmp_path)
+    selection = _selection(tmp_path, locator="https://EXAMPLE.invalid/source.pdf")
+    selection["locator"] = "https://example.invalid/source.pdf"
+    service = ResearchFactoryService(tmp_path, runner=FakeRunner(_source_proposal()))
+    task = service.enqueue_next(campaign_id="factory_example", request_id="selected-locator-test", selected_source=selection)
+    assert task["request"]["web_search"] is False
+
+
+@pytest.mark.parametrize("locator", ["abc", "   a   "])
+def test_short_locators_fail_before_task_creation(tmp_path: Path, locator: str) -> None:
+    with pytest.raises(ValueError):
+        SelectedSourceV1.model_validate({**_selection(tmp_path), "locator": locator})
+
+
+@pytest.mark.parametrize("when", ["before_enqueue", "before_worker", "during_worker", "before_review"])
+def test_relationship_drift_is_not_silently_adopted(tmp_path: Path, when: str) -> None:
+    _draft(tmp_path)
+    selection = _selection(tmp_path)
+    other = _fulltext_capture(tmp_path, suffix="equivalent")
+    def change_relationship():
+        _append_version_relationship(tmp_path, relationship_id="relationship.selection-drift",
+                                     subject_id=other.source_version_id, predicate="SAME_VERSION_AS",
+                                     object_id="version.source")
+    class ChangingRunner(FakeRunner):
+        def run(self, *args, **kwargs):
+            result = super().run(*args, **kwargs)
+            if when == "during_worker":
+                change_relationship()
+            return result
+    runner = ChangingRunner(_source_proposal())
+    service = ResearchFactoryService(tmp_path, runner=runner)
+    if when == "before_enqueue":
+        change_relationship()
+        with pytest.raises(ValueError, match="bindings changed"):
+            service.enqueue_next(campaign_id="factory_example", request_id="selected-relationship-drift", selected_source=selection)
+        assert not service.queue.list_tasks()
+        return
+    queued = service.enqueue_next(campaign_id="factory_example", request_id="selected-relationship-drift", selected_source=selection)
+    if when == "before_worker":
+        change_relationship()
+    result = service.run_worker_once(worker_id="selected-relationship-worker")
+    if when == "before_review":
+        assert result["proposal_validation"]["status"] == "VALIDATED_NOT_APPLIED"
+        change_relationship()
+        with pytest.raises((ValueError, RuntimeError)):
+            service.source_review_readiness(queued["task_id"])
+    else:
+        assert result["proposal_validation"]["status"] == "REJECTED_NOT_APPLIED"
+        assert runner.run_calls == (1 if when == "during_worker" else 0)

@@ -473,14 +473,26 @@ canonical capture; it does not upload a document or approve its claims.
 {
   "capture_id": "owner-selected-capture",
   "capture_revision_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "work_revision_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_version_revision_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "extracted_representation_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "version_resolution_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "reliability_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "proposed_year": 2012,
   "locator": "https://example.org/exact-version"
 }
 ```
 
-Replace the example values with the actual current capture ID/revision, proposed
-bibliographic year and a locator present on that capture or its version's strong
-identifiers. Then run:
+Replace the example values with the actual current capture ID and hashes for the
+capture, work, version, retained document, extraction, version-resolution and
+correction/retraction state. These bind the state observed when the paper was
+selected; later changes fail before enqueue rather than silently becoming the
+new selection. The proposed bibliographic year must be 1800–2100. The locator
+must contain at least four characters and match an anchor on that capture or
+its version's strong identifiers under the existing source identity normalization.
+Codex can prepare this structured request from the canonical records; no document
+path or permission override belongs in it. Then run:
 
 ```bash
 alphaquest factory run-next --project-root . --campaign-id my_research \
@@ -490,7 +502,10 @@ alphaquest factory run-next --project-root . --campaign-id my_research \
 The existing worker still performs the genuine subscription run and imports an
 unconfirmed proposal for human review. This route disables web search and rejects
 output that changes the selected title, ordered authors, year, publication category
-or locator. A repeated request ID must select the same campaign and source.
+or locator. It also rejects model-authored verification assertions: selected-source
+output must remain `PARTIAL`, `UNKNOWN` retraction status, null `content_sha256`
+and `confirmed: false`. A worker's rejected-source response cannot become reviewed
+source evidence. A repeated request ID must select the same campaign and source.
 
 Before a context is constructed, the capture must allow local retention and
 `ALLOWED_EXTERNAL_PROCESSOR` processing. `UNKNOWN`, `LOCAL_ONLY` and `PROHIBITED`

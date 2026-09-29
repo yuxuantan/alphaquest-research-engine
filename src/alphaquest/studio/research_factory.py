@@ -126,13 +126,22 @@ class SelectedSourceV1(FactoryModel):
 
     capture_id: str = Field(pattern=IDENTIFIER_PATTERN)
     capture_revision_sha256: str = Field(pattern=SHA256_PATTERN)
-    proposed_year: int = Field(ge=1000, le=9999)
-    locator: str = Field(min_length=1)
+    work_revision_sha256: str = Field(pattern=SHA256_PATTERN)
+    source_version_revision_sha256: str = Field(pattern=SHA256_PATTERN)
+    content_sha256: str = Field(pattern=SHA256_PATTERN)
+    extracted_representation_sha256: str = Field(pattern=SHA256_PATTERN)
+    version_resolution_sha256: str = Field(pattern=SHA256_PATTERN)
+    reliability_sha256: str = Field(pattern=SHA256_PATTERN)
+    proposed_year: int = Field(ge=1800, le=2100)
+    locator: str = Field(min_length=4)
 
     @field_validator("locator")
     @classmethod
     def _locator(cls, value: str) -> str:
-        return _nonblank(value)
+        value = _nonblank(value)
+        if len(value) < 4:
+            raise ValueError("selected locator must contain at least four non-padding characters")
+        return value
 
 
 class SourceEvidenceBundleV1(FactoryModel):
